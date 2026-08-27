@@ -1,0 +1,2868 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TradeCode Navi | 품명 변환·HS코드·FTA 관세율 통합조회</title>
+<style>
+:root{
+  --navy:#0b2e4f;
+  --navy-dark:#071f38;
+  --blue:#1565c0;
+  --teal:#0f9d8c;
+  --gold:#c99a2e;
+  --bg:#f4f6f9;
+  --card:#ffffff;
+  --border:#e2e6ec;
+  --text:#1c2733;
+  --sub:#5b6875;
+  --danger:#c0392b;
+  --good:#0f9d5c;
+  --radius:14px;
+  --shadow:0 4px 18px rgba(11,46,79,0.08);
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--bg);color:var(--text);line-height:1.5;}
+a{color:var(--blue);}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px 60px;}
+
+/* Header */
+header.top{background:linear-gradient(135deg,var(--navy) 0%,var(--navy-dark) 100%);color:#fff;padding:26px 0;}
+header.top .wrap{display:flex;align-items:center;justify-content:space-between;padding-bottom:0;}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;letter-spacing:-0.5px;}
+.brand .logo-badge{background:var(--gold);color:var(--navy-dark);width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;}
+.brand small{display:block;font-weight:400;font-size:11px;color:#b9c9dc;letter-spacing:0.5px;}
+.tagline{font-size:12.5px;color:#c3d3e5;text-align:right;max-width:320px;}
+
+/* Stepper */
+.stepper{display:flex;gap:6px;margin:26px 0 28px;}
+.step-pill{flex:1;text-align:center;padding:12px 6px;border-radius:10px;background:#fff;border:1px solid var(--border);font-size:13px;font-weight:600;color:var(--sub);position:relative;transition:.25s;}
+.step-pill .num{display:inline-flex;width:20px;height:20px;border-radius:50%;background:#dfe6ee;color:#8895a3;align-items:center;justify-content:center;font-size:11px;margin-right:6px;font-weight:800;}
+.step-pill.active{background:var(--navy);color:#fff;border-color:var(--navy);box-shadow:var(--shadow);}
+.step-pill.active .num{background:var(--gold);color:var(--navy-dark);}
+.step-pill.done{background:#eaf3ff;color:var(--blue);border-color:#cfe3ff;}
+.step-pill.done .num{background:var(--blue);color:#fff;}
+
+/* Cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:26px 28px;box-shadow:var(--shadow);margin-bottom:18px;}
+.card h2{margin:0 0 6px;font-size:19px;color:var(--navy-dark);}
+.card .desc{color:var(--sub);font-size:13.5px;margin-bottom:18px;}
+.hidden{display:none !important;}
+
+/* Inputs */
+.input-row{display:flex;gap:10px;}
+input[type=text]{flex:1;padding:14px 16px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;outline:none;transition:.2s;}
+input[type=text]:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(21,101,192,0.12);}
+button{cursor:pointer;font-family:inherit;}
+.btn{padding:14px 22px;border-radius:10px;border:none;font-size:15px;font-weight:700;background:var(--navy);color:#fff;transition:.2s;}
+.btn:hover{background:var(--blue);}
+.btn.ghost{background:#fff;color:var(--navy);border:1.5px solid var(--border);}
+.btn.ghost:hover{border-color:var(--blue);color:var(--blue);}
+.btn.sm{padding:8px 14px;font-size:13px;}
+.btn:disabled{background:#c7cfd8;cursor:not-allowed;}
+
+.hint{font-size:12.5px;color:var(--sub);margin-top:8px;}
+.example-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+.chip-eg{background:#eef2f7;border:1px solid var(--border);border-radius:20px;padding:6px 13px;font-size:12.5px;color:var(--navy);}
+.chip-eg:hover{background:#e2ecfa;border-color:#bcd3ef;}
+.chip-eg.selected{background:var(--teal);color:#fff;border-color:var(--teal);}
+.clarify-question{background:#f7fbff;border:1px solid #e2ecfa;border-radius:10px;padding:12px 14px;}
+
+/* Candidate results */
+.candidate-list{display:flex;flex-direction:column;gap:10px;margin-top:16px;}
+.candidate{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;transition:.2s;}
+.candidate:hover{border-color:var(--blue);background:#f7fbff;}
+.candidate.selected{border-color:var(--teal);background:#f1fbf9;}
+.cand-left .ko{font-weight:700;font-size:15px;}
+.cand-left .en{color:var(--blue);font-size:13.5px;font-family:Consolas,Menlo,monospace;margin-top:2px;}
+.cand-left .chap{color:var(--sub);font-size:12px;margin-top:4px;}
+.pick-btn{white-space:nowrap;}
+
+/* Translated preview box */
+.translate-box{background:linear-gradient(135deg,#f7fbff,#eef5ff);border:1.5px dashed #b7d3f2;border-radius:12px;padding:18px 20px;margin-top:18px;}
+.translate-box .label{font-size:11.5px;font-weight:800;color:var(--blue);letter-spacing:1px;text-transform:uppercase;}
+.translate-box .value{font-size:20px;font-weight:800;color:var(--navy-dark);font-family:Consolas,Menlo,monospace;margin-top:6px;word-break:break-word;}
+
+/* Material grid */
+.material-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px;}
+@media(max-width:700px){.material-grid{grid-template-columns:repeat(2,1fr);}}
+.mat-btn{border:1.5px solid var(--border);background:#fff;border-radius:10px;padding:13px 8px;text-align:center;font-size:13.5px;font-weight:600;color:var(--text);}
+.mat-btn:hover{border-color:var(--blue);}
+.mat-btn.selected{border-color:var(--teal);background:#eafaf6;color:#0b7563;}
+.mat-btn .en{display:block;font-size:11px;color:var(--sub);font-weight:400;margin-top:3px;}
+.mat-btn.selected .en{color:#0b7563;}
+
+/* HS result */
+.hs-result{display:flex;gap:22px;flex-wrap:wrap;align-items:center;background:var(--navy-dark);color:#fff;border-radius:12px;padding:22px 24px;margin-top:6px;}
+.hs-code-big{font-size:34px;font-weight:900;font-family:Consolas,Menlo,monospace;letter-spacing:1px;color:var(--gold);}
+.hs-meta{flex:1;min-width:220px;}
+.hs-meta .title{font-size:16px;font-weight:700;margin-bottom:4px;}
+.hs-meta .sub{font-size:13px;color:#b9c9dc;}
+.rate-badge{background:rgba(255,255,255,0.1);padding:10px 16px;border-radius:10px;text-align:center;}
+.rate-badge .num{font-size:22px;font-weight:800;color:#ffd479;}
+.rate-badge .lab{font-size:11px;color:#c3d3e5;}
+
+/* Country grid */
+.country-search{margin-bottom:14px;}
+.country-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-height:400px;overflow-y:auto;padding-right:4px;}
+@media(max-width:700px){.country-grid{grid-template-columns:repeat(2,1fr);}}
+.country-btn{border:1.5px solid var(--border);background:#fff;border-radius:10px;padding:12px;text-align:left;font-size:13.5px;font-weight:700;}
+.country-btn .en{display:block;font-size:11.5px;font-weight:400;color:var(--sub);margin-top:2px;}
+.country-btn:hover{border-color:var(--blue);}
+.country-btn.selected{border-color:var(--teal);background:#eafaf6;}
+
+/* Final result */
+.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px;}
+@media(max-width:700px){.result-grid{grid-template-columns:1fr;}}
+.rate-card{border-radius:12px;padding:20px;border:1.5px solid var(--border);}
+.rate-card.mfn{background:#fdf6f2;border-color:#f0d9c8;}
+.rate-card.fta{background:#f0fbf6;border-color:#bfe8d3;}
+.rate-card .cap{font-size:12px;font-weight:800;letter-spacing:0.5px;color:var(--sub);text-transform:uppercase;}
+.rate-card .big{font-size:38px;font-weight:900;margin:6px 0;}
+.rate-card.mfn .big{color:var(--danger);}
+.rate-card.fta .big{color:var(--good);}
+.rate-card .note{font-size:12.5px;color:var(--sub);}
+.savings-banner{margin-top:16px;background:linear-gradient(135deg,#fff8e8,#fff);border:1.5px solid #f0deac;border-radius:12px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.savings-banner .amt{font-size:24px;font-weight:900;color:var(--gold);}
+
+.info-box{margin-top:18px;border-left:4px solid var(--blue);background:#f5f9ff;border-radius:0 10px 10px 0;padding:16px 18px;font-size:13.5px;}
+.info-box.warn{border-left-color:var(--danger);background:#fdf3f2;}
+.info-box h4{margin:0 0 6px;font-size:14px;}
+.info-box ul{margin:6px 0 0;padding-left:18px;}
+.info-box li{margin-bottom:4px;}
+.tag{display:inline-block;font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;background:#e7edf5;color:var(--navy);margin-right:6px;}
+.tag.self{background:#e3f6f0;color:#0b7563;}
+.tag.agency{background:#fdeee0;color:#a05a12;}
+
+.nav-buttons{display:flex;justify-content:space-between;margin-top:22px;}
+footer{text-align:center;color:var(--sub);font-size:12px;padding:30px 0 10px;}
+footer a{color:var(--sub);text-decoration:underline;}
+
+.disclaimer-top{background:#fff8e8;border-bottom:1px solid #f0deac;color:#7a5b0a;font-size:12.5px;text-align:center;padding:8px 14px;}
+.small-muted{color:var(--sub);font-size:12px;}
+
+/* Live/Sample status badge */
+.status-badge{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:20px;margin-bottom:16px;}
+.status-badge .dot{width:8px;height:8px;border-radius:50%;}
+.status-badge.live{background:#eafaf6;color:#0b7563;border:1px solid #bfe8d3;}
+.status-badge.live .dot{background:#0f9d5c;box-shadow:0 0 0 3px rgba(15,157,92,0.18);}
+.status-badge.sample{background:#fff8e8;color:#8a6d1a;border:1px solid #f0deac;}
+.status-badge.sample .dot{background:#c99a2e;}
+.status-badge.checking{background:#eef2f7;color:var(--sub);border:1px solid var(--border);}
+.status-badge.checking .dot{background:#9aa7b4;}
+.tag.live-src{background:#0f9d5c;color:#fff;}
+.tag.est-src{background:#e7edf5;color:var(--sub);}
+
+/* Comments (댓글/답글) - 로그인 없이 닉네임+비밀번호로 본인 확인하는 방명록형 댓글 */
+.comment-heading-note{font-size:13px;font-weight:400;color:var(--sub);margin-left:4px;}
+#commentSection{margin-top:56px;}
+
+/* 로켓배송 원가&마진률 계산기 - 입력값과 계산 결과를 같은 줄에 나란히 보여주는
+   스프레드시트 스타일 레이아웃 (label 좌측, 입력/결과 값 우측) */
+.rm-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);gap:14px;}
+.rm-row:last-child{border-bottom:none;}
+.rm-row label{font-size:13.5px;font-weight:600;color:var(--text);flex:1;}
+.rm-io{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.rm-io input{width:130px;padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-align:right;font-family:Consolas,Menlo,monospace;}
+.rm-io input:focus{border-color:var(--blue);outline:none;box-shadow:0 0 0 3px rgba(21,101,192,0.12);}
+.rm-unit{font-size:12.5px;color:var(--sub);width:46px;flex-shrink:0;}
+.rm-value{width:130px;text-align:right;font-family:Consolas,Menlo,monospace;font-size:15px;font-weight:700;color:var(--navy-dark);padding:9px 11px;background:#f4f6f9;border-radius:8px;}
+.rm-row.rm-input-highlight{background:#fff8e8;margin:0 -14px;padding:10px 14px;border-radius:8px;border-bottom:none;}
+.rm-row.rm-output .rm-value{background:#eafaf6;color:#0b7563;}
+.rm-row.rm-final .rm-value{background:var(--navy-dark);color:#ffd479;font-size:18px;}
+.rm-divider{height:1px;background:var(--border);margin:10px 0;}
+
+.rm-margin-table{width:100%;border-collapse:collapse;margin-top:16px;}
+.rm-margin-table th{background:#f4f6f9;color:var(--sub);font-size:12px;font-weight:800;padding:10px 8px;text-align:right;border-bottom:2px solid var(--border);}
+.rm-margin-table th:first-child, .rm-margin-table td:first-child{text-align:left;}
+.rm-margin-table td{padding:10px 8px;text-align:right;font-family:Consolas,Menlo,monospace;font-size:14px;border-bottom:1px solid var(--border);}
+.rm-margin-table td.rm-editable input{width:60px;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;text-align:right;font-family:inherit;font-size:13.5px;}
+.rm-margin-table td.rm-sell-price{font-weight:800;color:var(--navy-dark);}
+.rm-margin-quick-btn{padding:5px 7px;border:1.5px solid var(--border);background:#fff;border-radius:6px;font-size:11px;font-weight:700;color:var(--navy);cursor:pointer;font-family:inherit;flex-shrink:0;}
+.rm-margin-quick-btn:hover{border-color:var(--blue);color:var(--blue);background:#f7fbff;}
+.rm-io-dual input{width:80px;}
+.rm-io-eq{color:var(--sub);font-weight:700;font-size:14px;flex-shrink:0;}
+.rm-step-btn{width:32px;height:38px;flex-shrink:0;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:17px;font-weight:800;color:var(--navy);line-height:1;}
+.rm-step-btn:hover{border-color:var(--blue);color:var(--blue);background:#f7fbff;}
+.rm-fx-status{font-size:12px;color:var(--sub);margin:2px 0 10px;min-height:15px;}
+.rm-io-triple input{width:64px;}
+.rm-io-x{color:var(--sub);font-weight:700;flex-shrink:0;}
+.rm-new-quote-btn{background:var(--blue);color:#fff;border:none;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0;white-space:nowrap;}
+.rm-new-quote-btn:hover{background:var(--navy);}
+.rm-undo-btn{background:var(--danger);color:#fff;border:none;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0;white-space:nowrap;}
+.rm-undo-btn:hover:not(:disabled){background:#96271d;}
+.rm-undo-btn:disabled{background:#e6e6e6;color:#9a9a9a;cursor:not-allowed;}
+.rm-freight-quick{display:flex;gap:6px;flex-shrink:0;}
+.rm-quick-btn{padding:6px 10px;border:1.5px solid var(--border);background:#fff;border-radius:7px;font-size:12px;font-weight:700;color:var(--navy);cursor:pointer;white-space:nowrap;}
+.rm-quick-btn:hover{border-color:var(--blue);color:var(--blue);background:#f7fbff;}
+/* 로켓배송 계산기 - 견적서 길이를 줄이기 위한 여백/패딩 축소(이 페이지에만 적용) */
+#feature-rocketmargin .wrap{padding-top:20px !important;}
+#feature-rocketmargin .card{padding:18px 22px;margin-bottom:14px;}
+#feature-rocketmargin .card .desc{margin-bottom:10px;}
+#feature-rocketmargin .hint{margin-top:6px;}
+#feature-rocketmargin .info-box{margin-top:10px;padding:12px 14px;}
+#feature-rocketmargin .rm-row{padding:6px 0;}
+#feature-rocketmargin .rm-row.rm-input-highlight{padding:7px 14px;}
+#feature-rocketmargin .rm-divider{margin:6px 0;}
+#feature-rocketmargin .disclaimer-top{margin-bottom:12px;}
+.comment-form{margin-top:4px;}
+.comment-form-row{display:flex;gap:10px;margin-bottom:10px;}
+.comment-form-row input{flex:1;padding:11px 13px;border:1.5px solid var(--border);border-radius:9px;font-size:14px;outline:none;box-sizing:border-box;}
+.comment-form-row input:focus{border-color:var(--blue);}
+.comment-form textarea{width:100%;padding:12px 13px;border:1.5px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;resize:vertical;min-height:64px;outline:none;box-sizing:border-box;}
+.comment-form textarea:focus{border-color:var(--blue);}
+.comment-form-footer{display:flex;align-items:center;justify-content:space-between;margin-top:8px;}
+#commentFormMsg{margin-top:6px;font-size:12.5px;color:var(--danger);min-height:16px;}
+#commentFormMsg.ok{color:var(--good);}
+
+/* 댓글 목록: 기본은 약 10줄 분량만 보이도록 높이를 제한(근사치)하고,
+   '전체보기'를 누르면 max-height 제한을 풀어 전부 보여준다. */
+.comment-list-wrap{position:relative;margin-top:20px;max-height:420px;overflow:hidden;}
+.comment-list-wrap.expanded{max-height:none;}
+.comment-fade{position:absolute;left:0;right:0;bottom:0;height:56px;background:linear-gradient(to bottom, rgba(255,255,255,0), var(--card));pointer-events:none;}
+.comment-list-wrap.expanded .comment-fade{display:none;}
+#commentToggleBtn{display:block;margin:12px auto 0;}
+
+.comment-item{border-top:1px solid var(--border);padding:14px 0;}
+.comment-list>.comment-item:first-child{border-top:none;}
+.comment-item .comment-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.comment-item .comment-author{font-weight:700;font-size:13.5px;color:var(--navy-dark);}
+.comment-item .comment-time{font-size:11.5px;color:var(--sub);}
+.comment-item .comment-body{font-size:14px;margin-top:5px;white-space:pre-wrap;word-break:break-word;}
+.comment-item .comment-actions{display:flex;gap:4px;margin-top:6px;}
+.comment-item .comment-actions button{background:none;border:none;color:var(--sub);font-size:12px;font-weight:700;padding:3px 7px;border-radius:6px;}
+.comment-item .comment-actions button:hover{background:#eef2f7;color:var(--navy);}
+.comment-item .comment-actions button.danger:hover{background:#fdf3f2;color:var(--danger);}
+.comment-children{margin-left:22px;border-left:2px solid var(--border);padding-left:16px;margin-top:4px;}
+.comment-inline-form{background:#f7fbff;border:1px solid #e2ecfa;border-radius:9px;padding:12px 13px;margin-top:8px;}
+.comment-inline-form .row{display:flex;gap:8px;margin-bottom:8px;}
+.comment-inline-form input, .comment-inline-form textarea{padding:9px 11px;border:1.5px solid var(--border);border-radius:8px;font-size:13.5px;font-family:inherit;outline:none;box-sizing:border-box;}
+.comment-inline-form input{flex:1;}
+.comment-inline-form textarea{width:100%;resize:vertical;min-height:50px;}
+.comment-inline-form .btns{display:flex;gap:8px;margin-top:8px;justify-content:flex-end;}
+.comment-inline-form .err{font-size:12px;color:var(--danger);margin-top:4px;min-height:14px;}
+
+/* App shell: 왼쪽 기능 목록(사이드바) + 오른쪽 콘텐츠 영역.
+   여러 기능을 추가할 웹사이트를 염두에 두고, 사이드바에 버튼을 계속 추가할 수 있는
+   구조로 만들었다. 버튼을 누르면 해당 기능의 콘텐츠(feature-*)만 보이고 나머지는
+   숨겨진다. */
+.app-shell{display:flex;align-items:stretch;min-height:100vh;}
+.sidebar{width:240px;flex-shrink:0;background:var(--navy-dark);color:#fff;padding:24px 16px;position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto;}
+.sidebar .side-brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15px;margin-bottom:24px;padding:0 4px;}
+.sidebar .side-brand .logo-badge{background:var(--gold);color:var(--navy-dark);width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;flex-shrink:0;}
+.sidebar .side-brand small{display:block;font-weight:400;font-size:10.5px;color:#9fb3c8;}
+.sidebar .nav-section-label{font-size:11px;font-weight:800;color:#8ea3b8;text-transform:uppercase;letter-spacing:0.6px;margin:18px 4px 8px;}
+.nav-btn{display:block;width:100%;text-align:left;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);color:#e7edf5;border-radius:10px;padding:13px 14px;font-size:13.5px;font-weight:700;margin-bottom:8px;transition:.2s;}
+.nav-btn:hover{background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.24);}
+.nav-btn.active{background:var(--gold);color:var(--navy-dark);border-color:var(--gold);}
+.main-area{flex:1;min-width:0;}
+
+.home-view{max-width:620px;margin:0 auto;padding:90px 20px;text-align:center;}
+.home-view .logo-badge-lg{width:56px;height:56px;border-radius:14px;background:var(--gold);color:var(--navy-dark);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;margin:0 auto 18px;}
+.home-view h1{font-size:23px;color:var(--navy-dark);margin:0 0 10px;}
+.home-view p{color:var(--sub);font-size:14px;margin:0 0 26px;}
+.home-view .btn{font-size:15px;padding:15px 26px;}
+
+@media(max-width:820px){
+  .app-shell{flex-direction:column;}
+  .sidebar{width:100%;height:auto;position:relative;padding:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+  .sidebar .side-brand{margin-bottom:0;}
+  .nav-btn{width:auto;margin-bottom:0;}
+}
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="side-brand">
+      <div class="logo-badge">TC</div>
+      <div>TradeCode Navi<br><small>기능 목록</small></div>
+    </div>
+    <div class="nav-section-label">도구</div>
+    <button type="button" class="nav-btn" id="navBtn-calculator" onclick="showFeature('calculator')">📊 TradeCode Navi 관세율 계산</button>
+    <button type="button" class="nav-btn" id="navBtn-rocketmargin" onclick="showFeature('rocketmargin')">🚀 로켓배송 원가&amp;마진률 계산</button>
+    <button type="button" class="nav-btn" id="navBtn-logistics" onclick="showFeature('logistics')">🚚 물류비 계산기</button>
+  </nav>
+
+  <div class="main-area">
+
+    <div id="home-view" class="home-view">
+      <div class="logo-badge-lg">TC</div>
+      <h1>TradeCode Navi에 오신 걸 환영합니다</h1>
+      <p>왼쪽 목록에서 사용할 기능을 선택하세요. 앞으로 기능이 계속 추가될 예정입니다.</p>
+      <button type="button" class="btn" onclick="showFeature('calculator')">📊 관세율 계산 시작하기 →</button>
+    </div>
+
+    <div id="feature-calculator" class="feature-view hidden">
+
+<div class="disclaimer-top">⚠ 본 사이트는 데모(MVP)로, 표시되는 HS코드·관세율은 <b>참고용 샘플 데이터</b>입니다. 법적 효력이 없으며 실제 통관 시 관세청 <a href="https://unipass.customs.go.kr" target="_blank">UniPass</a> · <a href="https://www.customs.go.kr/ftaportalkor/ad/ftaCnvn/txrtInfo.do" target="_blank">FTA 포털</a> 또는 관세사를 통해 반드시 확인하세요.</div>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <div class="logo-badge">TC</div>
+      <div>TradeCode Navi<br><small>한글 품명 → 무역영문 → HS코드 → FTA 관세율 원스톱 조회</small></div>
+    </div>
+    <div class="tagline">품명 입력 한 번으로<br>수입 전 관세 전략까지 한눈에</div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="status-badge checking" id="statusBadge"><span class="dot"></span><span id="statusBadgeText">관세청 실시간 연동 확인 중…</span></div>
+
+  <div class="stepper" id="stepper">
+    <div class="step-pill active" data-step="1"><span class="num">1</span>품명 변환</div>
+    <div class="step-pill" data-step="2"><span class="num">2</span>재질 선택</div>
+    <div class="step-pill" data-step="3"><span class="num">3</span>HS코드 확인</div>
+    <div class="step-pill" data-step="4"><span class="num">4</span>수입국·관세율</div>
+  </div>
+
+  <!-- STEP 1 -->
+  <section class="card step-panel" id="panel-1">
+    <h2>① 한글 품명을 입력하세요</h2>
+    <div class="desc">제품명을 한글로 입력하면 무역용 영문 품명으로 자동 변환하고, 어울리는 HS코드 후보를 찾아드립니다.</div>
+    <div class="input-row">
+      <input type="text" id="koInput" placeholder="예) 가죽 지갑, 티셔츠, 노트북, 인삼..." autocomplete="off">
+      <button class="btn" id="translateBtn">변환하기 →</button>
+    </div>
+    <div class="hint">Tip. 아래 예시를 눌러 바로 테스트해볼 수 있어요.</div>
+    <div class="example-chips" id="exampleChips"></div>
+
+    <div id="translateResultArea" class="hidden">
+      <div class="translate-box">
+        <div class="label">AI 추천 무역 영문 품명 (Trade English Name)</div>
+        <div class="value" id="tradeNamePreview">-</div>
+      </div>
+      <div class="candidate-list" id="candidateList"></div>
+    </div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="card step-panel hidden" id="panel-2">
+    <h2>② 재질(소재)을 선택하세요</h2>
+    <div class="desc"><span id="selectedItemLabel"></span>의 주요 재질을 선택하면 HS코드 세번(細番)과 영문 품명이 더 정확해집니다.</div>
+    <div class="material-grid" id="materialGrid"></div>
+    <div id="materialLiveResults"></div>
+    <div class="nav-buttons">
+      <button class="btn ghost" onclick="goStep(1)">← 이전</button>
+      <button class="btn" id="toStep3Btn" disabled>다음: HS코드 확인 →</button>
+    </div>
+  </section>
+
+  <!-- STEP 3 -->
+  <section class="card step-panel hidden" id="panel-3">
+    <h2>③ HS코드 확인</h2>
+    <div class="desc">입력하신 품명·재질을 기준으로 산출된 HS코드와 기본(WTO) 관세율입니다.</div>
+    <div class="hs-result">
+      <div class="hs-code-big" id="hsCodeBig">0000.00</div>
+      <div class="hs-meta">
+        <div class="title" id="hsEnName">-</div>
+        <div class="sub" id="hsKoInfo">-</div>
+      </div>
+      <div class="rate-badge">
+        <div class="num" id="mfnRateBadge">0%</div>
+        <div class="lab">기본(WTO) 관세율</div>
+      </div>
+    </div>
+    <div class="info-box" id="hsSensitiveNote" style="display:none;"></div>
+    <div id="hsSubcodeArea"></div>
+    <div id="hsRequirementArea"></div>
+    <div class="nav-buttons">
+      <button class="btn ghost" onclick="goStep(2)">← 이전</button>
+      <button class="btn" onclick="goStep(4)">다음: 수입국가 선택 →</button>
+    </div>
+  </section>
+
+  <!-- STEP 4 -->
+  <section class="card step-panel hidden" id="panel-4">
+    <h2>④ 수입국가(FTA 협정) 선택</h2>
+    <div class="desc">관세청 FTA포털 기준 25개 협정국/협정그룹 중 수출 대상국을 선택하세요.</div>
+    <div class="country-search">
+      <input type="text" id="countrySearch" placeholder="국가명 검색 (예: 미국, 베트남, EU...)">
+    </div>
+    <div class="country-grid" id="countryGrid"></div>
+    <div class="nav-buttons">
+      <button class="btn ghost" onclick="goStep(3)">← 이전</button>
+      <div></div>
+    </div>
+  </section>
+
+  <!-- RESULT -->
+  <section class="card hidden" id="panel-result">
+    <h2>📋 관세율 조회 결과</h2>
+    <div class="desc"><span id="resultSummaryLine">-</span></div>
+
+    <div class="result-grid">
+      <div class="rate-card mfn">
+        <div class="cap">C/O 미제출 · 일반(기본/WTO) 관세율</div>
+        <div class="big" id="resultMfnRate">0%</div>
+        <div class="note">원산지증명서(C/O) 없이 통관 시 적용되는 세율입니다.</div>
+      </div>
+      <div class="rate-card fta">
+        <div class="cap" id="ftaCap">C/O 제출 · FTA 협정 관세율</div>
+        <div class="big" id="resultFtaRate">0%</div>
+        <div class="note" id="ftaNote">원산지결정기준 충족 + 원산지증명서(C/O) 제출 시 적용 가능한 세율입니다.</div>
+      </div>
+    </div>
+
+    <div class="savings-banner" id="savingsBanner">
+      <div>💡 C/O 제출로 절감 가능한 관세율 <b id="savingsSub"></b></div>
+      <div class="amt" id="savingsAmt">0%p</div>
+    </div>
+
+    <div class="info-box" id="coTypeBox">
+      <h4>📄 원산지증명서(C/O) 발급 방식</h4>
+      <div id="coTypeContent"></div>
+    </div>
+
+    <div class="info-box">
+      <h4>ℹ️ 확인 및 유의사항</h4>
+      <ul>
+        <li>본 결과는 <b>샘플 데이터 기반 데모</b>이며 실제 협정 세율과 다를 수 있습니다.</li>
+        <li>정확한 HS코드와 협정관세율은 <a href="https://unipass.customs.go.kr" target="_blank">관세청 UniPass</a> 및 <a href="https://www.customs.go.kr/ftaportalkor/ad/ftaCnvn/txrtInfo.do" target="_blank">관세청 FTA포털</a>에서 재확인하세요.</li>
+        <li>협정별 원산지결정기준(PSR)을 충족해야 C/O 발급 및 협정세율 적용이 가능합니다.</li>
+        <li>세율은 매년 개정되므로 수출·수입 시점 기준 최신 고시를 확인해야 합니다.</li>
+      </ul>
+    </div>
+
+    <div class="nav-buttons">
+      <button class="btn ghost" onclick="goStep(4)">← 국가 다시 선택</button>
+      <button class="btn" onclick="resetAll()">🔄 처음부터 다시하기</button>
+    </div>
+  </section>
+
+  <footer>
+    TradeCode Navi Demo · 데이터 출처: 관세청 UniPass Open API / FTA포털 공개 정보 기반 샘플 데이터셋<br>
+    실제 서비스 전환 시 관세청 공식 HS코드 DB 및 FTA 관세율표 연동이 필요합니다.
+  </footer>
+
+  <!-- 댓글/답글: 로그인 없이 닉네임+비밀번호로 본인 확인하는 방명록형 댓글.
+       서버(server/lib/comments.js)의 JSON 파일 저장소에 저장되어 모든 방문자에게 공유된다. -->
+  <section class="card" id="commentSection">
+    <h2>💬 댓글 <span class="comment-heading-note">수정해야 할 부분이나 의견을 남겨주세요</span></h2>
+    <div class="desc">닉네임과 비밀번호(4자 이상)를 함께 입력하면, 나중에 같은 비밀번호로 본인 댓글을 수정·삭제할 수 있어요. (로그인 계정이 아니라 방명록 방식이라, 비밀번호는 다른 사람이 함부로 못 지우게 막는 용도일 뿐 실제 보안 인증은 아닙니다.)</div>
+
+    <form class="comment-form" id="commentForm">
+      <div class="comment-form-row">
+        <input type="text" id="commentAuthor" placeholder="닉네임" maxlength="20" autocomplete="off">
+        <input type="password" id="commentPassword" placeholder="비밀번호 (4자 이상)" maxlength="30" autocomplete="new-password">
+      </div>
+      <textarea id="commentContent" placeholder="댓글을 입력하세요 (최대 500자)" maxlength="500"></textarea>
+      <div class="comment-form-footer">
+        <span class="small-muted"><span id="commentCharCount">0</span>/500</span>
+        <button type="submit" class="btn sm" id="commentSubmitBtn">댓글 등록</button>
+      </div>
+      <div id="commentFormMsg"></div>
+    </form>
+
+    <div class="comment-list-wrap expanded" id="commentListWrap">
+      <div class="comment-list" id="commentList">
+        <div class="small-muted" id="commentEmptyMsg">댓글을 불러오는 중…</div>
+      </div>
+      <div class="comment-fade" id="commentFade"></div>
+    </div>
+    <button type="button" class="btn ghost sm" id="commentToggleBtn" style="display:none;" onclick="toggleCommentsExpanded()">전체보기 ▾</button>
+  </section>
+
+</div>
+
+    </div><!-- /feature-calculator -->
+
+    <div id="feature-rocketmargin" class="feature-view hidden">
+      <div class="wrap" style="padding-top:20px;">
+
+        <div style="margin-bottom:14px;">
+          <h1 style="font-size:22px;color:var(--navy-dark);margin:0 0 6px;">🚀 로켓배송 원가&amp;마진률 계산</h1>
+          <p style="color:var(--sub);font-size:13.5px;margin:0;">박스 규격·단가를 입력하면 개당 원가가 자동으로 계산되고, 쿠팡 마진 구간별 공급가·판매가를 바로 비교할 수 있어요.</p>
+        </div>
+
+        <div class="disclaimer-top" style="border-radius:10px;">⚠ 참고용 계산기입니다. 환율·해상운임 등은 그때그때 다르니 직접 확인한 값을 입력해주세요. 계산 결과는 반올림 방식에 따라 실제 스프레드시트와 ±1원 정도 차이가 날 수 있습니다.</div>
+
+        <section class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
+            <h2 style="margin:0;">① 원가 계산</h2>
+            <div style="display:flex;gap:8px;flex-shrink:0;">
+              <button type="button" class="rm-undo-btn" id="rmUndoBtn" onclick="restoreRmPrevQuote()" disabled title="새 견적 작성 이전 상태로 되돌립니다">↩ 이전</button>
+              <button type="button" class="rm-new-quote-btn" id="rmNewQuoteBtn" onclick="resetRmQuote()">+ 새 견적 작성</button>
+            </div>
+          </div>
+          <div class="desc">박스 1개에 몇 개가 들어가는지, 박스 규격은 얼마인지 입력하면 개당 원가까지 자동으로 계산됩니다.<br>박스 1개에 들어가는 수량을 모를 경우, 팩킹수량을 1로 기입하시고, 제품 사이즈를 기재하시면 됩니다.</div>
+
+          <div class="rm-row"><label>팩킹수량 (박스당 개수)</label><div class="rm-io"><input type="number" id="rmPackQty" value="200" min="0"><span class="rm-unit">개</span></div></div>
+          <div class="rm-row">
+            <label>박스 규격 (가로×세로×높이)</label>
+            <div class="rm-io rm-io-triple">
+              <input type="number" id="rmWidth" value="60" min="0"><span class="rm-io-x">×</span>
+              <input type="number" id="rmDepth" value="50" min="0"><span class="rm-io-x">×</span>
+              <input type="number" id="rmHeight" value="45" min="0"><span class="rm-unit">cm</span>
+            </div>
+          </div>
+          <div class="rm-row">
+            <label>SKU단가+중국 내 배송비 (위안)</label>
+            <div class="rm-io rm-io-dual">
+              <input type="number" id="rmUnitPriceCny" value="8.4" min="0" step="0.01"><span class="rm-unit">¥</span>
+              <span class="rm-io-x" style="font-size:12px;white-space:nowrap;">구매대행수수료</span>
+              <button type="button" class="rm-step-btn" onclick="adjustRmAgentFee(-1)" title="1%p 내리기">−</button>
+              <input type="number" id="rmAgentFeePct" value="0" min="0" step="0.1">
+              <button type="button" class="rm-step-btn" onclick="adjustRmAgentFee(1)" title="1%p 올리기">+</button>
+              <span class="rm-unit">%</span>
+            </div>
+          </div>
+          <div class="rm-row rm-input-highlight">
+            <label>환율 (실시간 참고 환율 + 10원)</label>
+            <div class="rm-io">
+              <button type="button" class="rm-step-btn" onclick="adjustRmFxRate(-1)" title="1원 내리기">−</button>
+              <input type="number" id="rmFxRate" value="220" min="0">
+              <button type="button" class="rm-step-btn" onclick="adjustRmFxRate(1)" title="1원 올리기">+</button>
+              <span class="rm-unit">원/¥</span>
+            </div>
+          </div>
+          <div class="rm-fx-status" id="rmFxStatus"></div>
+          <div class="rm-row rm-input-highlight">
+            <label>CBM당 해상운임 + 통관 제반비용 (1CBM 통관시 추가되는 비용 + 내륙 운송시의 비용)</label>
+            <div class="rm-freight-quick">
+              <button type="button" class="rm-quick-btn" onclick="addRmFreight(100000)">+10만</button>
+              <button type="button" class="rm-quick-btn" onclick="addRmFreight(50000)">+5만</button>
+              <button type="button" class="rm-quick-btn" onclick="addRmFreight(10000)">+1만</button>
+              <button type="button" class="rm-quick-btn" onclick="addRmFreight(1000)">+1천</button>
+            </div>
+            <div class="rm-io"><input type="number" id="rmFreightPerCbm" placeholder="예: 150000" min="0"><span class="rm-unit">원</span></div>
+          </div>
+          <div class="hint" style="margin:-6px 0 10px;">비용 산출이 어려울 경우, <b>물류비 계산기</b>에서 한번에 수입할 양을 기입하시고 나오는 금액에서 해당 CBM을 나눠서 1CBM 비용을 산출하고, 여기에 국내 물류비 + 쿠팡 입고 비용을 합하여 계산하세요.</div>
+
+          <div class="rm-divider"></div>
+
+          <div class="rm-row rm-output"><label>제품 CBM (1박스 기준)</label><div class="rm-io"><span class="rm-value" id="rmCbm">-</span><span class="rm-unit">CBM</span></div></div>
+          <div class="rm-row rm-output"><label>1 CBM 적재수</label><div class="rm-io"><span class="rm-value" id="rmUnitsPerCbm">-</span><span class="rm-unit">개</span></div></div>
+          <div class="rm-row rm-output"><label>1개당 제반비 (물류비)</label><div class="rm-io"><span class="rm-value" id="rmOverheadPerUnit">-</span><span class="rm-unit">원</span></div></div>
+          <div class="rm-row rm-output"><label>1개당 제품비 (구매대행 수수료 포함)</label><div class="rm-io"><span class="rm-value" id="rmProductCostPerUnit">-</span><span class="rm-unit">원</span></div></div>
+          <div class="rm-row rm-output rm-final"><label>개당비용 (원가)</label><div class="rm-io"><span class="rm-value" id="rmTotalCostPerUnit">-</span><span class="rm-unit">원</span></div></div>
+        </section>
+
+        <section class="card">
+          <h2>② 쿠팡 마진 구간 비교</h2>
+          <div class="desc">셀러가 붙이는 판매마진(원)을 입력하면 쿠팡공급가가 계산되고, 쿠팡 마진률(쿠팡판매가 대비 비율) 구간별로 쿠팡판매가·쿠팡마진을 한눈에 비교할 수 있어요. 마진률은 표 안에서 바로 수정할 수 있습니다.</div>
+
+          <div class="rm-row rm-input-highlight">
+            <label>판매마진 (셀러가 붙이는 마진)</label>
+            <div class="rm-io rm-io-dual">
+              <input type="number" id="rmSellerMarginPct" min="0" max="500" step="0.1"><span class="rm-unit">%</span>
+              <span class="rm-io-eq">=</span>
+              <input type="number" id="rmSellerMarginWon" value="1170" min="0"><span class="rm-unit">원</span>
+            </div>
+          </div>
+          <div class="hint" style="margin:-6px 0 10px;">마진률(개당비용=원가 대비 %)과 금액은 서로 연동됩니다 - 둘 중 하나를 수정하면 다른 하나도 자동으로 맞춰져요.</div>
+
+          <div class="rm-row rm-output"><label>부가세 (쿠팡공급가 ÷ 11)</label><div class="rm-io"><span class="rm-value" id="rmVat">-</span><span class="rm-unit">원</span></div></div>
+          <div class="rm-row rm-output"><label>실제마진 (판매마진 − 부가세)</label><div class="rm-io"><span class="rm-value" id="rmActualMargin">-</span><span class="rm-unit">원</span></div></div>
+
+          <div class="rm-row rm-output rm-final"><label>쿠팡공급가 (원가+판매마진)</label><div class="rm-io"><span class="rm-value" id="rmSupplyPrice">-</span><span class="rm-unit">원</span></div></div>
+
+          <div class="info-box" style="margin-top:14px;">
+            <h4>ℹ️ 판매마진률(%) 기준 안내</h4>
+            <div>판매마진률(%)은 <b>개당비용(원가) 대비 비율</b>로 계산합니다 (판매마진률 = 판매마진 ÷ 개당비용 × 100). 원래 스프레드시트의 "30%"가 정확히 어떤 공식이었는지는 확인하지 못해서, 이번엔 이렇게 직접 기준을 정해 추가했습니다 - 다른 기준(예: 쿠팡공급가 대비)이 맞다면 말씀해주세요.</div>
+          </div>
+
+          <div class="hint" style="margin:10px 0 6px;">쿠팡 마진률은 <b>쿠팡판매가(최종 판매가) 대비 비율</b>입니다 (쿠팡판매가 = 쿠팡공급가 ÷ (1 − 마진률), 쿠팡마진 = 쿠팡판매가 − 쿠팡공급가).</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+            <span style="font-size:12.5px;color:var(--sub);font-weight:700;">빠른 설정 (3개 구간을 한번에 이동):</span>
+            <button type="button" class="rm-margin-quick-btn" onclick="applyRmMarginPreset(50)">50%</button>
+            <button type="button" class="rm-margin-quick-btn" onclick="applyRmMarginPreset(45)">45%</button>
+            <button type="button" class="rm-margin-quick-btn" onclick="applyRmMarginPreset(40)">40%</button>
+            <button type="button" class="rm-margin-quick-btn" onclick="applyRmMarginPreset(35)">35%</button>
+            <button type="button" class="rm-margin-quick-btn" onclick="applyRmMarginPreset(30)">30%</button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="rm-margin-table" id="rmMarginTable">
+              <thead>
+                <tr>
+                  <th style="white-space:nowrap;">쿠팡 마진률<br><span style="font-weight:400;font-size:11px;">(쿠팡판매가 대비)</span></th>
+                  <th>쿠팡공급가</th>
+                  <th>쿠팡마진</th>
+                  <th>쿠팡판매가</th>
+                </tr>
+              </thead>
+              <tbody id="rmMarginTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <footer>
+          로켓배송 원가&amp;마진률 계산기 · 참고용 도구이며, 실제 물류비·환율·수수료는 반드시 직접 확인하세요.
+        </footer>
+
+      </div>
+    </div><!-- /feature-rocketmargin -->
+
+    <div id="feature-logistics" class="feature-view hidden">
+      <div class="wrap" style="padding-top:20px;">
+
+        <div style="margin-bottom:14px;">
+          <h1 style="font-size:22px;color:var(--navy-dark);margin:0 0 6px;">📦 물류비 계산기</h1>
+          <p style="color:var(--sub);font-size:13.5px;margin:0;">팩킹 정보와 신고금액·관세율을 입력하면 총 CBM과 예상 물류비(통관수수료·관세·부가세 포함)까지 한번에 계산됩니다.</p>
+        </div>
+
+        <div class="disclaimer-top" style="border-radius:10px;">⚠ 통관 후 한국 내륙 운송비용을 포함하여야 합니다. 택배 혹은 트럭킹 비용은 별도로 확인해서 더해주세요.</div>
+
+        <section class="card">
+          <h2>① 팩킹현황</h2>
+          <div class="desc">총 구매수량과 박스 규격을 입력하면 총 CBM이 자동으로 계산됩니다.</div>
+
+          <div class="rm-row"><label>총 구매수량</label><div class="rm-io"><input type="number" id="lgTotalQty" value="1000" min="0"><span class="rm-unit">개</span></div></div>
+          <div class="rm-row"><label>1박스 포장수량</label><div class="rm-io"><input type="number" id="lgBoxPackQty" value="100" min="0"><span class="rm-unit">개</span></div></div>
+          <div class="rm-row">
+            <label>1박스 사이즈 (가로×세로×높이)</label>
+            <div class="rm-io rm-io-triple">
+              <input type="number" id="lgWidth" value="60" min="0"><span class="rm-io-x">×</span>
+              <input type="number" id="lgDepth" value="50" min="0"><span class="rm-io-x">×</span>
+              <input type="number" id="lgHeight" value="45" min="0"><span class="rm-unit">cm</span>
+            </div>
+          </div>
+
+          <div class="rm-divider"></div>
+          <div class="rm-row rm-output rm-final"><label>총 CBM</label><div class="rm-io"><span class="rm-value" id="lgTotalCbm">-</span><span class="rm-unit">CBM</span></div></div>
+
+          <div class="rm-divider"></div>
+          <div class="rm-row"><label>신고금액 (구매금액)</label><div class="rm-io"><input type="number" id="lgDeclaredValue" placeholder="예: 15000000" min="0"><span class="rm-unit">원</span></div></div>
+          <div class="rm-row"><label>관세율</label><div class="rm-io"><input type="number" id="lgTariffRate" placeholder="예: 8" min="0" step="0.1"><span class="rm-unit">%</span></div></div>
+        </section>
+
+        <section class="card">
+          <h2>② 예상 물류비</h2>
+          <div class="desc">통관 관련 비용을 입력하면 해상운임(총CBM 기준 자동계산)·관세·부가세까지 자동으로 계산되어 합계가 나옵니다.</div>
+
+          <div class="rm-row rm-output"><label>해상운임 LCL (총CBM 기준 자동계산)</label><div class="rm-io"><span class="rm-value" id="lgFreightLcl">-</span><span class="rm-unit">원</span></div></div>
+          <div class="hint" style="margin:-6px 0 10px;">CBM 0.5 이하 90,000원 · 0.5 초과~1 이하 135,000원 · 1 초과 시 135,000원 + 1 초과분 0.1CBM당 11,500원 추가 (소수점 CBM은 0.1 단위로 올림 처리됩니다).</div>
+          <div class="rm-row"><label>통관수수료</label><div class="rm-io"><input type="number" id="lgCustomsFee" value="33000" min="0"><span class="rm-unit">원</span></div></div>
+          <div class="rm-row"><label>CO비용 (필요시)</label><div class="rm-io"><input type="number" id="lgCoFee" value="30000" min="0"><span class="rm-unit">원</span></div></div>
+          <div class="rm-row"><label>DO비용</label><div class="rm-io"><input type="number" id="lgDoFee" value="15000" min="0"><span class="rm-unit">원</span></div></div>
+
+          <div class="rm-divider"></div>
+          <div class="rm-row rm-output"><label>관세 (신고금액 × 관세율)</label><div class="rm-io"><span class="rm-value" id="lgDuty">-</span><span class="rm-unit">원</span></div></div>
+          <div class="rm-row rm-output"><label>부가세 ((신고금액+해상운임+관세) × 10%)</label><div class="rm-io"><span class="rm-value" id="lgVat">-</span><span class="rm-unit">원</span></div></div>
+          <div class="rm-row rm-output rm-final"><label>합계</label><div class="rm-io"><span class="rm-value" id="lgTotal">-</span><span class="rm-unit">원</span></div></div>
+          <div class="hint" style="color:var(--danger);margin-top:6px;">한국 내륙운송비 (트럭 혹은 택비)는 포함되지 않은 단가입니다.</div>
+        </section>
+
+        <section class="card">
+          <h2>③ 작업비용</h2>
+          <div class="desc">바코드 부착·OPP 포장·정밀 검수는 건당 50원이 적용됩니다. 작업수량을 입력하면 금액이 자동으로 계산됩니다.</div>
+
+          <table class="rm-margin-table" id="lgWorkCostTable">
+            <thead>
+              <tr><th>구분</th><th>작업수량</th><th>금액</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>바코드</td>
+                <td class="rm-editable"><input type="number" id="lgWorkQtyBarcode" min="0" value="0"></td>
+                <td id="lgWorkAmtBarcode">0원</td>
+              </tr>
+              <tr>
+                <td>OPP 포장</td>
+                <td class="rm-editable"><input type="number" id="lgWorkQtyOpp" min="0" value="0"></td>
+                <td id="lgWorkAmtOpp">0원</td>
+              </tr>
+              <tr>
+                <td>정밀 검수</td>
+                <td class="rm-editable"><input type="number" id="lgWorkQtyInspect" min="0" value="0"></td>
+                <td id="lgWorkAmtInspect">0원</td>
+              </tr>
+              <tr>
+                <td>기타 비용</td>
+                <td style="color:var(--sub);font-size:12px;">실비</td>
+                <td class="rm-editable"><input type="number" id="lgWorkAmtEtc" min="0" value="0"></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="rm-row rm-output rm-final" style="margin-top:10px;"><label>작업비용 합계</label><div class="rm-io"><span class="rm-value" id="lgWorkTotal">-</span><span class="rm-unit">원</span></div></div>
+          <div class="hint" style="color:var(--danger);margin-top:6px;">기타 비용은 박스 교체비용이나, 재봉작업, 대형 OPP등 재화나 인력이 추가되어야 하는 상황시 실비 청구됩니다.</div>
+        </section>
+
+        <footer>
+          물류비 계산기 · 참고용 도구이며, 실제 운임·통관수수료·관세율은 반드시 직접 확인하세요.
+        </footer>
+
+      </div>
+    </div><!-- /feature-logistics -->
+
+  </div><!-- /main-area -->
+</div><!-- /app-shell -->
+
+<script>
+/* =========================================================
+   1) MATERIALS
+========================================================= */
+const MATERIALS = [
+  {id:'cotton', ko:'면(코튼)', en:'Cotton', cat:'cotton'},
+  {id:'wool', ko:'울/양모', en:'Wool', cat:'wool'},
+  {id:'silk', ko:'실크/견', en:'Silk', cat:'silk'},
+  {id:'linen', ko:'린넨/마', en:'Linen', cat:'linen'},
+  {id:'polyester', ko:'폴리에스터', en:'Polyester', cat:'synthetic'},
+  {id:'nylon', ko:'나일론', en:'Nylon', cat:'synthetic'},
+  {id:'leather', ko:'천연가죽', en:'Genuine Leather', cat:'leather'},
+  {id:'pu_leather', ko:'인조가죽(PU)', en:'PU Synthetic Leather', cat:'synthetic_leather'},
+  {id:'plastic', ko:'플라스틱/합성수지', en:'Plastic', cat:'plastic'},
+  {id:'rubber', ko:'고무', en:'Rubber', cat:'rubber'},
+  {id:'metal_steel', ko:'스테인리스스틸', en:'Stainless Steel', cat:'metal'},
+  {id:'aluminum', ko:'알루미늄', en:'Aluminum', cat:'metal'},
+  {id:'wood', ko:'목재', en:'Wood', cat:'wood'},
+  {id:'glass', ko:'유리', en:'Glass', cat:'glass'},
+  {id:'ceramic', ko:'세라믹/도자기', en:'Ceramic', cat:'ceramic'},
+  {id:'paper', ko:'종이/판지', en:'Paper/Paperboard', cat:'paper'},
+  {id:'other', ko:'기타/혼합소재', en:'Other/Mixed Material', cat:'other'}
+];
+
+// HS 4202(트렁크/가방류)는 재질(가죽 vs 플라스틱·섬유 vs 기타)로 나뉘기 전에
+// 먼저 "품목 종류"(트렁크/여행가방 vs 핸드백 vs 지갑 등 호주머니 소지품 vs 백팩 등
+// 기타)로 나뉜다 - 국제 HS 6단위 표준(WCO 세번표 기준)으로 확인함. 종류별 접두
+// 코드만 다르고 재질 3분류(가죽/플라스틱·섬유/기타) 구조는 동일해서 이 함수로
+// 재사용한다.
+function bagFamilySuffixMap(leatherCode, textilePlasticCode, otherCode){
+  const leatherLabel = 'Of Leather or Composition Leather';
+  const textileLabel = 'Of Sheeting of Plastics or of Textile Materials';
+  const otherLabel = 'Of Other Materials (e.g. Vulcanised Fibre, Paperboard)';
+  return {
+    leather:{suffix:leatherCode, label:leatherLabel},
+    synthetic_leather:{suffix:leatherCode, label:leatherLabel},
+    cotton:{suffix:textilePlasticCode, label:textileLabel},
+    wool:{suffix:textilePlasticCode, label:textileLabel},
+    silk:{suffix:textilePlasticCode, label:textileLabel},
+    linen:{suffix:textilePlasticCode, label:textileLabel},
+    synthetic:{suffix:textilePlasticCode, label:textileLabel},
+    plastic:{suffix:textilePlasticCode, label:textileLabel},
+    default:{suffix:otherCode, label:otherLabel}
+  };
+}
+
+/* =========================================================
+   2) ITEMS  (group: apparel_knit / apparel_woven / textile_other /
+               leathergoods / footwear / headgear / general)
+   hs: base heading (4digit) for groups needing material refinement,
+       or full representative code for 'general' items.
+   chapterNo: 2-digit HS chapter (for agri-sensitivity logic)
+   mfn: representative basic(WTO) tariff rate (%)
+   genderOrTypeNote: 성별/유형 가정 등 분류상 남아있는 단순화를 사용자에게
+     알리기 위한 안내문 (있으면 결과 화면에 안내 박스로 표시됨)
+========================================================= */
+const ITEMS = [
+  // --- Ch01-24 food / agri ---
+  {id:'coffee', ko:['커피','원두커피','볶은커피'], en:'Roasted Coffee', group:'general', hs:'0901.21', chapterNo:9, mfn:2},
+  {id:'laver', ko:['김','건조김','조미김'], en:'Dried Laver (Seaweed)', group:'general', hs:'1212.21', chapterNo:12, mfn:0},
+  {id:'ramen', ko:['라면','즉석라면'], en:'Instant Noodles', group:'general', hs:'1902.30', chapterNo:19, mfn:8},
+  {id:'kimchi', ko:['김치','포장김치'], en:'Kimchi', group:'general', hs:'2005.99', chapterNo:20, mfn:27},
+  {id:'ginseng', ko:['인삼','홍삼','수삼'], en:'Red Ginseng', group:'general', hs:'1211.20', chapterNo:12, mfn:754, sensitive:true},
+  {id:'sesame_oil', ko:['참기름'], en:'Sesame Oil', group:'general', hs:'1515.50', chapterNo:15, mfn:630, sensitive:true},
+  {id:'soju', ko:['소주'], en:'Soju (Distilled Spirit)', group:'general', hs:'2208.90', chapterNo:22, mfn:20, sensitive:true},
+  {id:'makgeolli', ko:['막걸리','탁주'], en:'Makgeolli (Rice Wine)', group:'general', hs:'2206.00', chapterNo:22, mfn:30, sensitive:true},
+  {id:'greentea', ko:['녹차','티백'], en:'Green Tea', group:'general', hs:'0902.10', chapterNo:9, mfn:40, sensitive:true},
+  {id:'citrontea', ko:['유자차'], en:'Citron Tea Preparation', group:'general', hs:'2106.90', chapterNo:21, mfn:8},
+  {id:'snack', ko:['과자','스낵','간식'], en:'Confectionery / Snacks', group:'general', hs:'1905.90', chapterNo:19, mfn:8},
+  {id:'beverage', ko:['음료수','음료','주스'], en:'Non-Alcoholic Beverage', group:'general', hs:'2202.99', chapterNo:22, mfn:8},
+  {id:'dumpling', ko:['냉동만두','만두'], en:'Frozen Dumplings', group:'general', hs:'1902.20', chapterNo:19, mfn:8},
+  {id:'gochujang', ko:['고추장'], en:'Gochujang (Fermented Chili Paste)', group:'general', hs:'2103.90', chapterNo:21, mfn:30, sensitive:true},
+  {id:'doenjang', ko:['된장'], en:'Doenjang (Fermented Soybean Paste)', group:'general', hs:'2103.90', chapterNo:21, mfn:30, sensitive:true},
+  {id:'cigarette', ko:['담배','궐련'], en:'Cigarettes', group:'general', hs:'2402.20', chapterNo:24, mfn:40, sensitive:true},
+  {id:'feed', ko:['사료','동물사료'], en:'Animal Feed', group:'general', hs:'2309.90', chapterNo:23, mfn:5},
+
+  // --- Ch25-27 minerals/fuel ---
+  {id:'cement', ko:['시멘트'], en:'Cement', group:'general', hs:'2523.29', chapterNo:25, mfn:0},
+  {id:'marble', ko:['대리석'], en:'Marble', group:'general', hs:'2515.11', chapterNo:25, mfn:0},
+  {id:'coal', ko:['석탄'], en:'Coal', group:'general', hs:'2701.12', chapterNo:27, mfn:0},
+
+  // --- Ch28-38 chemicals ---
+  {id:'cosmetic', ko:['화장품','스킨케어','로션'], en:'Cosmetics (Skincare)', group:'general', hs:'3304.99', chapterNo:33, mfn:6.5},
+  {id:'shampoo', ko:['샴푸'], en:'Shampoo', group:'general', hs:'3305.10', chapterNo:33, mfn:6.5},
+  {id:'detergent', ko:['세제','세탁세제'], en:'Laundry Detergent', group:'general', hs:'3402.20', chapterNo:34, mfn:6.5},
+  {id:'soap', ko:['비누'], en:'Soap', group:'general', hs:'3401.19', chapterNo:34, mfn:6.5},
+  {id:'paint', ko:['페인트','도료'], en:'Paint', group:'general', hs:'3209.10', chapterNo:32, mfn:6.5},
+  {id:'perfume', ko:['향수'], en:'Perfume', group:'general', hs:'3303.00', chapterNo:33, mfn:6.5},
+  {id:'toothpaste', ko:['치약'], en:'Toothpaste', group:'general', hs:'3306.10', chapterNo:33, mfn:6.5},
+  {id:'fertilizer', ko:['비료'], en:'Fertilizer', group:'general', hs:'3102.10', chapterNo:31, mfn:0},
+
+  // --- Ch39-40 plastics/rubber ---
+  {id:'plasticbox', ko:['플라스틱용기','밀폐용기','반찬통'], en:'Plastic Containers', group:'general', hs:'3923.10', chapterNo:39, mfn:6.5},
+  {id:'plasticbag', ko:['비닐봉투','비닐봉지'], en:'Plastic Bags', group:'general', hs:'3923.21', chapterNo:39, mfn:6.5},
+  {id:'tire', ko:['타이어'], en:'Tires', group:'general', hs:'4011.10', chapterNo:40, mfn:8},
+  {id:'rubbergloves', ko:['고무장갑'], en:'Rubber Gloves', group:'general', hs:'4015.19', chapterNo:40, mfn:8},
+  {id:'phonecase', ko:['휴대폰케이스','폰케이스'], en:'Phone Case', group:'general', hs:'3926.90', chapterNo:39, mfn:6.5},
+  // [수정] "플라스틱 홀더/거치대"는 이전에 매칭되는 ITEMS 항목이 없어 재질(플라스틱)
+  // 기반 GENERIC_MATERIAL_HS 폴백(3926.90) 또는 아래 기본 분기(to10)로 빠지면서
+  // 뒤 4자리가 "-0000" placeholder로 나오고, 이 코드로는 UniPass/FTA포털에 실제
+  // 등록된 세율 자료가 없어 "자료 준비중"으로 표시되다가 결국 0%로 나오는 문제가
+  // 있었다. 사용자가 실제 관세청에서 확인한 정확한 세번(3926.90-9000, "기타 플라스틱
+  // 제품")과 한-중 FTA 협정세율(C/O 제출시 1.3%)을 fixedHs10/FTA_RATE_OVERRIDES로
+  // 반영한다.
+  {id:'plasticholder', ko:['플라스틱 홀더','홀더','거치대','플라스틱 거치대','스탠드 홀더','휴대폰 거치대'], en:'Plastic Holder / Stand', group:'general', hs:'3926.90', chapterNo:39, mfn:6.5,
+    fixedHs10:'3926.90-9000', fixedHs10Desc:'Other articles of plastics, n.e.s. (HS 3926.90-9000, 기타 플라스틱제품) - 사용자가 실제 확인한 10단위 부호'},
+
+  // --- Ch41-43 leather goods (material-dependent) ---
+  // [수정] HS 4202는 트렁크/여행가방(.11~.19) · 핸드백(.21~.29) · 지갑 등
+  // 호주머니 소지품(.31~.39) · 백팩 등 기타(.91~.99)로 "품목 종류"에 따라 먼저
+  // 나뉘고, 그 다음에야 재질(가죽/플라스틱·섬유/기타)로 세분화된다는 걸 국제
+  // HS 6단위 표준 자료로 확인했다. bagFamilySuffixMap()으로 품목별 접두코드만
+  // 다르게 주고 재질 3분류 구조는 그대로 재사용한다.
+  {id:'bag', ko:['가방','핸드백','백'], en:'Bag / Handbag', group:'leathergoods', hs:'4202', chapterNo:42, mfn:8,
+    customSuffixMap: bagFamilySuffixMap('.21','.22','.29'),
+    genderOrTypeNote:'"가방"은 핸드백(HS 4202.2x) 기준으로 표시했습니다. 트렁크·여행가방형 소지품이면 4202.1x가 맞을 수 있어요.'},
+  {id:'wallet', ko:['지갑'], en:'Wallet', group:'leathergoods', hs:'4202', chapterNo:42, mfn:8,
+    customSuffixMap: bagFamilySuffixMap('.31','.32','.39')},
+  {id:'belt', ko:['벨트','허리띠'], en:'Belt', group:'leathergoods', hs:'4203', chapterNo:42, mfn:8,
+    customSuffixMap:{ default:{suffix:'.30', label:'Belts and Bandoliers, of Leather or Composition Leather'} },
+    genderOrTypeNote:'HS 4203류 자체가 "가죽으로 만든" 벨트 기준이라 재질 선택과 무관하게 4203.30으로 표시했습니다. 직물·플라스틱 벨트는 실제로는 다른 류(예: 6217)로 분류될 수 있어요.'},
+  {id:'suitcase', ko:['여행가방','캐리어','트렁크'], en:'Suitcase / Trolley Case', group:'leathergoods', hs:'4202', chapterNo:42, mfn:8,
+    customSuffixMap: bagFamilySuffixMap('.11','.12','.19')},
+  {id:'briefcase', ko:['서류가방'], en:'Briefcase', group:'leathergoods', hs:'4202', chapterNo:42, mfn:8,
+    customSuffixMap: bagFamilySuffixMap('.11','.12','.19')},
+  {id:'backpack', ko:['백팩','책가방'], en:'Backpack', group:'leathergoods', hs:'4202', chapterNo:42, mfn:8,
+    customSuffixMap: bagFamilySuffixMap('.91','.92','.99')},
+
+  // --- Ch44-49 wood/paper ---
+  {id:'plywood', ko:['합판'], en:'Plywood', group:'general', hs:'4412.10', chapterNo:44, mfn:8},
+  {id:'chopstick', ko:['나무젓가락'], en:'Wooden Chopsticks', group:'general', hs:'4419.90', chapterNo:44, mfn:0},
+  {id:'cork', ko:['코르크마개'], en:'Cork Stopper', group:'general', hs:'4503.10', chapterNo:45, mfn:0},
+  {id:'papercup', ko:['종이컵'], en:'Paper Cup', group:'general', hs:'4823.90', chapterNo:48, mfn:0},
+  {id:'box', ko:['골판지상자','박스'], en:'Corrugated Box', group:'general', hs:'4819.10', chapterNo:48, mfn:0},
+  {id:'notebookpaper', ko:['공책','노트'], en:'Notebook (Paper)', group:'general', hs:'4820.10', chapterNo:48, mfn:0},
+  {id:'wallpaper', ko:['벽지'], en:'Wallpaper', group:'general', hs:'4814.10', chapterNo:48, mfn:0},
+  {id:'book', ko:['책','도서'], en:'Printed Books', group:'general', hs:'4901.99', chapterNo:49, mfn:0},
+  {id:'calendar', ko:['달력','캘린더','탁상달력','벽걸이달력'], en:'Calendars', group:'general', hs:'4910.00', chapterNo:49, mfn:0},
+  {id:'petitem', ko:['펫토이','반려동물장난감','강아지장난감','고양이장난감','애완동물완구'], en:'Pet Toy', group:'general', hs:'9503.00', chapterNo:95, mfn:0},
+
+  // --- Ch50-63 textiles/apparel (material-dependent) ---
+  // customSuffixMap이 있는 품목(티셔츠/스웨터·후디/양말)은 실제 FTA포털 데이터로
+  // 재질별 6단위 소호를 개별 검증한 것이고, 없는 품목은 unverifiedMaterialSplit:true로
+  // 표시해 재질별 세분류를 추정하지 않고 4단위 호까지만 보여준다 (아래 정확도 주석 참고).
+  {id:'tshirt', ko:['티셔츠','티'], en:'T-Shirts, Knitted', group:'apparel_knit', hs:'6109', chapterNo:61, mfn:13,
+    customSuffixMap:{ cotton:{suffix:'.10', label:'Of Cotton'}, default:{suffix:'.90', label:'Of Other Textile Materials (incl. Synthetic, Wool)'} }},
+  {id:'shirt', ko:['셔츠','와이셔츠'], en:'Shirts, Woven', group:'apparel_woven', hs:'6205', chapterNo:62, mfn:13,
+    customSuffixMap:{ wool:{suffix:'.10', label:'Of Wool or Fine Animal Hair'}, cotton:{suffix:'.20', label:'Of Cotton'}, synthetic:{suffix:'.30', label:'Of Man-made Fibers'}, default:{suffix:'.90', label:'Of Other Textile Materials'} }},
+  // [수정] 6203은 정장/앙상블(.1x~.2x) · 재킷·블레이저(.3x) · 바지·멜빵바지·반바지(.4x)로
+  // 먼저 나뉘고 그 다음 재질로 세분화된다 - 청바지와 재킷은 같은 4단위 호(6203)를
+  // 쓰지만 실제로는 서로 다른 5번째 자리(.3x vs .4x)를 쓴다는 걸 국제 HS 6단위
+  // 표준 자료로 확인해서 각각 다르게 반영했다.
+  {id:'jeans', ko:['청바지','데님바지'], en:'Jeans / Denim Trousers', group:'apparel_woven', hs:'6203', chapterNo:62, mfn:13,
+    customSuffixMap:{ wool:{suffix:'.41', label:'Trousers, Of Wool or Fine Animal Hair'}, cotton:{suffix:'.42', label:'Trousers, Of Cotton'}, synthetic:{suffix:'.43', label:'Trousers, Of Synthetic Fibers'}, default:{suffix:'.49', label:'Trousers, Of Other Textile Materials'} }},
+  {id:'dress', ko:['원피스','드레스'], en:'Dress', group:'apparel_woven', hs:'6204', chapterNo:62, mfn:13,
+    customSuffixMap:{ wool:{suffix:'.41', label:'Dresses, Of Wool or Fine Animal Hair'}, cotton:{suffix:'.42', label:'Dresses, Of Cotton'}, synthetic:{suffix:'.43', label:'Dresses, Of Synthetic Fibers'}, default:{suffix:'.49', label:'Dresses, Of Other Textile Materials'} },
+    genderOrTypeNote:'HS 6204는 여성·여아용 기준입니다. 남성용이면 다른 류가 적용됩니다.'},
+  {id:'jacket', ko:['자켓','재킷'], en:'Jacket', group:'apparel_woven', hs:'6203', chapterNo:62, mfn:13,
+    customSuffixMap:{ wool:{suffix:'.31', label:'Suit-type Jackets/Blazers, Of Wool or Fine Animal Hair'}, cotton:{suffix:'.32', label:'Suit-type Jackets/Blazers, Of Cotton'}, synthetic:{suffix:'.33', label:'Suit-type Jackets/Blazers, Of Synthetic Fibers'}, default:{suffix:'.39', label:'Suit-type Jackets/Blazers, Of Other Textile Materials'} }},
+  {id:'coat', ko:['코트','외투'], en:'Coat', group:'apparel_woven', hs:'6202', chapterNo:62, mfn:13,
+    customSuffixMap:{ wool:{suffix:'.11', label:'Of Wool or Fine Animal Hair'}, cotton:{suffix:'.12', label:'Of Cotton'}, synthetic:{suffix:'.13', label:'Of Man-made Fibers'}, default:{suffix:'.19', label:'Of Other Textile Materials'} },
+    genderOrTypeNote:'HS 6202는 여성·여아용 기준입니다. 남성용 코트는 6201류가 적용됩니다.'},
+  {id:'sweater', ko:['스웨터','니트','니트웨어'], en:'Sweater / Knitwear', group:'apparel_knit', hs:'6110', chapterNo:61, mfn:13,
+    customSuffixMap:{ wool:{suffix:'.11', label:'Of Wool or Fine Animal Hair'}, cotton:{suffix:'.20', label:'Of Cotton'}, synthetic:{suffix:'.30', label:'Of Man-made Fibers'}, default:{suffix:'.90', label:'Of Other Textile Materials'} }},
+  {id:'hoodie', ko:['후드티','후디'], en:'Hooded Sweatshirt', group:'apparel_knit', hs:'6110', chapterNo:61, mfn:13,
+    customSuffixMap:{ wool:{suffix:'.11', label:'Of Wool or Fine Animal Hair'}, cotton:{suffix:'.20', label:'Of Cotton'}, synthetic:{suffix:'.30', label:'Of Man-made Fibers'}, default:{suffix:'.90', label:'Of Other Textile Materials'} }},
+  // [수정] 이전 hs값 '6109'는 티셔츠 류였다 - 완전히 잘못된 기준류였음. 속옷(팬티류)은
+  // 실제로 6108(여성·여아용 knitted 속옷/잠옷류)의 브리프·팬티(.2x) 그룹이 맞다.
+  {id:'underwear', ko:['속옷','팬티'], en:'Underwear', group:'apparel_knit', hs:'6108', chapterNo:61, mfn:13,
+    customSuffixMap:{ cotton:{suffix:'.21', label:'Briefs and Panties, Of Cotton'}, synthetic:{suffix:'.22', label:'Briefs and Panties, Of Man-made Fibers'}, default:{suffix:'.29', label:'Briefs and Panties, Of Other Textile Materials'} },
+    genderOrTypeNote:'HS 6108은 여성·여아용 기준입니다. 남성용 속옷은 6107류가 적용됩니다.'},
+  // [추가] 원래 '브라'/'브래지어' 항목이 ITEMS에 아예 없어서, 검색이 실패하고
+  // "재질만 선택해서 진행하기" 폴백(GENERIC_MATERIAL_HS)으로 빠져 HS 6307.90(기타
+  // 섬유제품)이라는 완전히 엉뚱한 코드로 표시되던 문제를 사용자가 직접 발견했다.
+  // 브래지어의 정확한 HS는 6212(브래지어·거들·코르셋 등 - 편직/직물 여부와 무관하게
+  // 이 호 하나로 분류됨, HS 해설서 기준)이고, 사용자가 실제 확인한 10단위 코드는
+  // 6212.10-1000이며 재질별로 갈리지 않는 단일 코드다 - 그래서 customSuffixMap 대신
+  // fixedHs10으로 재질 선택과 무관하게 이 코드를 그대로 쓰도록 지정한다.
+  {id:'bra', ko:['브라','브래지어','브라탑'], en:'Brassiere / Bra', group:'apparel_woven', hs:'6212', chapterNo:62, mfn:13,
+    fixedHs10:'6212.10-1000', fixedHs10Desc:'Brassieres (HS 6212.10) - 사용자가 실제 확인한 10단위 부호, 재질 무관',
+    genderOrTypeNote:'HS 6212(브래지어·거들·코르셋류)는 편직/직물 여부나 소재와 무관하게 이 호 하나로 분류됩니다.'},
+  {id:'socks', ko:['양말'], en:'Socks', group:'apparel_knit', hs:'6115', chapterNo:61, mfn:13,
+    // [수정] 이전엔 다른 apparel_knit 품목과 똑같은 공식(화학섬유=.30)을 썼는데, 실제
+    // FTA포털에서 6115.30은 "여성용 스타킹/팬티스타킹류(단사 67데시텍스 미만)"라는
+    // 전혀 다른 품목이었다(사용자가 직접 확인). 일반 양말은 실제로 .94(모)/.95(면)/
+    // .96(화학섬유)/.99(기타)의 "Other" 그룹에 속한다.
+    customSuffixMap:{ wool:{suffix:'.94', label:'Of Wool or Fine Animal Hair (Other than Hosiery of 6115.10-6115.30)'}, cotton:{suffix:'.95', label:'Of Cotton (Other than Hosiery of 6115.10-6115.30)'}, synthetic:{suffix:'.96', label:'Of Synthetic Fibres (Other than Hosiery of 6115.10-6115.30)'}, default:{suffix:'.99', label:'Of Other Textile Materials'} }},
+  {id:'gloves_fab', ko:['장갑','섬유장갑'], en:'Gloves (Textile)', group:'apparel_knit', hs:'6116', chapterNo:61, mfn:13,
+    customSuffixMap:{ wool:{suffix:'.91', label:'Of Wool or Fine Animal Hair'}, cotton:{suffix:'.92', label:'Of Cotton'}, synthetic:{suffix:'.93', label:'Of Synthetic Fibers'}, default:{suffix:'.99', label:'Of Other Textile Materials'} }},
+  {id:'pajamas', ko:['잠옷','파자마','나이트가운','수면잠옷','잠옷세트'], en:'Pyjamas / Nightwear', group:'apparel_knit', hs:'6108', chapterNo:61, mfn:13,
+    customSuffixMap:{ cotton:{suffix:'.31', label:'Nightdresses and Pyjamas, Of Cotton'}, synthetic:{suffix:'.32', label:'Nightdresses and Pyjamas, Of Man-made Fibers'}, default:{suffix:'.39', label:'Nightdresses and Pyjamas, Of Other Textile Materials'} },
+    genderOrTypeNote:'HS 6108은 여성·여아용 기준입니다. 남성용 잠옷은 6107류가 적용됩니다.'},
+  {id:'bathrobe', ko:['가운','목욕가운','드레싱가운','실내복','홈웨어가운'], en:'Bathrobe / Dressing Gown', group:'apparel_knit', hs:'6108', chapterNo:61, mfn:13,
+    customSuffixMap:{ cotton:{suffix:'.91', label:'Other Garments (incl. Bathrobes/Dressing Gowns), Of Cotton'}, synthetic:{suffix:'.92', label:'Other Garments (incl. Bathrobes/Dressing Gowns), Of Man-made Fibers'}, default:{suffix:'.99', label:'Other Garments (incl. Bathrobes/Dressing Gowns), Of Other Textile Materials'} },
+    genderOrTypeNote:'HS 6108은 여성·여아용 기준입니다. 남성용 가운은 6107류가 적용됩니다.'},
+  {id:'loungewear', ko:['홈웨어','라운지웨어','편안한옷'], en:'Loungewear', group:'apparel_knit', hs:'6108', chapterNo:61, mfn:13,
+    // 라운지웨어는 공식 세번 품명에 따로 없어 "기타 의류"(가운/드레싱가운과 같은 .9x) 그룹으로 대체
+    customSuffixMap:{ cotton:{suffix:'.91', label:'Other Garments, Of Cotton'}, synthetic:{suffix:'.92', label:'Other Garments, Of Man-made Fibers'}, default:{suffix:'.99', label:'Other Garments, Of Other Textile Materials'} },
+    genderOrTypeNote:'라운지웨어는 공식 HS 품명에 따로 없어 "기타 의류"(6108.9x) 그룹으로 대체 표시했습니다. 실제 제품 특성에 따라 다른 류가 적용될 수 있습니다.'},
+  {id:'nightdress', ko:['잠옷원피스','네글리제','나이트드레스'], en:'Nightdress / Negligee', group:'apparel_knit', hs:'6108', chapterNo:61, mfn:13,
+    customSuffixMap:{ cotton:{suffix:'.31', label:'Nightdresses and Pyjamas, Of Cotton'}, synthetic:{suffix:'.32', label:'Nightdresses and Pyjamas, Of Man-made Fibers'}, default:{suffix:'.39', label:'Nightdresses and Pyjamas, Of Other Textile Materials'} },
+    genderOrTypeNote:'HS 6108은 여성·여아용 기준입니다.'},
+  {id:'necktie', ko:['넥타이'], en:'Necktie', group:'textile_other', hs:'6215', chapterNo:62, mfn:13,
+    customSuffixMap:{ silk:{suffix:'.10', label:'Of Silk or Silk Waste'}, synthetic:{suffix:'.20', label:'Of Man-made Fibers'}, default:{suffix:'.90', label:'Of Other Textile Materials (incl. Cotton, Wool)'} }},
+  {id:'scarf', ko:['스카프','머플러'], en:'Scarf', group:'textile_other', hs:'6214', chapterNo:62, mfn:13,
+    customSuffixMap:{ silk:{suffix:'.10', label:'Of Silk or Silk Waste'}, wool:{suffix:'.20', label:'Of Wool or Fine Animal Hair'}, synthetic:{suffix:'.30', label:'Of Synthetic Fibers'}, default:{suffix:'.90', label:'Of Other Textile Materials'} }},
+  {id:'towel', ko:['수건','타올'], en:'Towel', group:'textile_other', hs:'6302', chapterNo:63, mfn:13,
+    // 수건은 거의 대부분 "테리(고리형) 직물"로 만들어지므로, 재질 선택과 무관하게
+    // 면 테리(6302.60) 고정값으로 대표한다.
+    customSuffixMap:{ default:{suffix:'.60', label:'Toilet/Kitchen Linen, of Terry Towelling, Of Cotton'} },
+    genderOrTypeNote:'수건은 대부분 면 테리(고리형) 직물로 분류되어 재질 선택과 무관하게 6302.60으로 표시했습니다. 합성섬유 등 다른 재질이면 세번이 다를 수 있습니다.'},
+  {id:'bedding', ko:['이불','침구','이불커버'], en:'Bedding / Duvet Cover', group:'textile_other', hs:'6302', chapterNo:63, mfn:13,
+    customSuffixMap:{ cotton:{suffix:'.31', label:'Other Bed Linen (Not Printed), Of Cotton'}, synthetic:{suffix:'.32', label:'Other Bed Linen (Not Printed), Of Man-made Fibers'}, default:{suffix:'.39', label:'Other Bed Linen (Not Printed), Of Other Textile Materials'} },
+    genderOrTypeNote:'무늬 인쇄(프린트) 제품은 6302.2x류가 적용될 수 있어, 민무늬 제품 기준(6302.3x)으로 표시했습니다.'},
+  {id:'curtain', ko:['커튼'], en:'Curtain', group:'textile_other', hs:'6303', chapterNo:63, mfn:13,
+    customSuffixMap:{ cotton:{suffix:'.91', label:'Not Knitted, Of Cotton'}, synthetic:{suffix:'.92', label:'Not Knitted, Of Synthetic Fibers'}, default:{suffix:'.99', label:'Not Knitted, Of Other Textile Materials'} },
+    genderOrTypeNote:'뜨개(니트)형 커튼이면 6303.1x류가 적용될 수 있어, 직물(비니트) 제품 기준(6303.9x)으로 표시했습니다.'},
+  {id:'carpet', ko:['카펫','러그'], en:'Carpet / Rug', group:'textile_other', hs:'5703', chapterNo:57, mfn:8,
+    customSuffixMap:{ wool:{suffix:'.10', label:'Of Wool or Fine Animal Hair'}, synthetic:{suffix:'.20', label:'Of Nylon or Other Polyamides'}, default:{suffix:'.90', label:'Of Other Textile Materials'} },
+    genderOrTypeNote:'합성섬유는 나일론 계열(5703.20) 기준으로 표시했습니다. 폴리프로필렌 등 다른 인조섬유는 5703.30이 적용될 수 있습니다.'},
+  {id:'mask', ko:['마스크','섬유마스크'], en:'Face Mask (Textile)', group:'textile_other', hs:'6307', chapterNo:63, mfn:10,
+    customSuffixMap:{ default:{suffix:'.90', label:'Other Made Up Articles (incl. Textile Face Masks)'} }},
+  {id:'tent', ko:['텐트'], en:'Tent', group:'textile_other', hs:'6306', chapterNo:63, mfn:8,
+    customSuffixMap:{ synthetic:{suffix:'.22', label:'Of Synthetic Fibers'}, default:{suffix:'.29', label:'Of Other Textile Materials (incl. Cotton Canvas)'} }},
+
+  // --- Ch64-67 footwear/headgear ---
+  {id:'shoes', ko:['신발','구두'], en:'Shoes', group:'footwear', hs:'64', chapterNo:64, mfn:13},
+  {id:'sneakers', ko:['운동화','스니커즈'], en:'Sneakers', group:'footwear', hs:'64', chapterNo:64, mfn:13},
+  {id:'boots', ko:['부츠'], en:'Boots', group:'footwear', hs:'64', chapterNo:64, mfn:13},
+  {id:'slippers', ko:['슬리퍼'], en:'Slippers', group:'footwear', hs:'64', chapterNo:64, mfn:13},
+  {id:'hat', ko:['모자','캡'], en:'Hat / Cap', group:'headgear', hs:'6505.00', chapterNo:65, mfn:8},
+  {id:'umbrella', ko:['우산'], en:'Umbrella', group:'general', hs:'6601.91', chapterNo:66, mfn:8},
+
+  // --- Ch68-70 stone/ceramic/glass ---
+  {id:'tableware', ko:['도자기그릇','밥그릇','접시'], en:'Ceramic Tableware', group:'general', hs:'6912.00', chapterNo:69, mfn:8},
+  {id:'glasscup', ko:['유리컵','컵'], en:'Glass Cup', group:'general', hs:'7013.37', chapterNo:70, mfn:8},
+  {id:'tile', ko:['타일'], en:'Ceramic Tile', group:'general', hs:'6907.21', chapterNo:69, mfn:8},
+  {id:'flowerpot', ko:['화분'], en:'Ceramic Flowerpot', group:'general', hs:'6914.00', chapterNo:69, mfn:8},
+
+  // --- Ch71 jewelry ---
+  {id:'necklace', ko:['목걸이'], en:'Necklace (Precious Metal)', group:'general', hs:'7113.19', chapterNo:71, mfn:5},
+  {id:'ring', ko:['반지','커플링','웨딩링','결혼반지'], en:'Ring (Precious Metal Jewelry)', group:'general', hs:'7113.19', chapterNo:71, mfn:5},
+  {id:'earring', ko:['귀걸이','이어링'], en:'Earring (Precious Metal)', group:'general', hs:'7113.19', chapterNo:71, mfn:5},
+  {id:'bracelet', ko:['팔찌'], en:'Bracelet (Precious Metal)', group:'general', hs:'7113.19', chapterNo:71, mfn:5},
+  {id:'accessory', ko:['액세서리','인조보석'], en:'Costume Jewelry', group:'general', hs:'7117.11', chapterNo:71, mfn:8},
+  {id:'fashionring', ko:['패션반지','인조반지'], en:'Ring (Costume Jewelry)', group:'general', hs:'7117.19', chapterNo:71, mfn:8},
+
+  // --- Ch72-83 metals ---
+  {id:'steelplate', ko:['철강판','철판'], en:'Steel Plate', group:'general', hs:'7208.37', chapterNo:72, mfn:0},
+  {id:'aluplate', ko:['알루미늄판'], en:'Aluminum Sheet', group:'general', hs:'7606.12', chapterNo:76, mfn:8},
+  {id:'bolt', ko:['볼트','너트','나사'], en:'Bolts and Nuts', group:'general', hs:'7318.15', chapterNo:73, mfn:8},
+  {id:'tumbler', ko:['텀블러','스텐컵'], en:'Stainless Steel Tumbler', group:'general', hs:'7323.93', chapterNo:73, mfn:8},
+  {id:'pan', ko:['냄비','프라이팬'], en:'Pots and Pans', group:'general', hs:'7321.93', chapterNo:73, mfn:8},
+  {id:'padlock', ko:['자물쇠'], en:'Padlock', group:'general', hs:'8301.40', chapterNo:83, mfn:8},
+
+  // --- 기계요소/기계부품 (범용, 재질·용도에 따라 실제 세번은 달라질 수 있음) ---
+  {id:'machinepart_general', ko:['기계부품','기계 부품','부품','기계류부품'], en:'Machine Parts (General, N.E.S.)', group:'general', hs:'8487.90', chapterNo:84, mfn:8},
+  {id:'bearing', ko:['베어링','볼베어링','롤러베어링'], en:'Ball or Roller Bearing', group:'general', hs:'8482.10', chapterNo:84, mfn:8},
+  {id:'gear', ko:['기어','톱니바퀴','기어박스'], en:'Gears and Gearing', group:'general', hs:'8483.40', chapterNo:84, mfn:8},
+  {id:'valve', ko:['밸브','제어밸브','볼밸브'], en:'Industrial Valve', group:'general', hs:'8481.80', chapterNo:84, mfn:8},
+  {id:'pump', ko:['펌프','수중펌프'], en:'Pump', group:'general', hs:'8413.70', chapterNo:84, mfn:8},
+  {id:'motor', ko:['모터','전동기'], en:'Electric Motor', group:'general', hs:'8501.10', chapterNo:85, mfn:8},
+  {id:'spring', ko:['스프링','용수철'], en:'Spring (Iron or Steel)', group:'general', hs:'7320.90', chapterNo:73, mfn:8},
+  {id:'gasket', ko:['개스킷','오링','패킹'], en:'Gasket / Sealing Ring', group:'general', hs:'8484.10', chapterNo:84, mfn:8},
+  {id:'filter_industrial', ko:['필터','산업용필터','여과기'], en:'Filter (Industrial)', group:'general', hs:'8421.99', chapterNo:84, mfn:8},
+  {id:'hose', ko:['호스','고무호스'], en:'Rubber Hose', group:'general', hs:'4009.12', chapterNo:40, mfn:8},
+  {id:'chain_industrial', ko:['체인','산업용체인','컨베이어체인'], en:'Chain (Iron or Steel)', group:'general', hs:'7315.82', chapterNo:73, mfn:8},
+  {id:'bracket', ko:['브라켓','브래킷','고정쇠'], en:'Mounting Bracket', group:'general', hs:'7326.90', chapterNo:73, mfn:8},
+
+  // --- Ch84-85 machinery/electronics ---
+  {id:'laptop', ko:['노트북','랩탑'], en:'Laptop Computer', group:'general', hs:'8471.30', chapterNo:84, mfn:0},
+  {id:'smartphone', ko:['스마트폰','핸드폰','휴대폰'], en:'Smartphone', group:'general', hs:'8517.13', chapterNo:85, mfn:0},
+  {id:'earphone', ko:['이어폰','헤드폰'], en:'Earphones / Headphones', group:'general', hs:'8518.30', chapterNo:85, mfn:0},
+  {id:'battery', ko:['배터리','건전지'], en:'Battery', group:'general', hs:'8507.60', chapterNo:85, mfn:0},
+  {id:'tv', ko:['TV','텔레비전'], en:'Television', group:'general', hs:'8528.72', chapterNo:85, mfn:8},
+  {id:'fridge', ko:['냉장고'], en:'Refrigerator', group:'general', hs:'8418.10', chapterNo:84, mfn:8},
+  {id:'washer', ko:['세탁기'], en:'Washing Machine', group:'general', hs:'8450.11', chapterNo:84, mfn:8},
+  {id:'aircon', ko:['에어컨'], en:'Air Conditioner', group:'general', hs:'8415.10', chapterNo:84, mfn:8},
+  {id:'microwave', ko:['전자레인지'], en:'Microwave Oven', group:'general', hs:'8516.50', chapterNo:85, mfn:8},
+  {id:'vacuum', ko:['청소기'], en:'Vacuum Cleaner', group:'general', hs:'8508.11', chapterNo:85, mfn:8},
+  {id:'hairdryer', ko:['헤어드라이어','드라이기'], en:'Hair Dryer', group:'general', hs:'8516.31', chapterNo:85, mfn:8},
+  {id:'fan', ko:['선풍기'], en:'Electric Fan', group:'general', hs:'8414.51', chapterNo:84, mfn:8},
+  {id:'solarpanel', ko:['태양광패널','태양전지'], en:'Solar Panel', group:'general', hs:'8541.43', chapterNo:85, mfn:0},
+  {id:'semiconductor', ko:['반도체','반도체칩'], en:'Semiconductor Chip', group:'general', hs:'8542.32', chapterNo:85, mfn:0},
+  {id:'cable', ko:['케이블','전선'], en:'Electric Cable / Wire', group:'general', hs:'8544.49', chapterNo:85, mfn:6.5},
+  {id:'led', ko:['LED조명','엘이디등'], en:'LED Lighting', group:'general', hs:'9405.40', chapterNo:94, mfn:8},
+  {id:'ricecooker', ko:['전기밥솥','밥솥'], en:'Electric Rice Cooker', group:'general', hs:'8516.71', chapterNo:85, mfn:8},
+  {id:'airpurifier', ko:['공기청정기'], en:'Air Purifier', group:'general', hs:'8421.39', chapterNo:84, mfn:8},
+
+  // --- Ch86-89 vehicles ---
+  {id:'car', ko:['자동차','승용차'], en:'Passenger Car', group:'general', hs:'8703.23', chapterNo:87, mfn:8},
+  {id:'carparts', ko:['자동차부품'], en:'Auto Parts', group:'general', hs:'8708.99', chapterNo:87, mfn:8},
+  {id:'bicycle', ko:['자전거'], en:'Bicycle', group:'general', hs:'8712.00', chapterNo:87, mfn:8},
+  {id:'motorcycle', ko:['오토바이'], en:'Motorcycle', group:'general', hs:'8711.20', chapterNo:87, mfn:8},
+
+  // --- Ch90-92 precision/optical ---
+  {id:'glasses', ko:['안경'], en:'Eyeglasses', group:'general', hs:'9004.10', chapterNo:90, mfn:8},
+  {id:'sunglasses', ko:['선글라스'], en:'Sunglasses', group:'general', hs:'9004.10', chapterNo:90, mfn:8},
+  {id:'watch', ko:['시계'], en:'Watch', group:'general', hs:'9102.19', chapterNo:91, mfn:8},
+  {id:'bloodpressure', ko:['혈압계','의료기기'], en:'Blood Pressure Monitor', group:'general', hs:'9018.19', chapterNo:90, mfn:0},
+  {id:'camera', ko:['카메라'], en:'Camera', group:'general', hs:'9006.50', chapterNo:90, mfn:8},
+  {id:'guitar', ko:['기타','악기'], en:'Guitar', group:'general', hs:'9202.90', chapterNo:92, mfn:8},
+
+  // --- Ch94-96 furniture/toys/misc ---
+  {id:'chair', ko:['의자'], en:'Chair', group:'general', hs:'9401.69', chapterNo:94, mfn:0},
+  {id:'bed', ko:['침대'], en:'Bed', group:'general', hs:'9403.50', chapterNo:94, mfn:0},
+  {id:'sofa', ko:['소파'], en:'Sofa', group:'general', hs:'9401.61', chapterNo:94, mfn:0},
+  {id:'mattress', ko:['매트리스'], en:'Mattress', group:'general', hs:'9404.29', chapterNo:94, mfn:8},
+  {id:'toy', ko:['장난감','완구'], en:'Toys', group:'general', hs:'9503.00', chapterNo:95, mfn:0},
+  {id:'doll', ko:['인형'], en:'Doll', group:'general', hs:'9502.10', chapterNo:95, mfn:0},
+  {id:'pen', ko:['볼펜'], en:'Ballpoint Pen', group:'general', hs:'9608.10', chapterNo:96, mfn:0},
+  {id:'pencil', ko:['색연필','연필'], en:'Colored Pencil', group:'general', hs:'9609.20', chapterNo:96, mfn:0},
+  {id:'helmet', ko:['헬멧'], en:'Helmet', group:'general', hs:'6506.10', chapterNo:65, mfn:8},
+  {id:'golfclub', ko:['골프채','골프클럽'], en:'Golf Club', group:'general', hs:'9506.31', chapterNo:95, mfn:8},
+  {id:'fishingrod', ko:['낚시대','낚싯대'], en:'Fishing Rod', group:'general', hs:'9507.10', chapterNo:95, mfn:8},
+  {id:'sleepingbag', ko:['침낭'], en:'Sleeping Bag', group:'general', hs:'9404.30', chapterNo:94, mfn:10}
+];
+
+/* =========================================================
+   3) COUNTRIES / FTA (관세청 FTA포털 협정 리스트 기준)
+========================================================= */
+const COUNTRIES = [
+  {id:'chile', ko:'칠레', en:'Chile', tier:'old', co:'self', ftaKeyword:['칠레']},
+  {id:'singapore', ko:'싱가포르', en:'Singapore', tier:'old', co:'self', ftaKeyword:['싱가포르']},
+  {id:'efta_no', ko:'노르웨이 (EFTA)', en:'Norway', tier:'old', co:'agency', ftaKeyword:['노르웨이','EFTA']},
+  {id:'efta_is', ko:'아이슬란드 (EFTA)', en:'Iceland', tier:'old', co:'agency', ftaKeyword:['아이슬란드','EFTA']},
+  {id:'efta_ch', ko:'스위스·리히텐슈타인 (EFTA)', en:'Switzerland / Liechtenstein', tier:'old', co:'agency', ftaKeyword:['스위스','리히텐슈타인','EFTA']},
+  {id:'asean', ko:'아세안 (ASEAN)', en:'ASEAN', tier:'mid', co:'agency', ftaKeyword:['아세안','ASEAN']},
+  {id:'india', ko:'인도 (CEPA)', en:'India', tier:'mid', co:'agency', ftaKeyword:['인도','CEPA']},
+  {id:'eu', ko:'유럽연합 (EU)', en:'European Union', tier:'old', co:'self', ftaKeyword:['EU','유럽연합']},
+  {id:'peru', ko:'페루', en:'Peru', tier:'mid', co:'agency', ftaKeyword:['페루']},
+  {id:'usa', ko:'미국 (KORUS)', en:'United States', tier:'old', co:'self', ftaKeyword:['미국','한미','한ㆍ미','한·미']},
+  {id:'turkiye', ko:'튀르키예', en:'Turkiye', tier:'mid', co:'both', ftaKeyword:['튀르키예','터키']},
+  {id:'australia', ko:'호주', en:'Australia', tier:'old', co:'self', ftaKeyword:['호주']},
+  {id:'canada', ko:'캐나다', en:'Canada', tier:'old', co:'self', ftaKeyword:['캐나다']},
+  {id:'china', ko:'중국', en:'China', tier:'mid', co:'agency', ftaKeyword:['중국']},
+  {id:'newzealand', ko:'뉴질랜드', en:'New Zealand', tier:'old', co:'self', ftaKeyword:['뉴질랜드']},
+  {id:'vietnam', ko:'베트남', en:'Vietnam', tier:'mid', co:'agency', ftaKeyword:['베트남']},
+  {id:'colombia', ko:'콜롬비아', en:'Colombia', tier:'mid', co:'agency', ftaKeyword:['콜롬비아']},
+  {id:'centam', ko:'중미 (니카라과·온두라스·코스타리카·엘살바도르·파나마)', en:'Central America', tier:'new', co:'agency', ftaKeyword:['중미','니카라과','온두라스','코스타리카','엘살바도르','파나마']},
+  {id:'uk', ko:'영국', en:'United Kingdom', tier:'old', co:'self', ftaKeyword:['영국']},
+  {id:'rcep', ko:'RCEP (아세안·호주·중국·일본·뉴질랜드)', en:'RCEP', tier:'new', co:'both', special:true, ftaKeyword:['RCEP']},
+  {id:'israel', ko:'이스라엘', en:'Israel', tier:'new', co:'self', ftaKeyword:['이스라엘']},
+  {id:'cambodia', ko:'캄보디아', en:'Cambodia', tier:'new', co:'agency', ftaKeyword:['캄보디아']},
+  {id:'indonesia', ko:'인도네시아 (CEPA)', en:'Indonesia', tier:'new', co:'agency', ftaKeyword:['인도네시아']},
+  {id:'philippines', ko:'필리핀', en:'Philippines', tier:'new', co:'agency', ftaKeyword:['필리핀']},
+  {id:'uae', ko:'아랍에미리트 (UAE)', en:'UAE', tier:'new', co:'both', ftaKeyword:['UAE','아랍에미리트']}
+];
+
+/* =========================================================
+   2.5) LIVE API 연동 (UniPass 관세청 Open API, 백엔드 프록시 경유)
+   - 백엔드가 꺼져 있거나 실패하면 자동으로 아래 샘플 데이터 엔진으로 폴백합니다.
+   - 백엔드 주소를 바꾸려면 이 값만 수정하세요.
+========================================================= */
+const API_BASE = (window.TRADECODE_API_BASE) || 'http://localhost:4000';
+const API_TIMEOUT_MS = 4000;
+
+async function apiFetch(path){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), API_TIMEOUT_MS);
+  try{
+    const res = await fetch(API_BASE + path, {signal: controller.signal});
+    clearTimeout(timer);
+    if(!res.ok) return null;
+    const json = await res.json();
+    if(!json || json.ok !== true) return null;
+    return json;
+  }catch(e){
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+async function apiHsSearch(q, lang){
+  const json = await apiFetch(`/api/hs-search?q=${encodeURIComponent(q)}&lang=${lang==='en'?'en':'ko'}`);
+  if(!json || !json.items) return null;
+  return json.items;
+}
+
+// API029(세관장확인대상 물품 조회) 래핑 - HS 10단위 부호가 개별법상 별도 요건확인서류
+// 제출이 필요한 물품인지 조회한다. imexTp 기본값은 2(수입) - 이 계산기는 수입 기준이므로.
+// 실패해도 null만 반환하고(에러를 던지지 않음), 호출부가 조용히 이 안내를 생략할 수 있게 한다.
+async function apiCustomsRequirement(hsSgn, imexTp){
+  const json = await apiFetch(`/api/customs-requirement?hs=${encodeURIComponent(hsSgn)}&imexTp=${encodeURIComponent(imexTp||'2')}`);
+  if(!json || typeof json.tCnt !== 'number') return null;
+  return json; // {tCnt, requirements:[{lworNm, docNm, ittNm, aplyStrtDt, aplyEndDt}], ...}
+}
+
+// 무료 번역 폴백(키/가입 불필요): AI 분석이 꺼져 있거나 실패해도, 최소한 "번역 자체가
+// 없어서 아무것도 못 보여주는" 상황만은 막기 위한 최후의 안전망. HS 챕터 추정은 하지
+// 않는 단순 기계번역이라 반드시 "참고용"이라고 표시해서 보여준다.
+async function apiFreeTranslate(q){
+  const json = await apiFetch(`/api/free-translate?q=${encodeURIComponent(q)}`);
+  if(!json || !json.translatedText) return null;
+  return json.translatedText;
+}
+
+// [실험적] API043(HS CODE 내비게이션 조회) 래핑 - 6자리 소호 안에서 실제로 신고된
+// 10자리 세번들을 관세청 실적통계 기준으로 조회 시도. 가이드 문서의 예제 하나만
+// 보고 만든 기능이라 실제로 후보가 안 나올 수도 있다 - 그 경우 UI에서 조용히
+// "후보를 찾지 못했다"고 안내하고 기존 -0000 placeholder는 그대로 유지된다.
+async function apiHsNavigate(heading6){
+  const json = await apiFetch(`/api/hs-navigate?heading=${encodeURIComponent(heading6)}`);
+  if(!json || !json.candidates) return null;
+  return json.candidates;
+}
+
+async function apiTariff(hsSgn){
+  const json = await apiFetch(`/api/tariff?hs=${encodeURIComponent(hsSgn)}`);
+  if(!json || !json.rates) return null;
+  return json.rates;
+}
+
+// 실시간(참고용) 환율 조회 - 로켓배송 계산기의 환율 입력칸을 자동으로 채우는 용도.
+// 키/가입 불필요한 공개 API 기반이라 실패해도 조용히 null을 반환하고, 프론트는
+// 기존 기본값(직접 입력)으로 폴백한다.
+async function apiExchangeRate(base, target){
+  const json = await apiFetch(`/api/exchange-rate?base=${encodeURIComponent(base||'CNY')}&to=${encodeURIComponent(target||'KRW')}`);
+  if(!json || typeof json.rate !== 'number') return null;
+  return json; // {rate, source, base, target}
+}
+
+// AI 상품명 분석: 구어체/복합어 입력을 검색어로 보정하는 용도(1순위 보조)와,
+// 그래도 못 찾았을 때 최종 추정 결과를 보여주는 용도(최종 폴백) 두 곳에서 재사용된다.
+// 백엔드에 ANTHROPIC_API_KEY가 설정되어 있지 않으면 조용히 null을 반환한다(선택 기능).
+// 429(요청 과다)인 경우에도 에러를 던지지 않고 null로 처리해, 검색 흐름 자체는 항상 이어지게 한다.
+async function apiAnalyzeProduct(q){
+  const json = await apiFetch(`/api/analyze-product?q=${encodeURIComponent(q)}`);
+  if(!json || !json.englishTradeName) return null;
+  return json;
+}
+
+function formatHs10(hsSgn){
+  if(!hsSgn || hsSgn.length!==10) return hsSgn||'-';
+  return `${hsSgn.slice(0,4)}.${hsSgn.slice(4,6)}-${hsSgn.slice(6,10)}`;
+}
+
+function isLive(item){ return !!(item && item._live); }
+
+// API018 결과(korePrnm 기준 중복 제거 후) -> 후보 리스트 표시용 정규화 객체
+function normalizeLiveItems(apiItems){
+  const seen = new Set();
+  const out = [];
+  apiItems.forEach(it=>{
+    const key = it.hsSgn + '|' + it.korePrnm;
+    if(seen.has(key)) return; // 같은 HS부호에 세율구분(txtpSgn)만 다른 중복 행은 1개로 합침
+    seen.add(key);
+    out.push({
+      _live:true,
+      hsSgn: it.hsSgn,
+      korePrnm: it.korePrnm,
+      englPrnm: it.englPrnm,
+      txrt: parseFloat(it.txrt)||0,
+      chapterNo: parseInt((it.hsSgn||'00').slice(0,2),10)
+    });
+  });
+  return out;
+}
+
+// UniPass API030 결과에서 특정 국가의 FTA 협정세율 행을 텍스트 매칭으로 추정
+// (가이드 문서에 trrtTpcd 전체 코드표가 없어, trrtTpNm 문자열 키워드 매칭으로 근사함 - 배포 후 검증 필요)
+function matchFtaRate(rates, country){
+  if(!rates || !country || !country.ftaKeyword) return null;
+  const candidates = rates.filter(r=>{
+    const nm = r.trrtTpNm||'';
+    if(nm.includes('기본') || nm.includes('WTO')) return false;
+    return country.ftaKeyword.some(kw=> nm.includes(kw));
+  });
+  if(candidates.length===0) return null;
+  candidates.sort((a,b)=> (a.trrtTpcd||'').localeCompare(b.trrtTpcd||''));
+  return candidates[0];
+}
+
+function findBaseRate(rates){
+  if(!rates) return null;
+  return rates.find(r=> (r.trrtTpNm||'').includes('기본')) || rates.find(r=>r.trrtTpcd==='A') || null;
+}
+
+async function updateStatusBadge(){
+  const badge = document.getElementById('statusBadge');
+  const text = document.getElementById('statusBadgeText');
+  const health = await apiFetch('/api/health');
+  state.aiConfigured = !!(health && health.aiConfigured);
+  const aiSuffix = state.aiConfigured ? ' · 🤖 AI 상품명 분석 켜짐' : ' · 🌐 무료 번역 폴백만 사용 중(AI 키 미설정)';
+  if(health && health.keyConfigured){
+    badge.className = 'status-badge live';
+    text.textContent = '🟢 관세청 UniPass 실시간 연동 중 (백엔드 연결됨)' + aiSuffix;
+  } else if(health){
+    badge.className = 'status-badge sample';
+    text.textContent = '🟡 백엔드는 연결되었지만 인증키가 설정되지 않았습니다 → 샘플 데이터 모드' + aiSuffix;
+  } else {
+    badge.className = 'status-badge sample';
+    text.textContent = '🟡 백엔드 미연결 → 샘플 데이터 모드로 동작 중 (server/ 폴더 실행 필요)';
+  }
+}
+
+/* =========================================================
+   4) STATE
+========================================================= */
+let state = {
+  rawInput:'',
+  selectedItem:null,
+  selectedMaterial:null,
+  selectedCountry:null,
+  lastCandidates:[],
+  liveTariffRates:null,
+  liveTariffPromise:null,
+  aiConfigured:false,
+  clarifyQuestions:[],
+  clarifyAnswers:{},
+  clarifyBaseInput:'',
+  manualPickLabel:'' // AI/UniPass/샘플 어디서도 못 찾았을 때, 재질만 골라서 진행하기 위한 임시 라벨
+};
+
+// [재질 기반 대략적 진행] AI도 꺼져있고 UniPass/샘플 검색으로도 못 찾은 경우,
+// 사용자가 "품목을 아예 선택할 수 없다"고 멈추지 않도록, 재질만 고르면 그 재질이
+// 속하는 HS류의 "기타(그 외) 물품" 대표 세번으로 일단 다음 단계(국가/관세율 비교)까지
+// 진행할 수 있게 해주는 최후의 수동 경로. 실제 세번이 아니라 재질 기준의 대략적인
+// 추정치이므로 결과 화면에 항상 눈에 띄는 경고를 함께 표시한다.
+const GENERIC_MATERIAL_HS = {
+  cotton:      {hs:'6307.90', chapterNo:63, mfnGuess:13, label:'기타 섬유제품(면)'},
+  wool:        {hs:'6307.90', chapterNo:63, mfnGuess:13, label:'기타 섬유제품(모)'},
+  silk:        {hs:'6307.90', chapterNo:63, mfnGuess:13, label:'기타 섬유제품(견)'},
+  linen:       {hs:'6307.90', chapterNo:63, mfnGuess:13, label:'기타 섬유제품(마)'},
+  polyester:   {hs:'6307.90', chapterNo:63, mfnGuess:13, label:'기타 섬유제품(폴리에스터)'},
+  nylon:       {hs:'6307.90', chapterNo:63, mfnGuess:13, label:'기타 섬유제품(나일론)'},
+  leather:     {hs:'4205.00', chapterNo:42, mfnGuess:8,  label:'기타 가죽제품'},
+  pu_leather:  {hs:'4205.00', chapterNo:42, mfnGuess:8,  label:'기타 가죽/인조가죽제품'},
+  plastic:     {hs:'3926.90', chapterNo:39, mfnGuess:6.5,label:'기타 플라스틱제품'},
+  rubber:      {hs:'4016.99', chapterNo:40, mfnGuess:8,  label:'기타 고무제품'},
+  metal_steel: {hs:'7326.90', chapterNo:73, mfnGuess:8,  label:'기타 철강제품'},
+  aluminum:    {hs:'7616.99', chapterNo:76, mfnGuess:8,  label:'기타 알루미늄제품'},
+  wood:        {hs:'4421.99', chapterNo:44, mfnGuess:8,  label:'기타 목제품'},
+  glass:       {hs:'7020.00', chapterNo:70, mfnGuess:8,  label:'기타 유리제품'},
+  ceramic:     {hs:'6914.90', chapterNo:69, mfnGuess:8,  label:'기타 도자제품'},
+  paper:       {hs:'4823.90', chapterNo:48, mfnGuess:0,  label:'기타 지제품'},
+  other:       {hs:'9999.99', chapterNo:0,  mfnGuess:8,  label:'재질 특정 불가 - 반드시 직접 확인 필요'}
+};
+
+// 검색/번역이 모두 실패한 화면에 공용으로 삽입하는 "재질 선택으로 진행하기" UI
+function renderManualMaterialPicker(label){
+  state.manualPickLabel = label;
+  const chips = MATERIALS.map(m=>
+    `<button type="button" class="mat-btn" style="min-width:auto;" onclick="pickManualMaterial('${m.id}')">${m.ko}<span class="en">${m.en}</span></button>`
+  ).join('');
+  return `
+    <div class="info-box" style="margin-top:12px;">
+      <h4>🧩 재질만 선택해서 일단 진행하기</h4>
+      <div>
+        "${label}"에 정확히 맞는 공식 HS코드를 자동으로 찾지 못했습니다. 아래에서 재질을
+        고르면, 그 재질의 "기타(그 외) 물품" 대표 세번으로 관세율 비교까지 일단 진행할 수
+        있습니다. <b>단, 이건 정확한 분류가 아니라 재질 기준의 대략적인 추정이니</b>
+        실제 신고 전 반드시 관세청에서 정확한 세번을 확인하세요.
+        <div class="example-chips" style="margin-top:10px;">${chips}</div>
+      </div>
+    </div>`;
+}
+
+function pickManualMaterial(materialId){
+  const mat = MATERIALS.find(m=>m.id===materialId);
+  const g = GENERIC_MATERIAL_HS[materialId] || GENERIC_MATERIAL_HS.other;
+  if(materialId==='other'){
+    // "기타/혼합소재"는 대표 세번 자체가 없어 가짜 코드를 보여줄 수 없다.
+    // 다음 단계로 진행하는 대신, 직접 확인이 필요하다는 점을 분명히 안내한다.
+    alert('재질을 특정할 수 없는 경우("기타/혼합소재")는 대략적으로도 대표 HS코드를 추정하기 어렵습니다.\n관세청 UniPass(unipass.customs.go.kr)에서 실제 상품 이미지/설명을 가지고 직접 상담받으시는 걸 권장드립니다.');
+    return;
+  }
+  const pseudoItem = {
+    id: 'manual_' + materialId,
+    ko: [state.manualPickLabel || state.rawInput],
+    en: state.manualPickLabel || state.rawInput,
+    group: 'general',
+    hs: g.hs,
+    chapterNo: g.chapterNo,
+    mfn: g.mfnGuess,
+    _manualEstimate: true,
+    _manualLabel: g.label
+  };
+  state.selectedItem = pseudoItem;
+  state.selectedMaterial = mat;
+  // [수정] goStep(3)이 내부적으로 이미 renderHsResult()를 호출하므로, 여기서 다시
+  // 부르면 renderHsResult()가 중복 실행된다. 예전에는(정적 버튼만 그리던 시절)
+  // 중복 렌더링이 눈에 안 띄는 낭비였지만, 이제 renderHsResult()가 approx10 코드를
+  // 만나면 자동으로 API043 조회(네트워크 호출)까지 트리거하므로, 중복 호출되면
+  // 같은 조회가 불필요하게 두 번 나간다. goStep(3) 한 번으로 충분하다.
+  goStep(3);
+}
+
+/* =========================================================
+   5) TRANSLATION / MATCHING ENGINE
+========================================================= */
+function normalize(s){ return s.trim().replace(/\s+/g,''); }
+
+function escapeAttr(s){ return String(s).replace(/"/g,'&quot;'); }
+
+// [버그 수정] "티슈케이스" 입력 시 "티셔츠"가 잘못 뜨던 문제의 원인:
+// 사전에 '티'(티셔츠의 구어체 줄임말)처럼 1글자짜리 키워드가 있으면, 그 글자가
+// 들어간 아무 단어("티슈", "티켓", "파티"...)에서나 "부분일치"로 걸려버림.
+// 이런 종류의 충돌은 한 단어씩 찾아 고칠 수 없으므로(사전에 몇 개가 더 있을지 알 수
+// 없음), 아예 "부분일치로 인정하려면 키워드가 최소 2글자 이상이어야 한다"는 규칙을
+// 매칭 엔진 자체에 넣어 이 유형의 오매칭을 한 번에 차단한다. (정확히 그 1글자만
+// 입력한 경우는 여전히 위의 "완전일치" 분기에서 정상적으로 잡힌다.)
+const MIN_SUBSTRING_KEYWORD_LEN = 2;
+
+function findCandidates(input){
+  const norm = normalize(input);
+  if(!norm) return [];
+  let scored = [];
+  ITEMS.forEach(item=>{
+    let best = 0;
+    item.ko.forEach(k=>{
+      const kn = normalize(k);
+      if(norm === kn){ best = Math.max(best, 100); }
+      else if(kn.length>=MIN_SUBSTRING_KEYWORD_LEN && norm.includes(kn)){ best = Math.max(best, 60 + kn.length); }
+      else if(kn.includes(norm) && norm.length>=MIN_SUBSTRING_KEYWORD_LEN){ best = Math.max(best, 40 + norm.length); }
+    });
+    if(best>0) scored.push({item, score:best});
+  });
+  scored.sort((a,b)=>b.score-a.score);
+  return scored.slice(0,6).map(s=>s.item);
+}
+
+// [정확도 주의] 이 함수는 "면=.10, 모=.20, 화학섬유=.30, 기타=.90"이라는 하나의
+// 공식을 apparel_knit/apparel_woven/textile_other 그룹 전체에 똑같이 적용했었는데,
+// 실제로는 HS 4단위 호(heading)마다 6단위 소호 구조가 전부 다르다. 예를 들어
+// 실제 관세청 FTA포털 데이터로 확인해보니:
+//  - 6109(티셔츠)는 실제로 .10(면)/.90(기타)만 있고 .20/.30은 존재하지 않음
+//  - 6110(스웨터)은 모=.11, 면=.20, 화학섬유=.30 (이 함수의 면/모 배정과 어긋남)
+//  - 6115(양말)는 여성용 스타킹류(.10~.30)와 일반 양말(.94~.99)이 전혀 다른
+//    구조이고, 일반 양말 기준으로는 모=.94/면=.95/화학섬유=.96/기타=.99
+// 그래서 실제로 검증된 품목(티셔츠/스웨터·후디/양말)은 ITEMS의 customSuffixMap으로
+// 개별 지정했고, 이 공용 함수는 그 외 "아직 검증 안 된" 품목에서는 아예 호출되지
+// 않는다(computeHsCode의 unverifiedMaterialSplit 분기 참고).
+function materialSubheading(group, materialCat){
+  switch(group){
+    case 'apparel_knit':
+    case 'apparel_woven':
+    case 'textile_other':
+      if(materialCat==='cotton') return {suffix:'.10', label:'Of Cotton'};
+      if(materialCat==='wool') return {suffix:'.20', label:'Of Wool'};
+      if(materialCat==='synthetic') return {suffix:'.30', label:'Of Man-made Fibers'};
+      if(materialCat==='silk') return {suffix:'.90', label:'Of Silk'};
+      if(materialCat==='linen') return {suffix:'.90', label:'Of Other Textile Materials (Linen)'};
+      return {suffix:'.90', label:'Of Other Materials'};
+    case 'leathergoods':
+      if(materialCat==='leather') return {suffix:'.11', label:'With Outer Surface of Leather'};
+      if(materialCat==='synthetic_leather' || materialCat==='plastic') return {suffix:'.12', label:'With Outer Surface of Plastic Sheeting'};
+      if(materialCat==='cotton'||materialCat==='synthetic'||materialCat==='wool'||materialCat==='silk'||materialCat==='linen') return {suffix:'.22', label:'With Outer Surface of Textile Materials'};
+      return {suffix:'.99', label:'Of Other Materials'};
+    case 'footwear':
+      if(materialCat==='leather') return {code:'6403.99', label:'Footwear with Upper of Leather'};
+      if(materialCat==='rubber' || materialCat==='plastic') return {code:'6402.99', label:'Footwear with Upper of Rubber/Plastics'};
+      return {code:'6404.19', label:'Footwear with Upper of Textile Materials'};
+    default:
+      return null;
+  }
+}
+
+function buildTradeName(item, material){
+  const matEn = material ? material.en : null;
+  if(isLive(item)){
+    const base = (item.englPrnm && item.englPrnm.trim())
+      ? item.englPrnm.trim()
+      : `${item.korePrnm} [영문품명 미제공 - 관세청 DB 기준]`;
+    return matEn ? `${base} (${matEn.toUpperCase()})` : base;
+  }
+  if(item.group==='apparel_knit'){
+    return (matEn?matEn.toUpperCase()+' ':'') + item.en.toUpperCase();
+  }
+  if(item.group==='apparel_woven' || item.group==='textile_other'){
+    return (matEn?matEn.toUpperCase()+' ':'') + item.en.toUpperCase();
+  }
+  if(item.group==='leathergoods'){
+    return item.en.toUpperCase() + (matEn?' OF '+matEn.toUpperCase():'');
+  }
+  if(item.group==='footwear'){
+    return item.en.toUpperCase() + (matEn?', WITH UPPER OF '+matEn.toUpperCase():'');
+  }
+  return item.en.toUpperCase() + (matEn?' (MATERIAL: '+matEn.toUpperCase()+')':'');
+}
+
+// HS 6단위(국제공통, "XXXX.XX") 코드를 관세청 FTA포털과 동일한 10단위 표기
+// ("XXXX.XX-XXXX") 형태로 확장. 뒤 4자리(HSK 세번)는 실제 고시된 값이 아니라
+// "추가 세분류 없음"을 뜻하는 대표 플레이스홀더(0000)이며, 정확한 10단위는
+// 반드시 UniPass 실시간 연동 결과나 관세청 사이트에서 재확인해야 한다.
+function to10(code6){
+  return code6 + '-0000';
+}
+
+function computeHsCode(item, material){
+  const matCat = material ? material.cat : null;
+  if(item._hs10Override){
+    // 사용자가 API043(HS 내비게이션, 실험적)에서 실제 신고된 세번을 직접 선택한 경우 -
+    // 더 이상 -0000 placeholder를 쓰지 않고 그 실제 10자리 부호를 그대로 사용한다.
+    return {code: formatHs10(item._hs10Override), desc:`관세청 실적통계 API(API043, 실험적 기능)로 조회한 실제 신고 세번${item._hs10OverrideLabel?' - "'+item._hs10OverrideLabel+'"':''}`, manualOverride:true};
+  }
+  if(isLive(item)){
+    return {code: formatHs10(item.hsSgn), desc:'관세청 UniPass 실시간 조회 결과 (HS 10단위, 공식 데이터)'};
+  }
+  if(item.fixedHs10){
+    // to10()의 "-0000" placeholder 방식과 달리, 사용자가 실제로 확인한 정확한 10단위
+    // 부호를 그대로 쓴다(뒤 4자리가 0000이 아닌 경우도 있음 - 예: 브라 6212.10-1000).
+    // customSuffixMap과 달리 재질별 분기가 없다는 뜻이므로, 재질이 달라도 항상 이 코드를 쓴다.
+    return {code: item.fixedHs10, desc: item.fixedHs10Desc || '실제 확인된 HS 10단위 부호', verified:true};
+  }
+  if(item.group==='footwear'){
+    const r = materialSubheading('footwear', matCat);
+    return {code:to10(r.code), desc:r.label, approx10:true};
+  }
+  if(['apparel_knit','apparel_woven','textile_other','leathergoods'].includes(item.group)){
+    // 재질별 6단위 소호를 실제 FTA포털 기준으로 개별 검증한 품목만 customSuffixMap을
+    // 쓴다. 아직 검증하지 못한 품목은 재질별 세분류를 아예 추정하지 않고, 검증된
+    // 4단위 호까지만 보여주며 그 사실을 명확히 알린다 (틀린 확신을 주지 않기 위함).
+    if(item.unverifiedMaterialSplit){
+      // 뒤 4자리(-0000)뿐 아니라 재질별로 갈리는 가운데 2자리(6단위 소호)도
+      // 아직 검증하지 못했으므로, 자릿수 자체가 줄어들어 보이지 않도록
+      // "XX"로 자리만 채워서 10단위 형식(XXXX.XX-XXXX)을 그대로 유지한다.
+      // (이전 버전은 이 2자리를 아예 생략해서 "4202-0000"처럼 8자리로 보이는
+      // 버그가 있었다 - 실제로는 숫자가 빠진 게 아니라 표시 형식이 깨진 것이었음)
+      return {
+        code: `${item.hs}.XX-0000`,
+        desc: '이 품목은 재질(및 성별·세부용도)에 따라 실제 6단위 소호가 크게 달라지는데, 정확한 소호별 구조를 아직 검증하지 못했습니다',
+        approx10: true,
+        unverifiedSplit: true
+      };
+    }
+    const r = item.customSuffixMap ? (item.customSuffixMap[matCat] || item.customSuffixMap.default) : materialSubheading(item.group, matCat);
+    return {code:to10(item.hs+r.suffix), desc:r.label, approx10:true};
+  }
+  return {code:to10(item.hs), desc:'HS 6단위 대표코드 기준 (재질에 따른 세번 변동 적음)', approx10:true};
+}
+
+/* =========================================================
+   6) TARIFF ENGINE
+========================================================= */
+function round1(n){ return Math.round(n*10)/10; }
+
+function getFtaRate(item, country){
+  const base = item.mfn;
+  if(item.sensitive){
+    // agri sensitive: FTA rate largely unchanged, flagged
+    return {rate: round1(base*0.9), note:'민감(농산물성) 품목: 협정별 양허제외 또는 관세율할당(TRQ) 적용 가능성이 높습니다. 반드시 관세청 FTA포털에서 개별 확인하세요.'};
+  }
+  if(item.chapterNo <= 24){
+    // general agri/food
+    const factor = country.tier==='old' ? 0.05 : country.tier==='mid' ? 0.35 : 0.55;
+    return {rate: round1(base*factor), note:'농림수산물은 협정별 양허 단계 및 관세율할당(TRQ)이 적용될 수 있어 일부 잔존세율이 있습니다.'};
+  }
+  // [수정] 섬유·의류(HS 50~63류)는 공산품이라도 실제로는 "완전 무관세"라고 가정하면
+  // 안 된다는 걸 사용자가 실제 FTA포털로 직접 확인해서 알려줬다 - 폴리에스터 양말
+  // (6115.96)의 대중국 협정세율은 실제로 2.6%였는데, 이전 공식(공산품=구/중진국은
+  // 무조건 0%)은 이걸 0%로 잘못 추정했다. 섬유·의류는 여러 FTA에서 원산지결정기준이
+  // 까다롭거나(원사기준 등) 양허 단계가 느린 품목이 많아, 농림수산물과 비슷하게
+  // "국가 등급별로 점진적으로 낮아지는" 형태로 더 보수적으로 추정한다.
+  if(item.chapterNo >= 50 && item.chapterNo <= 63){
+    const factor = country.tier==='old' ? 0.1 : country.tier==='mid' ? 0.2 : 0.4;
+    return {rate: round1(base*factor), note:'섬유·의류 품목은 협정별로 원산지결정기준(원사기준 등)이 까다롭거나 양허 단계가 느린 경우가 많아, 실제 협정세율이 이 추정치와 다를 수 있습니다. 반드시 관세청 UniPass·FTA포털에서 해당 HS부호 기준으로 재확인하세요.'};
+  }
+  // industrial goods
+  // [수정] "중진국(mid)등급은 공산품 무관세 완료"라는 기존 가정이 플라스틱류(HS 39류)
+  // 에서도 실제와 다른 사례(플라스틱 홀더 3926.90-9000, 대중국 실제 협정세율 1.3%)로
+  // 확인됐다 - 섬유·의류(50~63류)에서 양말 사례로 같은 문제가 확인된 것과 같은 패턴.
+  // 다만 이번엔 검증된 실제 데이터가 1건뿐이라, 39류 전체에 일괄 적용할 새 공식으로
+  // 바꾸기보다는(다른 품목까지 잘못 틀어질 위험) 기존 근사식은 그대로 두고, mid등급
+  // 국가(중국 등)에는 "0%로 안 나올 수도 있다"는 경고를 추가하는 선에서 보수적으로
+  // 대응한다. 개별 품목의 정확한 세율은 FTA_RATE_OVERRIDES로 하나씩 확정한다.
+  const factor = country.tier==='new' ? 0.05 : 0;
+  if(factor===0 && country.tier==='mid'){
+    return {rate: 0, note:'⚠ 공산품은 통상 협정 이행 완료로 무관세로 추정되지만, 품목·세번에 따라 예외(잔존세율)가 있는 사례가 실제로 확인되었습니다(예: 플라스틱류 일부 세번은 1%대 협정세율). 이 수치는 근사치이니 반드시 관세청 UniPass·FTA포털에서 해당 HS 10단위 기준으로 재확인하세요.'};
+  }
+  return {rate: round1(base*factor), note: factor===0 ? '공산품으로 협정 발효 후 단계적 철폐가 완료되어 무관세가 적용됩니다.' : '협정 이행(단계적 철폐) 중으로 소폭의 잔존세율이 있을 수 있습니다.'};
+}
+
+// [실제 확인된 개별 협정세율 오버라이드]
+// 위 getFtaRate()는 "국가 등급 × MFN세율"이라는 근사 공식이라, 실제 협정별 원산지결정
+// 기준이나 양허표(품목별 철폐 스케줄)까지는 반영하지 못한다. 사용자가 특정 HS 10단위
+// 코드에 대해 실제 관세청/FTA포털에서 확인한 정확한 협정세율을 알려주면, 그 조합에
+// 대해서만 근사식 대신 이 표의 값을 우선 사용한다. (hsCode는 computeHsCode()가 만드는
+// "XXXX.XX-0000" 형식과 정확히 일치해야 매칭된다.)
+const FTA_RATE_OVERRIDES = [
+  { hsCode:'6108.31-0000', countryId:'china', rate:0,
+    note:'✅ 사용자가 실제 확인한 한-중 FTA 협정세율입니다: 원산지결정기준 충족 + C/O 제출 시 0%. 이 값은 6108.31-0000(면 잠옷) 세번에 한해 적용되며, 같은 6108류라도 다른 세번(예: 화학섬유 소재 .32 등)에는 적용되지 않으니 유의하세요.' },
+  { hsCode:'6212.10-1000', countryId:'china', rate:0,
+    note:'✅ 사용자가 실제 확인한 한-중 FTA 협정세율입니다: 원산지결정기준 충족 + C/O 제출 시 0%. 브래지어(HS 6212.10-1000)에 적용됩니다.' },
+  { hsCode:'3926.90-9000', countryId:'china', rate:1.3,
+    note:'✅ 사용자가 실제 확인한 한-중 FTA 협정세율입니다: 원산지결정기준 충족 + C/O 제출 시 1.3%. 이 값은 3926.90-9000(기타 플라스틱제품) 세번에 한해 적용되며, 같은 3926.90류라도 다른 세번에는 적용되지 않으니 유의하세요.' }
+];
+
+function findFtaOverride(hsCode, countryId){
+  return FTA_RATE_OVERRIDES.find(o => o.hsCode === hsCode && o.countryId === countryId) || null;
+}
+
+/* =========================================================
+   7) RENDER: STEP 1
+========================================================= */
+const EXAMPLES = ['가죽 지갑','티셔츠','노트북','인삼','청바지','신발','전기밥솥','목걸이'];
+function renderExamples(){
+  const el = document.getElementById('exampleChips');
+  el.innerHTML = EXAMPLES.map(e=>`<button type="button" class="chip-eg" onclick="quickFill('${e}')">${e}</button>`).join('');
+}
+function quickFill(text){
+  document.getElementById('koInput').value = text;
+  runTranslate();
+}
+
+async function runTranslate(){
+  const input = document.getElementById('koInput').value;
+  state.rawInput = input;
+  const area = document.getElementById('translateResultArea');
+  const list = document.getElementById('candidateList');
+  const preview = document.getElementById('tradeNamePreview');
+  const btn = document.getElementById('translateBtn');
+
+  area.classList.remove('hidden');
+  list.innerHTML = '';
+  btn.disabled = true;
+
+  // 0) AI 상품명 분석 (ANTHROPIC_API_KEY가 설정된 경우에만 동작) - "펫토이", "스테인리스 기계
+  //    부품"처럼 애매하거나 구어체인 입력을 검색어/재질/용도/HS 챕터 후보로 먼저 분석해서
+  //    검색 적중률을 끌어올린다.
+  let aiResult = null;
+  if(state.aiConfigured){
+    preview.textContent = '🤖 AI가 상품명을 분석하는 중...';
+    aiResult = await apiAnalyzeProduct(input);
+  }
+  const aiKeywords = (aiResult && aiResult.searchKeywords) ? aiResult.searchKeywords : [];
+  const queries = [input, ...aiKeywords].filter((v,i,arr)=> v && arr.indexOf(v)===i);
+
+  preview.textContent = '조회 중...';
+
+  // 1) 관세청 UniPass 실시간 조회 - 원문 + AI 보정 키워드 전부 시도, hsSgn 기준 중복 제거
+  let liveCandidates = [];
+  const seenHs = new Set();
+  for(const q of queries){
+    const liveItems = await apiHsSearch(q);
+    if(liveItems && liveItems.length>0){
+      normalizeLiveItems(liveItems).forEach(it=>{
+        if(!seenHs.has(it.hsSgn)){ seenHs.add(it.hsSgn); liveCandidates.push(it); }
+      });
+    }
+  }
+  liveCandidates = liveCandidates.slice(0,6);
+
+  // 2) 샘플 데이터 엔진 - 마찬가지로 원문 + AI 보정 키워드 전부 시도, id 기준 중복 제거
+  let sampleCandidates = [];
+  const seenSampleId = new Set();
+  queries.forEach(q=>{
+    findCandidates(q).forEach(item=>{
+      if(!seenSampleId.has(item.id)){ seenSampleId.add(item.id); sampleCandidates.push(item); }
+    });
+  });
+
+  const candidates = [...liveCandidates, ...sampleCandidates];
+  state.lastCandidates = candidates;
+  btn.disabled = false;
+
+  const aiAssistNote = (aiKeywords.length>0 && candidates.length>0)
+    ? `<div class="hint" style="margin-bottom:10px;">🤖 AI가 검색어를 "${aiKeywords.join('", "')}"(으)로 보정해 찾은 결과가 포함되어 있습니다.</div>`
+    : '';
+
+  if(candidates.length===0){
+    // ------------------------------------------------------------------
+    // "일치하는 품목을 찾지 못했습니다"라는 막다른 메시지는 이 함수 어디에서도
+    // 최종 상태로 남지 않는다. AI 분석 -> 무료 번역(+영문 재검색) 순서로 계속
+    // 시도하고, 그래도 안 되면 "왜 안 됐는지 + 무엇을 하면 되는지"가 분명한
+    // 안내를 보여준다. (사용자 요청: 절대 그 문구가 나오지 않도록)
+    // ------------------------------------------------------------------
+    preview.textContent = '🤖 AI 분석 결과를 확인하는 중...';
+    list.innerHTML = '';
+
+    // 3차 폴백: AI의 최종 분석 결과 (위에서 이미 호출했다면 재사용, 아니면 지금 시도)
+    const ai = aiResult || (state.aiConfigured ? await apiAnalyzeProduct(input) : null);
+
+    if(ai && ai.englishTradeName){
+      preview.textContent = ai.englishTradeName;
+
+      const chapterRows = (ai.hsChapterCandidates||[]).map(c=>
+        `<li><b>제${c.chapter}류</b>${c.label?' — '+c.label:''}</li>`
+      ).join('');
+      const metaBits = [
+        ai.material ? `재질(추정): ${ai.material}` : null,
+        ai.purpose ? `용도(추정): ${ai.purpose}` : null
+      ].filter(Boolean).join(' · ');
+
+      const clarifyQs = ai.clarifyingQuestions || [];
+      state.clarifyQuestions = clarifyQs;
+      state.clarifyAnswers = {};
+      state.clarifyBaseInput = input;
+
+      const clarifyHtml = clarifyQs.length>0 ? `
+        <div class="hint" style="margin-top:12px;font-weight:700;">🔎 "${input}"만으로는 HS코드를 하나로 정하기 어려워요. 아래에서 골라주시면 더 정확해집니다.</div>
+        ${clarifyQs.map((cq,qIdx)=>`
+          <div class="clarify-question" style="margin-top:10px;">
+            <div style="font-weight:700;font-size:13.5px;margin-bottom:6px;">${cq.question}</div>
+            <div class="example-chips" id="clarifyOpts-${qIdx}">
+              ${cq.options.map(opt=>`<button type="button" class="chip-eg" data-opt="${escapeAttr(opt)}" onclick="pickClarifyOption(${qIdx}, this)">${opt}</button>`).join('')}
+            </div>
+            <div class="hidden" id="clarifyOtherRow-${qIdx}" style="margin-top:8px;">
+              <div class="input-row">
+                <input type="text" id="clarifyOtherText-${qIdx}" placeholder="직접 입력...">
+                <button type="button" class="btn sm" onclick="submitClarifyOther(${qIdx})">적용</button>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+        <div style="margin-top:14px;">
+          <button type="button" class="btn sm" id="clarifyResearchBtn" onclick="rerunWithClarifyAnswers()" disabled>선택한 답변으로 다시 검색 →</button>
+        </div>
+      ` : '';
+
+      list.innerHTML = `
+      <div class="info-box">
+        <h4>🤖 AI 상품명 분석 (공식 데이터 아님 - 참고용)</h4>
+        <div>
+          <div class="translate-box" style="margin-top:0;">
+            <div class="label">AI 분석 영문 무역품명</div>
+            <div class="value">${ai.englishTradeName}</div>
+          </div>
+          ${metaBits ? `<div class="hint" style="margin-top:10px;">${metaBits}</div>` : ''}
+          ${chapterRows ? `<div class="hint" style="margin-top:10px;">예상 HS 챕터 후보:<ul>${chapterRows}</ul></div>` : ''}
+          ${clarifyHtml}
+          <div class="hint" style="margin-top:10px;">⚠ 이 결과는 관세청 공식 데이터가 아닌 AI의 추정치입니다. 실제 HS코드는 반드시 아래 공식 경로에서 재확인하세요.</div>
+        </div>
+      </div>`;
+      return;
+    }
+
+    // 4차 폴백: AI 분석이 꺼져있거나(ANTHROPIC_API_KEY 미설정) 실패한 경우.
+    // 키/가입 없이 항상 쓸 수 있는 무료 번역으로 최소한 영문 표현만은 반드시 확보한다.
+    preview.textContent = '🌐 번역 서비스로 확인하는 중...';
+    const translated = await apiFreeTranslate(input);
+
+    if(translated){
+      // 번역된 영문으로 UniPass/샘플 엔진을 한 번 더 시도해 실제 공식 데이터와 연결을 시도한다.
+      let retryLiveRaw = await apiHsSearch(translated, 'en');
+      const retryLive = retryLiveRaw ? normalizeLiveItems(retryLiveRaw).slice(0,6) : [];
+      const retrySample = findCandidates(translated);
+      const retryCandidates = [...retryLive, ...retrySample];
+
+      if(retryCandidates.length>0){
+        state.lastCandidates = retryCandidates;
+        preview.textContent = buildTradeName(retryCandidates[0], null);
+        const note = `<div class="hint" style="margin-bottom:10px;">🌐 "${input}" → "${translated}"(으)로 자동 번역해 찾은 결과입니다 (참고용, 공식 확인 필요).</div>`;
+        list.innerHTML = note + renderCandidateRows(retryCandidates);
+        return;
+      }
+
+      // 재검색도 매칭이 안 되더라도, 번역 결과 자체는 반드시 화면에 보여준다 (빈 결과 금지).
+      // + 여기서 멈추지 않도록, 재질만 선택하면 관세율 비교까지 진행할 수 있는 수동 경로도 함께 제공한다.
+      preview.textContent = translated;
+      list.innerHTML = `
+        <div class="info-box">
+          <h4>🌐 자동 번역 결과 (공식 데이터 아님 - 참고용)</h4>
+          <div>
+            <div class="translate-box" style="margin-top:0;">
+              <div class="label">번역된 영문 표현</div>
+              <div class="value">${translated}</div>
+            </div>
+            <div class="hint" style="margin-top:10px;">⚠ 이 표현으로는 관세청 데이터베이스에서 바로 매칭되는 항목을 찾지 못했습니다. 아래에서 이 영문 표현으로 직접 재확인해보시거나, 그 아래에서 재질을 선택해 일단 진행하실 수 있어요.</div>
+            <ul style="margin-top:8px;">
+              <li><a href="https://unipass.customs.go.kr" target="_blank">관세청 UniPass</a>에서 "${translated}"로 검색</li>
+              <li><a href="https://dict.naver.com/dict.search?query=${encodeURIComponent(input)}" target="_blank">네이버사전에서 "${input}" 확인</a></li>
+            </ul>
+          </div>
+        </div>` + renderManualMaterialPicker(translated);
+      return;
+    }
+
+    // 5차(최종) 폴백: AI와 무료 번역 모두 응답이 없는 경우(네트워크 차단 등).
+    // 이 경우에도 "일치하는 품목을 찾지 못했습니다"는 쓰지 않고, 원인과 대안을 분명히 안내한다.
+    // 번역조차 안 됐어도 재질 선택만으로는 계속 진행할 수 있게 한다 (완전한 막다른 길 금지).
+    preview.textContent = `"${input}" 자동 변환에 실패했습니다`;
+    list.innerHTML = `
+      <div class="info-box warn">
+        <h4>⚠ 지금은 자동 변환을 할 수 없어요</h4>
+        <div>
+          AI 분석과 번역 서비스 모두 응답하지 않았습니다 (백엔드 미실행 또는 네트워크 연결을 확인해주세요). 아래를 시도해보세요:
+          <ul>
+            <li>잠시 후 다시 시도</li>
+            <li>더 일반적인 단어로 다시 입력 (예: "여성용 A라인 원피스" → "원피스")</li>
+            <li><a href="https://unipass.customs.go.kr" target="_blank">관세청 UniPass</a>에서 직접 HS부호 조회</li>
+            <li><a href="https://dict.naver.com/dict.search?query=${encodeURIComponent(input)}" target="_blank">네이버사전에서 "${input}" 영문 번역 보기</a></li>
+          </ul>
+        </div>
+      </div>` + renderManualMaterialPicker(input);
+    return;
+  }
+
+  preview.textContent = buildTradeName(candidates[0], null);
+  list.innerHTML = aiAssistNote + renderCandidateRows(candidates);
+}
+
+// 후보 리스트 렌더링(정상 매칭 경로 + 번역 재검색 성공 경로에서 공용으로 사용)
+function renderCandidateRows(items){
+  return items.map((item,idx)=>{
+    const live = isLive(item);
+    const koLabel = live ? item.korePrnm : item.ko[0];
+    const chapLabel = `HS Ch.${String(item.chapterNo).padStart(2,'0')}`;
+    const hsLabel = live ? `HS부호: ${formatHs10(item.hsSgn)}` : `기준 HS heading: ${item.hs}`;
+    return `
+    <div class="candidate ${idx===0?'selected':''}" data-idx="${idx}">
+      <div class="cand-left">
+        <div class="ko">${live?'<span class="tag live-src">실시간</span> ':''}${koLabel} <span style="color:var(--sub);font-weight:400;font-size:12px;">(${chapLabel})</span></div>
+        <div class="en">${buildTradeName(item, null)}</div>
+        <div class="chap">${hsLabel}${live?` · 기본세율 ${item.txrt}%`:''}</div>
+      </div>
+      <button class="btn sm pick-btn" onclick="pickItem(${idx})">이 품목 선택 →</button>
+    </div>
+  `;}).join('');
+}
+
+function pickItem(idx){
+  const item = state.lastCandidates[idx];
+  state.selectedItem = item;
+  state.selectedMaterial = null;
+  document.getElementById('tradeNamePreview').textContent = buildTradeName(item, null);
+  document.querySelectorAll('.candidate').forEach(c=>{
+    c.classList.toggle('selected', parseInt(c.dataset.idx)===idx);
+  });
+  goStep(2);
+}
+
+/* =========================================================
+   AI 명확화 질문(clarifyingQuestions) 클릭형 답변 처리
+   - "반지"처럼 재질/용도에 따라 HS코드가 갈리는 입력에 대해,
+     사용자가 버튼만 눌러 답하면 원 입력어에 답변을 덧붙여 재검색한다.
+========================================================= */
+function pickClarifyOption(qIdx, btnEl){
+  const opt = btnEl.dataset.opt;
+  const otherRow = document.getElementById(`clarifyOtherRow-${qIdx}`);
+  if(opt === '기타'){
+    otherRow.classList.remove('hidden');
+    document.getElementById(`clarifyOtherText-${qIdx}`).focus();
+  } else {
+    otherRow.classList.add('hidden');
+    state.clarifyAnswers[qIdx] = opt;
+  }
+  document.querySelectorAll(`#clarifyOpts-${qIdx} .chip-eg`).forEach(b=>{
+    b.classList.toggle('selected', b===btnEl);
+  });
+  updateClarifyResearchBtn();
+}
+
+function submitClarifyOther(qIdx){
+  const input = document.getElementById(`clarifyOtherText-${qIdx}`);
+  const val = input.value.trim();
+  if(!val) return;
+  state.clarifyAnswers[qIdx] = val;
+  updateClarifyResearchBtn();
+}
+
+function updateClarifyResearchBtn(){
+  const btn = document.getElementById('clarifyResearchBtn');
+  if(btn) btn.disabled = Object.keys(state.clarifyAnswers).length===0;
+}
+
+function rerunWithClarifyAnswers(){
+  const answers = Object.values(state.clarifyAnswers);
+  const enriched = [state.clarifyBaseInput, ...answers].join(' ').trim();
+  state.clarifyAnswers = {};
+  state.clarifyQuestions = [];
+  document.getElementById('koInput').value = enriched;
+  runTranslate();
+}
+
+/* =========================================================
+   8) RENDER: STEP 2 (material)
+========================================================= */
+function renderMaterials(){
+  const grid = document.getElementById('materialGrid');
+  grid.innerHTML = MATERIALS.map(m=>`
+    <button type="button" class="mat-btn" data-id="${m.id}" onclick="pickMaterial('${m.id}')">
+      ${m.ko}<span class="en">${m.en}</span>
+    </button>
+  `).join('');
+  document.getElementById('selectedItemLabel').textContent = state.selectedItem ? `"${isLive(state.selectedItem) ? state.selectedItem.korePrnm : state.selectedItem.ko[0]}"` : '선택 품목';
+}
+
+function pickMaterial(id){
+  const mat = MATERIALS.find(m=>m.id===id);
+  state.selectedMaterial = mat;
+  document.querySelectorAll('.mat-btn').forEach(b=>b.classList.toggle('selected', b.dataset.id===id));
+  document.getElementById('toStep3Btn').disabled = false;
+  document.getElementById('materialLiveResults').innerHTML = ''; // 재질을 바꾸면 이전 재질의 실시간 후보 목록은 지운다
+  // [22차 업데이트] 재질을 바꾸면 6단위 소호(재질에 따라 갈리는 부분) 자체가
+  // 달라질 수 있으므로, 이전 재질 기준으로 자동/수동 적용됐던 세번(-hs10Override)은
+  // 더 이상 유효하지 않을 수 있다. 새 재질로 다시 자동 조회하도록 초기화한다.
+  if(state.selectedItem){
+    delete state.selectedItem._hs10Override;
+    delete state.selectedItem._hs10OverrideLabel;
+    delete state.selectedItem._hs10AutoApplied;
+  }
+  state.hsSubcodeCandidates = [];
+}
+
+// HS 네비게이션(bandtrass)처럼 "재질 선택 -> 그 재질에 맞는 세부 코드 목록에서 직접
+// 선택 -> 관세율"의 흐름을 만들기 위한 단계. 우리 사전 공식으로 하나의 대표 코드를
+// 바로 확정하는 대신, 재질까지 반영한 영문 상품명으로 관세청 UniPass에 먼저
+// 실시간 검색을 걸어보고, 실제로 매칭되는 공식 코드가 있으면 그 목록(신고 데이터
+// 기반 실제 코드 + 실제 세율)을 먼저 보여준 뒤 사용자가 직접 하나를 고르게 한다.
+// 실시간 매칭이 없으면(백엔드 미실행 포함) 기존처럼 대표 추정 코드로 바로 진행한다.
+async function proceedToHsResult(){
+  const item = state.selectedItem;
+  const mat = state.selectedMaterial;
+  const box = document.getElementById('materialLiveResults');
+  if(!item || !mat) return;
+
+  if(isLive(item)){
+    // 이미 관세청 실시간 검색 결과에서 고른 품목이면 재조회가 필요 없다.
+    box.innerHTML = '';
+    goStep(3);
+    return;
+  }
+
+  box.innerHTML = `<div class="hint">🔎 관세청 실시간 데이터에서 "${mat.ko}" 재질에 맞는 세부 코드를 찾는 중...</div>`;
+  const query = `${mat.en} ${item.en}`;
+  const liveItemsRaw = await apiHsSearch(query, 'en');
+  const liveItems = liveItemsRaw ? normalizeLiveItems(liveItemsRaw).slice(0,6) : [];
+
+  if(liveItems.length===0){
+    // 실시간 매칭 없음(또는 백엔드 미연결) -> 기존 방식대로 대표 추정 코드로 진행
+    box.innerHTML = '';
+    goStep(3);
+    return;
+  }
+
+  state.materialLiveCandidates = liveItems;
+  box.innerHTML = `
+    <div class="info-box">
+      <h4>🟢 관세청 실시간 데이터에서 이 재질에 맞는 세부 코드를 찾았어요</h4>
+      <div>
+        실제 신고에 쓰인 공식 코드입니다. 상품과 가장 가까운 항목을 선택하세요.
+        <div style="margin-top:8px;">
+          ${liveItems.map((it,idx)=>`
+            <div class="candidate" data-idx="${idx}" style="margin-top:8px;">
+              <div class="cand-left">
+                <div class="ko"><span class="tag live-src">실시간</span> ${it.korePrnm}</div>
+                <div class="en">${it.englPrnm ? it.englPrnm : '[영문품명 미제공 - 관세청 DB 기준]'}</div>
+                <div class="chap">HS부호: ${formatHs10(it.hsSgn)} · 기본세율 ${it.txrt}%</div>
+              </div>
+              <button class="btn sm pick-btn" onclick="pickMaterialLiveCandidate(${idx})">이 코드 선택 →</button>
+            </div>
+          `).join('')}
+        </div>
+        <div style="margin-top:10px;">
+          <button type="button" class="btn ghost sm" onclick="skipMaterialLiveCandidates()">선택 안 함 - 대표 추정 코드로 계속 진행 →</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function pickMaterialLiveCandidate(idx){
+  const it = (state.materialLiveCandidates || [])[idx];
+  if(!it) return;
+  state.selectedItem = it; // 실시간 품목으로 교체 (이후 renderHsResult가 실제 10단위 코드로 표시)
+  document.getElementById('materialLiveResults').innerHTML = '';
+  goStep(3);
+}
+
+function skipMaterialLiveCandidates(){
+  document.getElementById('materialLiveResults').innerHTML = '';
+  goStep(3);
+}
+
+/* =========================================================
+   9) RENDER: STEP 3 (HS result)
+========================================================= */
+function renderHsResult(){
+  const item = state.selectedItem;
+  const mat = state.selectedMaterial;
+  const hs = computeHsCode(item, mat);
+  const mfnRate = isLive(item) ? item.txrt : item.mfn;
+  document.getElementById('hsCodeBig').textContent = hs.code;
+  document.getElementById('hsEnName').textContent = buildTradeName(item, mat);
+  document.getElementById('hsKoInfo').textContent = isLive(item)
+    ? `${item.korePrnm} · ${mat.ko} · HS 제${item.chapterNo}류 · ${hs.desc}`
+    : `${item.ko[0]} · ${mat.ko} · HS 제${item.chapterNo}류 · ${hs.desc}`;
+  document.getElementById('mfnRateBadge').textContent = mfnRate+'%';
+
+  const note = document.getElementById('hsSensitiveNote');
+  const noteBlocks = [];
+
+  if(item._manualEstimate){
+    noteBlocks.push({cls:'info-box warn', html:`<h4>⚠ 재질 선택 기반 대략적 추정 (자동 검색 결과 아님)</h4><div>이 결과는 관세청 데이터베이스나 AI가 찾아낸 것이 아니라, 직접 선택하신 재질(${mat.ko})을 기준으로 한 "${item._manualLabel}" 대표 세번의 <b>대략적인 추정치</b>입니다. 관세율도 참고용 대표값이며, 실제 신고 전 반드시 <a href="https://unipass.customs.go.kr" target="_blank">관세청 UniPass</a>에서 정확한 세번과 세율을 확인하세요.</div>`});
+  }
+
+  if(isLive(item)){
+    noteBlocks.push({cls:'info-box', html:`<h4>🟢 관세청 UniPass 실시간 데이터</h4><div>이 결과는 관세청 UniPass Open API(HS 부호 조회)로 실시간 조회된 데이터입니다. 다음 단계에서 협정관세율도 실시간 조회를 시도합니다.</div>`});
+    // 다음 단계(국가 선택)에서 바로 쓸 수 있도록 관세율 정보를 미리 백그라운드로 가져온다
+    state.liveTariffRates = null;
+    state.liveTariffPromise = apiTariff(item.hsSgn).then(rates=>{ state.liveTariffRates = rates; return rates; });
+  } else if(hs.approx10){
+    noteBlocks.push({cls:'info-box', html:`<h4>ℹ 10단위 표기 안내</h4><div>뒤 4자리(-0000)는 실제 고시된 세번이 아니라 관세청 FTA포털과 동일한 표기 형식(HS 10단위)을 맞추기 위한 대표값입니다. 정확한 10단위 세번은 반드시 <a href="https://unipass.customs.go.kr" target="_blank">관세청 UniPass</a> 실시간 연동 결과나 관세청 사이트에서 재확인하세요.</div>`});
+  }
+
+  if(hs.unverifiedSplit){
+    noteBlocks.push({cls:'info-box warn', html:`<h4>⚠ 재질별 6단위 세분류는 아직 검증되지 않았습니다</h4><div>이 품목은 실제로 재질(및 성별·세부 용도 등)에 따라 뒤 2자리(HS 6단위) 자체가 크게 달라지는 경우가 많은데, 정확한 재질별 구조를 아직 확인하지 못해 <b>검증된 4단위 호(${item.hs})까지만</b> 보여드립니다. 실제 신고에 쓸 정확한 6~10단위 코드는 반드시 <a href="https://unipass.customs.go.kr" target="_blank">관세청 UniPass</a>나 <a href="https://www.customs.go.kr" target="_blank">관세청 FTA포털</a>에서 재질을 직접 검색해 확인하세요.</div>`});
+  }
+
+  if(item.genderOrTypeNote){
+    noteBlocks.push({cls:'info-box', html:`<h4>ℹ️ 세번 분류 기준 안내</h4><div>${item.genderOrTypeNote}</div>`});
+  }
+
+  if(!isLive(item) && (item.sensitive || item.chapterNo<=24)){
+    noteBlocks.push({cls: item.sensitive ? 'info-box warn' : 'info-box', html:`<h4>${item.sensitive?'⚠ 민감품목 안내':'ℹ 농림수산물 안내'}</h4><div>${item.sensitive? '본 품목은 국내 민감품목으로 기본관세율이 높게 책정되어 있으며, FTA 협정에서도 양허제외 또는 TRQ(관세율할당) 대상일 가능성이 높습니다.' : '농림수산물은 협정 및 국가별로 예외조항이 많으므로 세부 세율은 반드시 FTA포털에서 재확인하세요.'}</div>`});
+  }
+
+  if(hs.manualOverride){
+    if(item._hs10AutoApplied){
+      noteBlocks.push({cls:'info-box', html:`<h4>🔍 실적 1위 세번으로 자동 적용됨 (실험적 기능)</h4><div>뒤 4자리를 무작정 "-0000"으로 두지 않고, 관세청 실적통계 API(API043)로 이 소호 안에서 실제로 가장 많이 신고된 세번을 자동으로 찾아 적용했습니다. 다만 같은 6단위 소호라도 세번이 여러 개 있을 수 있어, 실적 1위가 항상 이 상품과 정확히 일치한다는 보장은 없습니다 - 아래 후보 목록에서 더 정확한 세번이 있으면 바꿔주세요. <b>세번을 바꾸면 기본세율·협정(FTA)세율도 그 세번 기준으로 다시 조회됩니다.</b> 이 기능은 아직 실 서버 검증이 부족하니, 최종 확정 전 반드시 <a href="https://unipass.customs.go.kr" target="_blank">관세청 UniPass</a>에서 한 번 더 확인하세요.</div>`});
+    } else {
+      noteBlocks.push({cls:'info-box', html:`<h4>🔍 실제 신고 세번으로 교체됨 (실험적 기능)</h4><div>관세청 실적통계 API(API043)로 조회한 실제 신고 세번을 적용했습니다. <b>세번(뒤 4자리)이 다르면 기본세율·협정(FTA)세율도 함께 달라질 수 있어</b>, 다음 단계(국가 선택)에서 이 정확한 세번을 기준으로 관세청 실시간 관세율(API018)을 다시 조회합니다. 다만 이 기능은 아직 실 서버 검증이 부족하니, 최종 확정 전 반드시 <a href="https://unipass.customs.go.kr" target="_blank">관세청 UniPass</a>에서 한 번 더 확인하세요.</div>`});
+    }
+  }
+
+  if(noteBlocks.length>0){
+    note.style.display='block';
+    note.className = noteBlocks.map(b=>b.cls).join(' ').includes('warn') ? 'info-box warn' : 'info-box';
+    note.innerHTML = noteBlocks.map(b=>b.html).join('<hr style="border:none;border-top:1px solid var(--border);margin:10px 0;">');
+  } else {
+    note.style.display='none';
+  }
+
+  // [22차 업데이트] 뒤 4자리(세번)가 "-0000" placeholder인 경우, 더 이상 사용자가
+  // 버튼을 눌러야만 실제 세번을 찾아볼 수 있는 게 아니라, 여기서 바로 자동으로
+  // API043(실적통계 기준 실제 신고 세번 조회)을 시도해서 정확한 세번을 기본값으로
+  // 적용한다("HS 네비게이션처럼 뒷 4자리도 기본적으로 정확하게 나오게 해달라"는
+  // 요청 반영). 이미 실제 값(라이브 데이터, API043 자동/수동 적용값)이면 후보
+  // 목록만 계속 보여줘서 다른 세번으로 바꿀 수 있게 한다.
+  const subArea = document.getElementById('hsSubcodeArea');
+  if(!isLive(item) && !hs.manualOverride && hs.approx10){
+    const heading6 = headingFromCode(hs.code);
+    if(heading6){
+      subArea.innerHTML = `<div class="hint" style="margin-top:12px;">🔍 관세청 실적통계 기준으로 정확한 세번(뒤 4자리)을 자동으로 조회하는 중...</div>`;
+      loadHsSubcodes(heading6, hs.code, item); // fire-and-forget
+    } else {
+      subArea.innerHTML = '';
+    }
+  } else if(hs.manualOverride && (state.hsSubcodeCandidates||[]).length > 0){
+    subArea.innerHTML = renderSubcodeCandidateList(state.hsSubcodeCandidates, item._hs10Override);
+  } else {
+    subArea.innerHTML = '';
+  }
+
+  // 세관 요건(세관장확인대상 여부) 조회는 비동기(백엔드 API029 호출)라 별도 함수로 분리.
+  // renderHsResult() 자체를 await 없이 부르는 기존 패턴과 동일하게 fire-and-forget으로 실행한다.
+  updateCustomsRequirementArea(hs, item);
+}
+
+// 관세청 API029(세관장확인대상 물품 조회)로, 결정된 HS 10단위 부호가 개별법(예: 화장품법,
+// 전기용품 안전관리법 등)에 따라 통관 시 별도 요건확인서류 제출이 필요한 물품인지 조회한다.
+// - 아직 "-0000" placeholder 등 근사치인 코드(approx10/unverifiedSplit)로는 의미 있는
+//   조회가 안 되므로, 실시간 조회(isLive)·검증된 고정코드(hs.verified)·API043로 교체된
+//   실제 신고 세번(hs.manualOverride)일 때만 호출한다.
+// - imexTp는 수입(2) 고정 - 이 계산기는 수입 통관 기준이기 때문.
+async function updateCustomsRequirementArea(hs, item){
+  const area = document.getElementById('hsRequirementArea');
+  if(!area) return;
+
+  const reliable = isLive(item) || hs.manualOverride || hs.verified;
+  if(!reliable){
+    area.innerHTML = `<div class="hint" style="margin-top:10px;">ℹ️ 세관 요건(세관장확인대상 여부) 조회는 정확한 HS 10단위 부호가 필요합니다 - 이 코드는 아직 근사치라 조회를 생략했습니다. 정확한 10단위 부호를 확인한 뒤 다시 조회해보세요.</div>`;
+    return;
+  }
+
+  area.innerHTML = `<div class="hint" style="margin-top:10px;">세관 요건(세관장확인대상 여부) 조회 중…</div>`;
+  const digits = hs.code.replace(/\D/g, '');
+  const result = await apiCustomsRequirement(digits, '2');
+
+  // 화면 전환 등으로 그 사이 다른 품목으로 넘어갔다면(예: 뒤로가기 후 다른 품목 선택),
+  // 이 오래된 응답으로 최신 화면을 덮어쓰지 않도록 코드가 여전히 같은지 재확인한다.
+  if(document.getElementById('hsCodeBig').textContent !== hs.code) return;
+
+  if(!result){
+    area.innerHTML = `<div class="hint" style="margin-top:10px;">ℹ️ 세관 요건 자동조회에 실패했습니다(백엔드 미실행 또는 API 키 미설정일 수 있습니다) - <a href="https://unipass.customs.go.kr" target="_blank">관세청 UniPass</a>에서 직접 확인하세요.</div>`;
+    return;
+  }
+
+  if(result.tCnt === 0 || !result.requirements || result.requirements.length === 0){
+    area.innerHTML = `<div class="info-box" style="border-left-color:var(--good);margin-top:10px;"><h4>✅ 세관장확인대상 아님</h4><div>관세청 API029(세관장확인대상 물품 조회) 결과, 이 HS부호(${hs.code})는 현재 개별법상 별도 요건확인서류 제출 대상이 아닙니다. 다만 관련 법령은 수시로 바뀔 수 있으니 실제 신고 전 다시 한 번 확인하세요.</div></div>`;
+    return;
+  }
+
+  const rows = result.requirements.map(r => `
+    <li><b>${r.lworNm || '(법령명 미상)'}</b> - ${r.docNm || '요건확인서류명 미상'} (승인기관: ${r.ittNm || '미상'})${r.aplyStrtDt?` · 적용시작 ${r.aplyStrtDt}`:''}${r.aplyEndDt?` ~ ${r.aplyEndDt}`:''}</li>`
+  ).join('');
+  area.innerHTML = `<div class="info-box warn" style="margin-top:10px;"><h4>⚠ 세관장확인대상 물품입니다</h4><div>관세청 API029 조회 결과, 이 HS부호(${hs.code})는 아래 개별법에 따라 통관 시 별도의 요건확인서류 제출이 필요합니다.<ul style="margin:8px 0 0;padding-left:18px;">${rows}</ul></div></div>`;
+}
+
+// "3926.90-0000" 같은 코드 문자열에서 앞의 HS 6단위("392690")만 뽑아낸다.
+function headingFromCode(code){
+  const main = String(code).split('-')[0].replace(/\D/g, '');
+  return main.length===6 ? main : null;
+}
+
+// [22차 업데이트] 후보 목록 렌더링을 별도 함수로 분리 - 자동 적용 직후(loadHsSubcodes)와
+// 사용자가 수동으로 다른 후보로 바꾼 직후(pickSubcode) 양쪽에서 재사용한다.
+// activeHs10Sgn과 일치하는 후보에는 "적용됨" 배지를 달고 선택 버튼을 숨긴다.
+function renderSubcodeCandidateList(candidates, activeHs10Sgn){
+  const warn = `<div class="hint" style="margin-bottom:6px;">⚠ 같은 6단위 소호 안에서도 세번(뒤 4자리)에 따라 기본세율·협정(FTA)세율이 달라질 수 있습니다.
+    실제 상품과 더 정확히 일치하는 세번이 있으면 아래에서 바꿔주세요 - 바꾸면 그 세번 기준으로 관세청 실시간 세율을 다시 조회합니다.</div>`;
+  const rows = candidates.map((c,idx)=>{
+    const active = c.hs10Sgn === activeHs10Sgn;
+    return `
+    <div class="candidate" data-idx="${idx}" style="margin-top:8px;${active?'border-color:var(--good);':''}">
+      <div class="cand-left">
+        <div class="ko">${active?'<span class="tag live-src">적용됨</span> ':''}실적 순위 ${c.acrsTcntRnk}위 <span style="color:var(--sub);font-weight:400;font-size:12px;">(HS ${formatHs10(c.hs10Sgn)})</span></div>
+        <div class="en">${c.prlstNm}</div>
+      </div>
+      ${active ? '' : `<button class="btn sm pick-btn" onclick="pickSubcode(${idx})">이 세번으로 변경 →</button>`}
+    </div>`;
+  }).join('');
+  return `<div class="info-box" style="margin-top:12px;"><h4>🔍 이 소호(같은 6단위)의 실제 신고 세번 후보</h4><div>${warn}${rows}</div></div>`;
+}
+
+// [22차 업데이트] 예전에는 사용자가 "실제 세번 후보 조회해보기" 버튼을 직접 눌러야만
+// 동작했지만, 이제 approx10(-0000 placeholder) 코드를 만나면 renderHsResult()에서
+// 곧바로(버튼 클릭 없이) 이 함수를 자동 호출한다. 관세청 실적통계 API(API043)로 이
+// 소호 안의 실제 신고 세번들을 조회해서, 실적 1위 후보를 자동으로 적용한다 - 다만
+// 실적 1위가 항상 이 정확한 상품과 일치한다는 보장은 없으므로, 자동 적용된 것임을
+// 분명히 표시하고 전체 후보 목록도 함께 보여줘서 언제든 다른 세번으로 바꿀 수 있게 한다.
+// originalCode/item은 그 사이 사용자가 다른 재질을 고르거나 뒤로가기를 눌러 화면이
+// 이미 바뀌었는지 확인하기 위한 "오래된 응답 무시" 용도.
+async function loadHsSubcodes(heading6, originalCode, item){
+  const candidates = await apiHsNavigate(heading6);
+  state.hsSubcodeCandidates = candidates || [];
+
+  const subArea = document.getElementById('hsSubcodeArea');
+  const stillCurrent = state.selectedItem === item && document.getElementById('hsCodeBig').textContent === originalCode;
+  if(!stillCurrent) return; // 화면이 이미 바뀌었으면 이 오래된 응답으로 덮어쓰지 않음
+
+  if(!candidates || candidates.length===0){
+    if(subArea) subArea.innerHTML = `<div class="hint" style="margin-top:12px;">ℹ️ 실제 세번 후보를 찾지 못했습니다 (백엔드 미실행이거나, 이 실험적 기능이 아직 이 소호에서는 동작하지 않을 수 있어요) - 대표 세번(-0000)으로 계속 진행합니다. 정확한 세번은 <a href="https://unipass.customs.go.kr" target="_blank">관세청 UniPass</a>에서 "${heading6}"로 직접 검색해 확인하세요.</div>`;
+    return;
+  }
+
+  // 실적 1위 후보를 자동 적용
+  item._hs10Override = candidates[0].hs10Sgn;
+  item._hs10OverrideLabel = candidates[0].prlstNm;
+  item._hs10AutoApplied = true;
+  // 세번이 실제로 정해졌으니, 이 정확한 10자리 부호 기준으로 관세청 UniPass
+  // 실시간 관세율(API018)도 함께 미리 조회해둔다(isLive 품목과 동일한 방식).
+  state.liveTariffRates = null;
+  state.liveTariffPromise = apiTariff(candidates[0].hs10Sgn).then(rates=>{ state.liveTariffRates = rates; return rates; });
+  renderHsResult();
+}
+
+function pickSubcode(idx){
+  const c = (state.hsSubcodeCandidates || [])[idx];
+  if(!c) return;
+  state.selectedItem._hs10Override = c.hs10Sgn;
+  state.selectedItem._hs10OverrideLabel = c.prlstNm;
+  state.selectedItem._hs10AutoApplied = false; // 사용자가 직접 고른 것이므로 "자동 적용" 표시는 더 이상 쓰지 않음
+  // [신규] 뒤 4자리(세번)가 실제로 바뀌었으니, 이 정확한 10자리 부호를 기준으로
+  // 관세청 UniPass 실시간 관세율(API018)을 다시 조회한다. isLive(관세청 실시간 검색
+  // 결과) 품목과 동일한 매커니즘(liveTariffPromise)을 재사용해, 다음 단계(국가 선택
+  // 결과 화면)에서 "이 세번 전용"의 실제 기본세율·협정세율을 우선 사용하게 한다.
+  // 실패해도(백엔드 미실행 등) apiFetch가 조용히 null을 반환하므로, 그 경우 기존처럼
+  // 대표 추정치로 자연스럽게 폴백된다.
+  state.liveTariffRates = null;
+  state.liveTariffPromise = apiTariff(c.hs10Sgn).then(rates=>{ state.liveTariffRates = rates; return rates; });
+  renderHsResult();
+}
+
+/* =========================================================
+   10) RENDER: STEP 4 (countries)
+========================================================= */
+function renderCountries(filter){
+  const grid = document.getElementById('countryGrid');
+  const f = (filter||'').trim();
+  const list = f ? COUNTRIES.filter(c=> c.ko.includes(f) || c.en.toLowerCase().includes(f.toLowerCase())) : COUNTRIES;
+  grid.innerHTML = list.map(c=>`
+    <button type="button" class="country-btn" data-id="${c.id}" onclick="pickCountry('${c.id}')">
+      ${c.ko}<span class="en">${c.en}</span>
+    </button>
+  `).join('');
+}
+
+async function pickCountry(id){
+  state.selectedCountry = COUNTRIES.find(c=>c.id===id);
+  document.getElementById('panel-4').classList.add('hidden');
+  document.getElementById('panel-result').classList.remove('hidden');
+  updateStepper('result');
+  window.scrollTo({top:document.getElementById('panel-result').offsetTop-20, behavior:'smooth'});
+  await renderFinalResult();
+}
+
+/* =========================================================
+   11) RENDER: FINAL RESULT
+========================================================= */
+async function renderFinalResult(){
+  const item = state.selectedItem;
+  const mat = state.selectedMaterial;
+  const country = state.selectedCountry;
+  const hs = computeHsCode(item, mat);
+
+  let mfnRate, ftaRate, ftaNote, liveMatched = false;
+  // 근사 추정식보다 우선하는, 사용자가 실제 확인한 개별 HS×협정국 오버라이드가 있는지 먼저 확인
+  const ftaOverride = findFtaOverride(hs.code, country.id);
+
+  if(isLive(item)){
+    if(state.liveTariffPromise) await state.liveTariffPromise;
+    const rates = state.liveTariffRates;
+    const baseRow = findBaseRate(rates);
+    mfnRate = baseRow ? parseFloat(baseRow.trrt)||0 : item.txrt;
+    const ftaRow = matchFtaRate(rates, country);
+    if(ftaOverride){
+      ftaRate = ftaOverride.rate;
+      ftaNote = ftaOverride.note;
+    } else if(ftaRow){
+      ftaRate = parseFloat(ftaRow.trrt)||0;
+      liveMatched = true;
+      const period = (ftaRow.aplyStrtDt||ftaRow.aplyEndDt) ? ` (적용기간 ${ftaRow.aplyStrtDt||'-'} ~ ${ftaRow.aplyEndDt||'현재'})` : '';
+      ftaNote = `🟢 관세청 실시간 데이터: "${ftaRow.trrtTpNm}"${period}. 원산지결정기준 충족 + C/O 제출 시 적용됩니다.`;
+    } else {
+      // 실시간 협정세율을 찾지 못한 경우 -> 추정치로 폴백 (반드시 라벨링)
+      const est = getFtaRate({mfn:mfnRate, chapterNo:item.chapterNo, sensitive:false}, country);
+      ftaRate = est.rate;
+      ftaNote = `⚠ 이 HS코드·협정 조합의 실시간 세율을 찾지 못해 참고용 추정치를 표시합니다. ${est.note}`;
+    }
+  } else if(hs.manualOverride){
+    // [신규] API043 세번 후보 목록에서 사용자가 직접 고른, 실제로 존재하는 10자리
+    // 세번(예: 3926.90-9000)인 경우. pickSubcode()에서 이 정확한 세번으로 이미
+    // apiTariff() 조회를 시작해뒀으므로(state.liveTariffPromise), 그 결과가 있으면
+    // isLive 품목과 똑같이 "이 세번 전용" 실제 기본세율·협정세율을 우선 사용한다.
+    // 같은 6단위 소호라도 세번마다 세율이 다를 수 있다는 게 이 기능의 핵심이므로,
+    // 근사식(getFtaRate)으로 되돌아갈 때는 반드시 그 사실을 경고 문구에 명시한다.
+    if(state.liveTariffPromise) await state.liveTariffPromise;
+    const rates = state.liveTariffRates;
+    const baseRow = findBaseRate(rates);
+    mfnRate = baseRow ? (parseFloat(baseRow.trrt)||0) : item.mfn;
+    const ftaRow = matchFtaRate(rates, country);
+    if(ftaOverride){
+      ftaRate = ftaOverride.rate;
+      ftaNote = ftaOverride.note;
+    } else if(ftaRow){
+      ftaRate = parseFloat(ftaRow.trrt)||0;
+      liveMatched = true;
+      const period = (ftaRow.aplyStrtDt||ftaRow.aplyEndDt) ? ` (적용기간 ${ftaRow.aplyStrtDt||'-'} ~ ${ftaRow.aplyEndDt||'현재'})` : '';
+      ftaNote = `🟢 관세청 실시간 데이터(이 세번 ${hs.code} 기준): "${ftaRow.trrtTpNm}"${period}. 원산지결정기준 충족 + C/O 제출 시 적용됩니다.`;
+    } else {
+      const est = getFtaRate({mfn:mfnRate, chapterNo:item.chapterNo, sensitive:false}, country);
+      ftaRate = est.rate;
+      ftaNote = baseRow
+        ? `⚠ 이 정확한 세번(${hs.code})의 실시간 협정세율은 찾지 못해 참고용 추정치를 표시합니다. 같은 소호라도 세번마다 실제 협정세율이 다를 수 있으니 반드시 UniPass에서 재확인하세요. ${est.note}`
+        : `⚠ 이 세번(${hs.code})의 실시간 세율 조회에 실패했습니다(백엔드 미실행 또는 API 키 미설정일 수 있음) - 참고용 추정치를 표시합니다. 세번마다 실제 세율이 다를 수 있으니 반드시 UniPass에서 재확인하세요. ${est.note}`;
+    }
+  } else {
+    mfnRate = item.mfn;
+    if(ftaOverride){
+      ftaRate = ftaOverride.rate;
+      ftaNote = ftaOverride.note;
+    } else {
+      const fta = getFtaRate(item, country);
+      ftaRate = fta.rate;
+      ftaNote = fta.note;
+    }
+  }
+
+  document.getElementById('resultSummaryLine').textContent =
+    `${buildTradeName(item,mat)} (HS ${hs.code}) → ${country.ko} 수출 시 관세율 비교${(isLive(item)||liveMatched)?' [관세청 실시간 조회]':''}`;
+
+  document.getElementById('resultMfnRate').textContent = mfnRate + '%';
+  document.getElementById('ftaCap').textContent = `C/O 제출 · ${country.ko} FTA 협정 관세율${liveMatched?' 🟢':''}`;
+  document.getElementById('resultFtaRate').textContent = ftaRate + '%';
+  document.getElementById('ftaNote').textContent = ftaNote;
+
+  const savings = round1(mfnRate - ftaRate);
+  document.getElementById('savingsAmt').textContent = (savings>0?'-':'') + Math.abs(savings) + '%p';
+  document.getElementById('savingsSub').textContent = savings>0 ? `(${mfnRate}% → ${ftaRate}%)` : '(협정관세 혜택이 크지 않은 품목입니다)';
+  document.getElementById('savingsBanner').style.display = savings>0 ? 'flex' : 'none';
+
+  const coBox = document.getElementById('coTypeContent');
+  const coMap = {
+    self: {tag:'자율발급', desc:'수출자 또는 생산자가 원산지결정기준 충족 여부를 스스로 판단하여 원산지증명서(C/O)를 자율적으로 발급할 수 있는 협정입니다.'},
+    agency: {tag:'기관발급', desc:'상공회의소 또는 세관 등 발급기관을 통해 원산지증명서(C/O)를 발급받아야 하는 협정입니다.'},
+    both: {tag:'자율/기관 혼합', desc:'품목 및 금액 기준 등에 따라 자율발급 또는 기관발급이 선택적으로 적용될 수 있는 협정입니다.'}
+  };
+  const co = coMap[country.co];
+  coBox.innerHTML = `<span class="tag ${country.co==='self'?'self':country.co==='agency'?'agency':''}">${co.tag}</span> ${co.desc}` +
+    (country.special ? `<div class="hint" style="margin-top:8px;">※ RCEP은 한·일간 최초로 체결된 FTA를 포함하는 다자간 협정입니다.</div>` : '');
+}
+
+/* =========================================================
+   12) STEPPER / NAVIGATION
+========================================================= */
+function updateStepper(step){
+  document.querySelectorAll('.step-pill').forEach(p=>{
+    const s = parseInt(p.dataset.step);
+    p.classList.remove('active','done');
+    if(step==='result'){ p.classList.add('done'); }
+    else if(s < step) p.classList.add('done');
+    else if(s === step) p.classList.add('active');
+  });
+}
+
+function goStep(n){
+  document.getElementById('panel-result').classList.add('hidden');
+  for(let i=1;i<=4;i++){
+    document.getElementById('panel-'+i).classList.toggle('hidden', i!==n);
+  }
+  updateStepper(n);
+  if(n===2) renderMaterials();
+  if(n===3) renderHsResult();
+  if(n===4) renderCountries('');
+  window.scrollTo({top:document.getElementById('panel-'+n).offsetTop-20, behavior:'smooth'});
+}
+
+function resetAll(){
+  const keepAiConfigured = state.aiConfigured;
+  state = {rawInput:'', selectedItem:null, selectedMaterial:null, selectedCountry:null, lastCandidates:[], liveTariffRates:null, liveTariffPromise:null, aiConfigured:keepAiConfigured, clarifyQuestions:[], clarifyAnswers:{}, clarifyBaseInput:'', materialLiveCandidates:[], hsSubcodeCandidates:[]};
+  document.getElementById('koInput').value='';
+  document.getElementById('materialLiveResults').innerHTML='';
+  document.getElementById('translateResultArea').classList.add('hidden');
+  document.getElementById('toStep3Btn').disabled = true;
+  goStep(1);
+}
+
+/* =========================================================
+   COMMENTS (댓글/답글)
+   - 백엔드(server/lib/comments.js, JSON 파일 저장)에 CRUD 요청.
+   - 로그인 없이 닉네임+비밀번호로 본인확인(수정/삭제 시 비밀번호 확인).
+   - 기본은 댓글 목록 높이를 제한("약 10줄")해서 보여주고, '전체보기'를 누르면
+     펼쳐진다. 실제 줄 수를 화면에서 정확히 재려면 브라우저 레이아웃이 필요해서,
+     여기서는 "댓글 글자 수/개수가 일정량을 넘으면 접힌 높이를 넘길 가능성이 높다"는
+     근사치로 '전체보기' 버튼 노출 여부를 판단한다(과학적으로 정확하진 않지만,
+     CSS max-height가 실제 시각적 자르기를 담당하므로 큰 문제는 없다).
+========================================================= */
+let commentsFlat = [];
+let commentsExpanded = false;
+let commentsLoadFailed = false;
+
+function escapeHtml(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+// GET 외의 메서드(POST/PUT/DELETE)로 JSON 본문을 보내는 요청 헬퍼.
+// apiFetch()는 GET 전용이라 댓글 작성/수정/삭제를 위해 별도로 만들었다.
+async function apiRequest(path, method, body){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), API_TIMEOUT_MS);
+  try{
+    const res = await fetch(API_BASE + path, {
+      method,
+      headers: {'Content-Type':'application/json'},
+      body: body!==undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    let json = null;
+    try{ json = await res.json(); }catch(e){ json = null; }
+    return { status: res.status, ok: res.ok, json };
+  }catch(e){
+    clearTimeout(timer);
+    return { status: 0, ok: false, json: { ok:false, error:'서버에 연결할 수 없습니다. 백엔드(server)가 실행 중인지 확인해주세요.' } };
+  }
+}
+
+function formatCommentTime(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return '';
+  const pad = n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// 평평한 배열(parentId 참조)을 트리로 재구성. 부모가 이미 지워진 답글은
+// (이론상 백엔드가 cascade 삭제를 하므로 일어나지 않아야 하지만) 안전하게 최상위로 취급.
+function buildCommentTree(flat){
+  const byId = new Map();
+  flat.forEach(c => byId.set(c.id, Object.assign({}, c, {replies: []})));
+  const roots = [];
+  byId.forEach(c => {
+    if(c.parentId && byId.has(c.parentId)){
+      byId.get(c.parentId).replies.push(c);
+    } else {
+      roots.push(c);
+    }
+  });
+  return roots;
+}
+
+// 댓글 총량이 접힌 높이(약 10줄)를 넘길 가능성이 높은지에 대한 근사치 판단.
+function estimateCommentsNeedExpand(flat){
+  if(!flat || flat.length === 0) return false;
+  if(flat.length > 8) return true;
+  const totalChars = flat.reduce((sum,c)=> sum + (c.content ? c.content.length : 0) + 40, 0);
+  return (totalChars / 42) > 10; // 카드 폭 기준 한 줄당 대략 42자로 근사
+}
+
+async function loadComments(){
+  const { ok, json } = await apiRequest('/api/comments', 'GET');
+  if(!ok || !json || json.ok !== true){
+    commentsLoadFailed = true;
+    commentsFlat = [];
+  } else {
+    commentsLoadFailed = false;
+    commentsFlat = json.comments || [];
+  }
+  renderComments();
+}
+
+function renderComments(){
+  const list = document.getElementById('commentList');
+  const wrap = document.getElementById('commentListWrap');
+  const toggleBtn = document.getElementById('commentToggleBtn');
+
+  if(commentsLoadFailed){
+    list.innerHTML = '<div class="small-muted">댓글을 불러오지 못했습니다. 백엔드(server)가 실행 중인지 확인해주세요.</div>';
+    toggleBtn.style.display = 'none';
+    wrap.classList.add('expanded');
+    return;
+  }
+  if(commentsFlat.length === 0){
+    list.innerHTML = '<div class="small-muted">아직 댓글이 없습니다. 첫 댓글을 남겨보세요!</div>';
+    toggleBtn.style.display = 'none';
+    wrap.classList.add('expanded');
+    return;
+  }
+
+  const tree = buildCommentTree(commentsFlat);
+  list.innerHTML = tree.map(node => renderCommentNode(node)).join('');
+  const needsExpand = estimateCommentsNeedExpand(commentsFlat);
+  toggleBtn.style.display = needsExpand ? '' : 'none';
+  wrap.classList.toggle('expanded', commentsExpanded || !needsExpand);
+  toggleBtn.textContent = commentsExpanded ? '접기 ▴' : '전체보기 ▾';
+}
+
+function toggleCommentsExpanded(){
+  commentsExpanded = !commentsExpanded;
+  renderComments();
+  if(!commentsExpanded){
+    const sec = document.getElementById('commentSection');
+    if(sec && typeof sec.scrollIntoView === 'function') sec.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+}
+
+function renderCommentNode(node){
+  const timeLabel = escapeHtml(formatCommentTime(node.createdAt) + (node.updatedAt ? ' (수정됨)' : ''));
+  const id = escapeHtml(node.id);
+  const repliesHtml = (node.replies||[]).map(r => renderCommentNode(r)).join('');
+  return `
+    <div class="comment-item" data-comment-id="${id}">
+      <div class="comment-head">
+        <span class="comment-author">${escapeHtml(node.author)}</span>
+        <span class="comment-time">${timeLabel}</span>
+      </div>
+      <div class="comment-body">${escapeHtml(node.content)}</div>
+      <div class="comment-actions">
+        <button type="button" onclick="toggleReplyForm('${id}')">↩ 답글</button>
+        <button type="button" onclick="toggleEditForm('${id}', this)">✎ 수정</button>
+        <button type="button" class="danger" onclick="toggleDeleteForm('${id}')">🗑 삭제</button>
+      </div>
+      <div id="replyFormArea-${id}" class="comment-inline-slot"></div>
+      <div id="editFormArea-${id}" class="comment-inline-slot"></div>
+      <div id="deleteFormArea-${id}" class="comment-inline-slot"></div>
+      ${repliesHtml ? `<div class="comment-children">${repliesHtml}</div>` : ''}
+    </div>`;
+}
+
+// 한 번에 인라인 폼(답글/수정/삭제) 하나만 열려있게 나머지를 전부 닫는다.
+function closeAllCommentInlineForms(){
+  document.querySelectorAll('.comment-inline-slot').forEach(el=>{ el.innerHTML = ''; });
+}
+
+function toggleReplyForm(id){
+  const area = document.getElementById('replyFormArea-'+id);
+  const wasOpen = !!(area && area.innerHTML);
+  closeAllCommentInlineForms();
+  if(!area || wasOpen) return;
+  area.innerHTML = `
+    <div class="comment-inline-form">
+      <div class="row">
+        <input type="text" id="replyAuthor-${id}" placeholder="닉네임" maxlength="20">
+        <input type="password" id="replyPassword-${id}" placeholder="비밀번호(4자 이상)" maxlength="30">
+      </div>
+      <textarea id="replyContent-${id}" placeholder="답글을 입력하세요" maxlength="500"></textarea>
+      <div class="err" id="replyErr-${id}"></div>
+      <div class="btns">
+        <button type="button" class="btn ghost sm" onclick="toggleReplyForm('${id}')">취소</button>
+        <button type="button" class="btn sm" onclick="submitReply('${id}')">답글 등록</button>
+      </div>
+    </div>`;
+}
+
+function toggleEditForm(id){
+  const area = document.getElementById('editFormArea-'+id);
+  const wasOpen = !!(area && area.innerHTML);
+  const bodyMatch = commentsFlat.find(c=>c.id===id);
+  const currentText = bodyMatch ? bodyMatch.content : '';
+  closeAllCommentInlineForms();
+  if(!area || wasOpen) return;
+  area.innerHTML = `
+    <div class="comment-inline-form">
+      <textarea id="editContent-${id}" maxlength="500">${escapeHtml(currentText)}</textarea>
+      <div class="row" style="margin-top:8px;">
+        <input type="password" id="editPassword-${id}" placeholder="비밀번호" maxlength="30">
+      </div>
+      <div class="err" id="editErr-${id}"></div>
+      <div class="btns">
+        <button type="button" class="btn ghost sm" onclick="toggleEditForm('${id}')">취소</button>
+        <button type="button" class="btn sm" onclick="submitEdit('${id}')">저장</button>
+      </div>
+    </div>`;
+}
+
+function toggleDeleteForm(id){
+  const area = document.getElementById('deleteFormArea-'+id);
+  const wasOpen = !!(area && area.innerHTML);
+  closeAllCommentInlineForms();
+  if(!area || wasOpen) return;
+  area.innerHTML = `
+    <div class="comment-inline-form">
+      <div class="small-muted">삭제하려면 비밀번호를 입력하세요. (답글이 달려있다면 답글도 함께 삭제됩니다)</div>
+      <div class="row" style="margin-top:8px;">
+        <input type="password" id="deletePassword-${id}" placeholder="비밀번호" maxlength="30">
+      </div>
+      <div class="err" id="deleteErr-${id}"></div>
+      <div class="btns">
+        <button type="button" class="btn ghost sm" onclick="toggleDeleteForm('${id}')">취소</button>
+        <button type="button" class="btn sm" onclick="submitDelete('${id}')">삭제 확정</button>
+      </div>
+    </div>`;
+}
+
+async function submitReply(id){
+  const author = (document.getElementById('replyAuthor-'+id).value||'').trim();
+  const password = document.getElementById('replyPassword-'+id).value||'';
+  const content = (document.getElementById('replyContent-'+id).value||'').trim();
+  const errEl = document.getElementById('replyErr-'+id);
+  errEl.textContent = '';
+
+  if(!author){ errEl.textContent = '닉네임을 입력해주세요.'; return; }
+  if(password.length < 4){ errEl.textContent = '비밀번호는 4자 이상 입력해주세요.'; return; }
+  if(!content){ errEl.textContent = '답글 내용을 입력해주세요.'; return; }
+
+  const { ok, json } = await apiRequest('/api/comments', 'POST', { author, password, content, parentId: id });
+  if(!ok || !json || json.ok !== true){
+    errEl.textContent = (json && json.error) || '답글 등록에 실패했습니다.';
+    return;
+  }
+  await loadComments();
+}
+
+async function submitEdit(id){
+  const content = (document.getElementById('editContent-'+id).value||'').trim();
+  const password = document.getElementById('editPassword-'+id).value||'';
+  const errEl = document.getElementById('editErr-'+id);
+  errEl.textContent = '';
+
+  if(!content){ errEl.textContent = '댓글 내용을 입력해주세요.'; return; }
+  if(!password){ errEl.textContent = '비밀번호를 입력해주세요.'; return; }
+
+  const { ok, json } = await apiRequest('/api/comments/'+id, 'PUT', { password, content });
+  if(!ok || !json || json.ok !== true){
+    errEl.textContent = (json && json.error) || '수정에 실패했습니다.';
+    return;
+  }
+  await loadComments();
+}
+
+async function submitDelete(id){
+  const password = document.getElementById('deletePassword-'+id).value||'';
+  const errEl = document.getElementById('deleteErr-'+id);
+  errEl.textContent = '';
+
+  if(!password){ errEl.textContent = '비밀번호를 입력해주세요.'; return; }
+
+  const { ok, json } = await apiRequest('/api/comments/'+id, 'DELETE', { password });
+  if(!ok || !json || json.ok !== true){
+    errEl.textContent = (json && json.error) || '삭제에 실패했습니다.';
+    return;
+  }
+  await loadComments();
+}
+
+async function submitNewComment(e){
+  if(e && e.preventDefault) e.preventDefault();
+  const author = (document.getElementById('commentAuthor').value||'').trim();
+  const password = document.getElementById('commentPassword').value||'';
+  const content = (document.getElementById('commentContent').value||'').trim();
+  const msgEl = document.getElementById('commentFormMsg');
+  msgEl.textContent = '';
+  msgEl.classList.remove('ok');
+
+  if(!author){ msgEl.textContent = '닉네임을 입력해주세요.'; return; }
+  if(password.length < 4){ msgEl.textContent = '비밀번호는 4자 이상 입력해주세요.'; return; }
+  if(!content){ msgEl.textContent = '댓글 내용을 입력해주세요.'; return; }
+
+  const submitBtn = document.getElementById('commentSubmitBtn');
+  submitBtn.disabled = true;
+  const { ok, json } = await apiRequest('/api/comments', 'POST', { author, password, content });
+  submitBtn.disabled = false;
+
+  if(!ok || !json || json.ok !== true){
+    msgEl.textContent = (json && json.error) || '댓글 등록에 실패했습니다. 백엔드(server)가 실행 중인지 확인해주세요.';
+    return;
+  }
+  document.getElementById('commentContent').value = '';
+  document.getElementById('commentCharCount').textContent = '0';
+  msgEl.textContent = '댓글이 등록되었습니다.';
+  msgEl.classList.add('ok');
+  await loadComments();
+}
+
+/* =========================================================
+   ROCKET MARGIN CALCULATOR (로켓배송 원가&마진률 계산)
+   - 순수 클라이언트 계산(백엔드 호출 없음)이라 페이지 로드 시 바로 계산해도 된다.
+     (단, 환율 자동조회는 백엔드를 거치므로 화면을 처음 열 때만 1회 시도한다.)
+   - 팩킹수량/규격 -> 제품 CBM -> 1CBM 적재수 -> 1개당 제반비(물류비) 순으로 계산하고,
+     (SKU단가+중국 내 배송비)에 구매대행 수수료(%)를 얹은 뒤 환율을 곱해 1개당 제품비를
+     구해 더하면 개당비용(원가)이 나온다.
+   - 판매마진은 "금액(원)"과 "마진률(원가=개당비용 대비 %)" 두 입력칸이 서로 연동된다.
+     rmMarginBasis로 사용자가 마지막으로 직접 수정한 쪽을 기억해뒀다가, 원가(비용)가
+     바뀌어 재계산될 때도 그 기준을 유지한다(마진률을 기준으로 잡았으면 원가가 바뀌어도
+     마진률은 유지되고 금액이 따라 바뀌며, 반대도 마찬가지).
+   - 판매마진(금액)을 원가에 더하면 쿠팡공급가가 나온다.
+   - 쿠팡 마진률(구간별로 표에서 직접 수정 가능)은 쿠팡공급가가 아니라 "쿠팡판매가
+     대비" 비율이다. 즉 마진률 40%면 "쿠팡마진이 쿠팡판매가의 40%"라는 뜻이므로,
+     쿠팡판매가 = 쿠팡공급가 ÷ (1 − 마진률), 쿠팡마진 = 쿠팡판매가 − 쿠팡공급가 순으로
+     계산한다(공급가에 마진률을 곱해서 더하는 마크업 방식이 아님).
+========================================================= */
+function formatWon(n){
+  if(n==null || isNaN(n)) return '-';
+  return Math.round(n).toLocaleString('ko-KR');
+}
+// 쿠팡공급가/쿠팡판매가 전용: 10원 단위로 올림해서 표시 (예: 3,031 -> 3,040)
+function formatWon10Up(n){
+  if(n==null || isNaN(n)) return '-';
+  return (Math.ceil(n/10)*10).toLocaleString('ko-KR');
+}
+function formatCbm(n){
+  if(n==null || isNaN(n) || n<=0) return '-';
+  return n.toLocaleString('ko-KR', {minimumFractionDigits:3, maximumFractionDigits:3});
+}
+
+// 쿠팡 마진률 3단계(기본값 40/35/30%) - 표 안에서 직접 수정 가능하도록 상태로 보관
+let rmMarginRates = [40, 35, 30];
+// 판매마진 입력의 기준("금액을 직접 입력함" vs "마진률을 직접 입력함")
+let rmMarginBasis = 'won';
+
+function computeRmCostBreakdown(){
+  const packQty = parseFloat(document.getElementById('rmPackQty').value) || 0;
+  const w = parseFloat(document.getElementById('rmWidth').value) || 0;
+  const d = parseFloat(document.getElementById('rmDepth').value) || 0;
+  const h = parseFloat(document.getElementById('rmHeight').value) || 0;
+  const unitPriceCny = parseFloat(document.getElementById('rmUnitPriceCny').value) || 0;
+  const agentFeePct = parseFloat(document.getElementById('rmAgentFeePct').value) || 0;
+  const fxRate = parseFloat(document.getElementById('rmFxRate').value) || 0;
+  const freightPerCbm = parseFloat(document.getElementById('rmFreightPerCbm').value) || 0;
+
+  const cbm = (w * d * h) / 1000000; // cm³ -> m³(CBM)
+  const unitsPerCbmPrecise = cbm > 0 ? (packQty / cbm) : 0; // 화면엔 반올림해서 보여주지만, 다음 계산엔 정밀값을 그대로 쓴다(엑셀과 동일한 방식)
+  const overheadPerUnit = unitsPerCbmPrecise > 0 ? (freightPerCbm / unitsPerCbmPrecise) : 0;
+  // 1개당 제품비 = (SKU단가+중국 내 배송비) × (1 + 구매대행 수수료%) × 환율
+  // - 구매대행 수수료는 SKU단가+배송비 합산 금액(위안) 기준으로 붙는다고 보고, 그 수수료가
+  //   포함된 위안화 금액을 환율로 환산해 원화 제품비를 구한다.
+  const productCostPerUnit = unitPriceCny * (1 + agentFeePct / 100) * fxRate;
+  const totalCostPerUnit = productCostPerUnit + overheadPerUnit;
+  return { cbm, unitsPerCbmPrecise, overheadPerUnit, productCostPerUnit, totalCostPerUnit };
+}
+
+function recalcRocketMargin(){
+  const b = computeRmCostBreakdown();
+
+  document.getElementById('rmCbm').textContent = formatCbm(b.cbm);
+  document.getElementById('rmUnitsPerCbm').textContent = b.unitsPerCbmPrecise > 0 ? formatWon(b.unitsPerCbmPrecise) : '-';
+  document.getElementById('rmOverheadPerUnit').textContent = formatWon(b.overheadPerUnit);
+  document.getElementById('rmProductCostPerUnit').textContent = formatWon(b.productCostPerUnit);
+  document.getElementById('rmTotalCostPerUnit').textContent = formatWon(b.totalCostPerUnit);
+
+  const wonInput = document.getElementById('rmSellerMarginWon');
+  const pctInput = document.getElementById('rmSellerMarginPct');
+  let sellerMargin;
+  if(rmMarginBasis === 'pct'){
+    const pct = parseFloat(pctInput.value) || 0;
+    sellerMargin = b.totalCostPerUnit > 0 ? (b.totalCostPerUnit * pct / 100) : 0;
+    wonInput.value = Math.round(sellerMargin);
+  } else {
+    sellerMargin = parseFloat(wonInput.value) || 0;
+    pctInput.value = b.totalCostPerUnit > 0 ? (sellerMargin / b.totalCostPerUnit * 100).toFixed(1) : '';
+  }
+
+  const supplyPrice = b.totalCostPerUnit + sellerMargin;
+  document.getElementById('rmSupplyPrice').textContent = formatWon10Up(supplyPrice);
+
+  // 부가세: 쿠팡공급가는 부가세 포함 금액이라고 보고, 포함된 세액만 역산해서 뺀다
+  // (부가세 포함가 ÷ 11 = 부가세액, 즉 10/110). 실제마진은 셀러가 손에 쥐는 마진에서
+  // 이 세액만큼을 뺀 값 - 부가세는 셀러 몫이 아니라 나중에 국가에 납부해야 하는 돈이기 때문.
+  const vat = supplyPrice / 11;
+  const actualMargin = sellerMargin - vat;
+  document.getElementById('rmVat').textContent = formatWon(vat);
+  document.getElementById('rmActualMargin').textContent = formatWon(actualMargin);
+
+  renderRmMarginTable(supplyPrice);
+}
+
+function onRmSellerMarginWonEdited(){
+  rmMarginBasis = 'won';
+  recalcRocketMargin();
+}
+function onRmSellerMarginPctEdited(){
+  rmMarginBasis = 'pct';
+  recalcRocketMargin();
+}
+
+function adjustRmFxRate(delta){
+  const el = document.getElementById('rmFxRate');
+  const cur = parseFloat(el.value) || 0;
+  el.value = Math.round(cur + delta);
+  recalcRocketMargin();
+}
+
+// 구매대행 수수료(%) +/- 버튼 - 누를 때마다 1%p씩 가감(0% 밑으로는 내려가지 않게 함)
+function adjustRmAgentFee(delta){
+  const el = document.getElementById('rmAgentFeePct');
+  const cur = parseFloat(el.value) || 0;
+  el.value = Math.max(0, Math.round(cur + delta));
+  recalcRocketMargin();
+}
+
+// CBM당 해상운임 빠른 입력 버튼 - 누를 때마다 기존 값에 금액이 더해진다(직접 자릿수를 타이핑하지 않아도 되게)
+function addRmFreight(amount){
+  const el = document.getElementById('rmFreightPerCbm');
+  const cur = parseFloat(el.value) || 0;
+  el.value = cur + amount;
+  recalcRocketMargin();
+}
+
+// 화면을 처음 열 때 1회, 실시간(참고용) 환율을 자동 조회해서 "네이버 등 참고환율 + 10원"으로
+// 채워준다. 조회 실패 시(오프라인, API 장애 등) 조용히 기존 기본값(직접 입력)으로 남겨둔다.
+async function initRmExchangeRate(){
+  const statusEl = document.getElementById('rmFxStatus');
+  statusEl.textContent = '실시간 참고 환율 조회 중…';
+  const result = await apiExchangeRate('CNY', 'KRW');
+  if(!result){
+    statusEl.textContent = '실시간 환율 조회 실패 - 직접 입력해주세요.';
+    return;
+  }
+  const adjusted = Math.round(result.rate) + 10;
+  document.getElementById('rmFxRate').value = adjusted;
+  statusEl.textContent = `${result.source} 참고환율 ${formatWon(result.rate)}원 + 10원 = ${adjusted}원 적용됨 (네이버 등 실제 고시환율과 다를 수 있어요 - +/- 버튼이나 직접 입력으로 조정 가능)`;
+  recalcRocketMargin();
+}
+
+// "새 견적 작성"으로 지워지기 직전의 입력값을 담아두는 스냅샷 - "이전" 버튼으로 되돌릴 때 사용
+let rmPrevQuoteSnapshot = null;
+const RM_QUOTE_FIELD_IDS = ['rmPackQty','rmWidth','rmDepth','rmHeight','rmUnitPriceCny','rmAgentFeePct','rmFxRate','rmFreightPerCbm'];
+
+function snapshotRmQuote(){
+  const snap = { fields:{}, marginBasis: rmMarginBasis };
+  RM_QUOTE_FIELD_IDS.forEach(id=>{ snap.fields[id] = document.getElementById(id).value; });
+  return snap;
+}
+
+// "새 견적 작성" 버튼: 판매마진률(%)만 남기고 나머지 입력값은 모두 초기화한다.
+// 지우기 직전 값은 스냅샷으로 저장해두고, "이전" 버튼을 눌러 되돌릴 수 있게 한다.
+// 환율은 새 견적이니 최신 참고환율을 다시 자동 조회해서 채워준다(최초 화면 진입 때와 동일한 동작).
+function resetRmQuote(){
+  rmPrevQuoteSnapshot = snapshotRmQuote();
+  const undoBtn = document.getElementById('rmUndoBtn');
+  if(undoBtn) undoBtn.disabled = false;
+
+  RM_QUOTE_FIELD_IDS.forEach(id=>{
+    document.getElementById(id).value = '';
+  });
+  rmMarginBasis = 'pct'; // 마진률(%)을 기준으로 유지 - 새 원가에 맞춰 판매마진(원)만 다시 계산됨
+  document.getElementById('rmFxStatus').textContent = '';
+  recalcRocketMargin();
+  return initRmExchangeRate(); // 호출부(테스트 등)가 환율 자동조회 완료까지 기다릴 수 있도록 프로미스를 반환
+}
+
+// "이전" 버튼: 직전 "새 견적 작성"으로 지워지기 전의 값으로 되돌린다(1단계 되돌리기).
+function restoreRmPrevQuote(){
+  if(!rmPrevQuoteSnapshot) return;
+  RM_QUOTE_FIELD_IDS.forEach(id=>{
+    document.getElementById(id).value = rmPrevQuoteSnapshot.fields[id];
+  });
+  rmMarginBasis = rmPrevQuoteSnapshot.marginBasis;
+  document.getElementById('rmFxStatus').textContent = '';
+  recalcRocketMargin();
+}
+
+// [수정] "쿠팡 마진률"은 쿠팡공급가 대비가 아니라 쿠팡판매가(최종 소비자가) 대비
+// 비율이다 - 예: 마진률 40%면 "쿠팡마진이 쿠팡판매가의 40%"라는 뜻. 그래서
+// 쿠팡판매가를 먼저 구하고(공급가 ÷ (1-마진률)), 거기서 공급가를 뺀 나머지를
+// 쿠팡마진으로 계산한다(마진률만큼 공급가에 곱해서 더하는 마크업 방식이 아님).
+// 빠른 설정 프리셋(50/45/40/35/30%) - 표 위 공용 버튼 하나로 3개 구간을 한번에 이동시킨다.
+// (행마다 똑같은 버튼을 반복해서 보여주는 게 중복이라는 피드백을 반영 - 이제 버튼은 표 위에 한 줄만 있다.)
+const RM_MARGIN_RATE_PRESETS = [50, 45, 40, 35, 30];
+
+// 프리셋 버튼(예: 45%)을 누르면 3개 구간이 [45, 40, 35]처럼 5%p씩 차이나는 값으로 한번에 이동한다.
+// (0% 밑으로는 내려가지 않게 방어)
+function applyRmMarginPreset(topRate){
+  rmMarginRates = [0, 1, 2].map(i => Math.max(0, topRate - i*5));
+  recalcRocketMargin();
+}
+
+function renderRmMarginTable(supplyPrice){
+  const tbody = document.getElementById('rmMarginTableBody');
+  tbody.innerHTML = rmMarginRates.map((rate, idx) => {
+    const rateFrac = rate / 100;
+    const valid = rateFrac >= 0 && rateFrac < 1; // 100% 이상이면 판매가가 무한대/음수가 되어 계산 불가
+    const sellPrice = valid ? (supplyPrice / (1 - rateFrac)) : NaN;
+    const marginAmt = valid ? (sellPrice - supplyPrice) : NaN;
+    return `
+      <tr>
+        <td class="rm-editable"><input type="number" value="${rate}" min="0" max="99" step="1" onchange="updateRmMarginRate(${idx}, this.value)" style="width:60px;"> %</td>
+        <td>${formatWon10Up(supplyPrice)}원</td>
+        <td>${formatWon(marginAmt)}원</td>
+        <td class="rm-sell-price">${formatWon10Up(sellPrice)}원</td>
+      </tr>`;
+  }).join('');
+}
+
+function updateRmMarginRate(idx, val){
+  rmMarginRates[idx] = parseFloat(val) || 0;
+  recalcRocketMargin();
+}
+
+/* =========================================================
+   물류비 계산기 (LOGISTICS COST CALCULATOR)
+   - 사용자가 올린 엑셀(통합 문서2.xlsx)의 "팩킹현황"/"예상 물류비" 시트를 그대로
+     옮긴 것 - 순수 클라이언트 계산이라 백엔드 호출 없이 페이지 로드 시 바로 계산한다.
+   - 총CBM = (박스 가로×세로×높이, cm³→m³) × 박스 개수(총구매수량÷1박스포장수량)
+   - 관세 = 신고금액(구매금액) × 관세율%
+   - 부가세 = (신고금액 + 해상운임LCL + 관세) × 10%  (엑셀 원본 수식 그대로: 관세의 과세표준에
+     운임까지 포함해 부가세를 매기는 방식)
+   - 해상운임 LCL은 직접 입력하지 않고 총CBM 구간에 따라 자동으로 계산된다(calcFreightLcl 참고).
+   - 합계 = 해상운임LCL + 통관수수료 + CO비용 + DO비용 + 관세 + 부가세 (엑셀의 SUM(C11:D16)과 동일)
+========================================================= */
+
+// 해상운임 LCL 자동계산 - CBM 구간별 요금표
+// - CBM 0.5 이하: 90,000원 고정
+// - CBM 0.5 초과 ~ 1 이하: 135,000원 고정
+// - CBM 1 초과: 135,000원 + (1 초과분을 0.1단위로 올림한 계단 수) × 11,500원
+// - CBM 값이 0.1단위보다 더 정밀한 소수(예: 1.35)면, 0.1단위로 올림(예: 1.4)한 뒤 계산한다.
+function calcFreightLcl(cbm){
+  if(!cbm || cbm <= 0) return 0;
+  // 부동소수점 오차(예: 1.4000000000000001) 때문에 정확히 0.1 배수인 값이 실수로
+  // 한 단계 더 올라가는 것을 막기 위해 아주 작은 보정값(1e-9)을 빼고 올림한다.
+  const roundedCbm = Math.ceil(cbm * 10 - 1e-9) / 10;
+  if(roundedCbm <= 0.5) return 90000;
+  if(roundedCbm <= 1.0) return 135000;
+  const extraSteps = Math.round((roundedCbm - 1.0) * 10); // 1을 초과한 0.1CBM 단위 계단 수
+  return 135000 + extraSteps * 11500;
+}
+
+function computeLogistics(){
+  const totalQty = parseFloat(document.getElementById('lgTotalQty').value) || 0;
+  const boxPackQty = parseFloat(document.getElementById('lgBoxPackQty').value) || 0;
+  const w = parseFloat(document.getElementById('lgWidth').value) || 0;
+  const d = parseFloat(document.getElementById('lgDepth').value) || 0;
+  const h = parseFloat(document.getElementById('lgHeight').value) || 0;
+  const declaredValue = parseFloat(document.getElementById('lgDeclaredValue').value) || 0;
+  const tariffRate = parseFloat(document.getElementById('lgTariffRate').value) || 0;
+  const customsFee = parseFloat(document.getElementById('lgCustomsFee').value) || 0;
+  const coFee = parseFloat(document.getElementById('lgCoFee').value) || 0;
+  const doFee = parseFloat(document.getElementById('lgDoFee').value) || 0;
+
+  const boxVolumeCbm = (w * d * h) / 1000000; // cm³ -> m³(CBM), 박스 1개 기준
+  const boxCount = boxPackQty > 0 ? (totalQty / boxPackQty) : 0;
+  const totalCbm = boxVolumeCbm * boxCount;
+
+  const freightLcl = calcFreightLcl(totalCbm);
+  const duty = declaredValue * (tariffRate / 100);
+  const vat = (declaredValue + freightLcl + duty) * 0.1;
+  const total = freightLcl + customsFee + coFee + doFee + duty + vat;
+
+  return { totalCbm, freightLcl, duty, vat, total };
+}
+
+function recalcLogistics(){
+  const r = computeLogistics();
+  document.getElementById('lgTotalCbm').textContent = formatCbm(r.totalCbm);
+  document.getElementById('lgFreightLcl').textContent = formatWon(r.freightLcl);
+  document.getElementById('lgDuty').textContent = formatWon(r.duty);
+  document.getElementById('lgVat').textContent = formatWon(r.vat);
+  document.getElementById('lgTotal').textContent = formatWon(r.total);
+}
+
+/* =========================================================
+   ③ 작업비용 (WORK COST) - 바코드/OPP포장/정밀검수는 건당 50원 고정,
+   기타 비용은 실비이므로 금액을 직접 입력한다.
+========================================================= */
+const LG_WORK_UNIT_PRICE = 50; // 바코드/OPP 포장/정밀 검수 - 작업당 50원
+
+function computeWorkCost(){
+  const qtyBarcode = parseFloat(document.getElementById('lgWorkQtyBarcode').value) || 0;
+  const qtyOpp = parseFloat(document.getElementById('lgWorkQtyOpp').value) || 0;
+  const qtyInspect = parseFloat(document.getElementById('lgWorkQtyInspect').value) || 0;
+  const amtEtc = parseFloat(document.getElementById('lgWorkAmtEtc').value) || 0;
+
+  const amtBarcode = qtyBarcode * LG_WORK_UNIT_PRICE;
+  const amtOpp = qtyOpp * LG_WORK_UNIT_PRICE;
+  const amtInspect = qtyInspect * LG_WORK_UNIT_PRICE;
+  const total = amtBarcode + amtOpp + amtInspect + amtEtc;
+
+  return { amtBarcode, amtOpp, amtInspect, amtEtc, total };
+}
+
+function recalcWorkCost(){
+  const r = computeWorkCost();
+  document.getElementById('lgWorkAmtBarcode').textContent = formatWon(r.amtBarcode) + '원';
+  document.getElementById('lgWorkAmtOpp').textContent = formatWon(r.amtOpp) + '원';
+  document.getElementById('lgWorkAmtInspect').textContent = formatWon(r.amtInspect) + '원';
+  document.getElementById('lgWorkTotal').textContent = formatWon(r.total);
+}
+
+/* =========================================================
+   INIT
+========================================================= */
+document.getElementById('translateBtn').addEventListener('click', runTranslate);
+document.getElementById('koInput').addEventListener('keydown', e=>{ if(e.key==='Enter') runTranslate(); });
+document.getElementById('toStep3Btn').addEventListener('click', proceedToHsResult);
+document.getElementById('countrySearch').addEventListener('input', e=> renderCountries(e.target.value));
+document.getElementById('commentForm').addEventListener('submit', submitNewComment);
+document.getElementById('commentContent').addEventListener('input', e=>{
+  document.getElementById('commentCharCount').textContent = String(e.target.value.length);
+});
+['rmPackQty','rmWidth','rmDepth','rmHeight','rmUnitPriceCny','rmAgentFeePct','rmFxRate','rmFreightPerCbm'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', recalcRocketMargin);
+});
+document.getElementById('rmSellerMarginWon').addEventListener('input', onRmSellerMarginWonEdited);
+document.getElementById('rmSellerMarginPct').addEventListener('input', onRmSellerMarginPctEdited);
+recalcRocketMargin(); // 순수 계산이라 백엔드 호출 없이 페이지 로드 시 바로 1회 계산해둔다
+
+['lgTotalQty','lgBoxPackQty','lgWidth','lgDepth','lgHeight','lgDeclaredValue','lgTariffRate','lgCustomsFee','lgCoFee','lgDoFee'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', recalcLogistics);
+});
+recalcLogistics(); // 물류비 계산기도 순수 계산이라 페이지 로드 시 바로 1회 계산해둔다
+
+['lgWorkQtyBarcode','lgWorkQtyOpp','lgWorkQtyInspect','lgWorkAmtEtc'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', recalcWorkCost);
+});
+recalcWorkCost(); // 작업비용도 순수 계산이라 페이지 로드 시 바로 1회 계산해둔다
+
+/* =========================================================
+   좌측 사이드바 라우팅 - 여러 기능이 추가될 사이트를 위한 최소 구조.
+   기본은 홈 화면이고, 사이드바 버튼을 누르면 해당 기능(feature-*)만 보여준다.
+   계산기 초기화(예시 칩, 백엔드 연결 상태 확인)는 실제로 그 화면을 처음 열 때만
+   한 번 실행해, 홈 화면만 보고 있는 동안 불필요한 백엔드 호출을 하지 않는다.
+========================================================= */
+let calculatorInitialized = false;
+let rocketMarginInitialized = false;
+function showFeature(name){
+  document.getElementById('home-view').classList.toggle('hidden', name!=='home');
+  // 기능 화면(feature-*)이 늘어나도 이 부분을 매번 고치지 않도록, 각 기능
+  // 컨테이너에 공통 class="feature-view"를 붙여두고 여기서 한 번에 토글한다.
+  document.querySelectorAll('.feature-view').forEach(el=>{
+    el.classList.toggle('hidden', el.id !== ('feature-'+name));
+  });
+  document.querySelectorAll('.nav-btn').forEach(b=>{
+    b.classList.toggle('active', b.id === ('navBtn-'+name));
+  });
+  if(name==='calculator' && !calculatorInitialized){
+    calculatorInitialized = true;
+    renderExamples();
+    updateStatusBadge();
+    loadComments();
+  }
+  if(name==='rocketmargin' && !rocketMarginInitialized){
+    rocketMarginInitialized = true;
+    initRmExchangeRate(); // 환율 자동조회는 백엔드를 거치므로, 이 화면을 처음 열 때만 1회 시도한다
+  }
+}
+</script>
+</body>
+</html>
