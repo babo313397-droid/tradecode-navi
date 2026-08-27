@@ -19,6 +19,7 @@
 
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const { searchHs, getTariff, navigateHsCode, checkCustomsRequirement } = require('./lib/unipass');
 const { analyzeProduct } = require('./lib/ai');
@@ -30,6 +31,7 @@ const { getExchangeRate } = require('./lib/exchangeRate');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '20kb' })); // 댓글 등 POST/PUT/DELETE 본문(JSON) 파싱용
+app.use(express.static(path.join(__dirname)));
 
 const PORT = process.env.PORT || 4000;
 const UNIPASS_KEY = process.env.UNIPASS_API_KEY || '';
@@ -216,7 +218,7 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, keyConfigured: !!UNIPASS_KEY, aiConfigured: !!ANTHROPIC_KEY });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`TradeCode Navi 백엔드 프록시 실행 중: http://localhost:${PORT}`);
   console.log(`인증키 설정 여부: ${UNIPASS_KEY ? 'O' : 'X (미설정)'}`);
 });
