@@ -3060,6 +3060,12 @@ function showFeature(name){
     initRmExchangeRate(); // 환율 자동조회는 백엔드를 거치므로, 이 화면을 처음 열 때만 1회 시도한다
   }
 }
+
+// SEO 개별 URL로 접속했을 때 해당 계산기를 바로 연다.
+const initialFeature = window.TRADECODE_INITIAL_FEATURE || 'home';
+showFeature(initialFeature);
+
 </script>
 </body>
 </html>
+
