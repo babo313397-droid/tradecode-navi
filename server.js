@@ -20,6 +20,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 const { searchHs, getTariff, navigateHsCode, checkCustomsRequirement } = require('./lib/unipass');
 const { analyzeProduct } = require('./lib/ai');
@@ -551,6 +552,95 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/', (req, res) => {
+  // =========================================================
+// SEO용 개별 계산기 URL
+// 기존 index.html 하나를 사용하되 URL별 title/description/canonical 변경
+// =========================================================
+
+const SEO_PAGES = {
+  '/hs-code': {
+    feature: 'calculator',
+    title: 'HS코드 조회·FTA 관세율 계산기 | TradeCode Navi',
+    description: '품명과 재질을 기준으로 HS코드, HSK 10자리, 기본관세율과 국가별 FTA 협정관세율을 확인해 보세요.'
+  },
+
+  '/coupang-margin': {
+    feature: 'rocketmargin',
+    title: '쿠팡 로켓배송 원가·마진률 계산기 | TradeCode Navi',
+    description: '쿠팡 로켓배송 상품의 원가, 공급가, 판매가와 마진률을 간편하게 계산해 보세요.'
+  },
+
+  '/logistics-cost': {
+    feature: 'logistics',
+    title: '수입 물류비·CBM 계산기 | TradeCode Navi',
+    description: '박스 규격과 수량, 신고금액, 관세율을 입력해 CBM과 예상 수입 물류비를 계산해 보세요.'
+  }
+};
+
+function escapeAttr(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderSeoPage(req, res) {
+  const config = SEO_PAGES[req.path];
+
+  if (!config) {
+    return res.status(404).send('Not Found');
+  }
+
+  const indexPath = path.join(__dirname, 'index.html');
+
+  fs.readFile(indexPath, 'utf8', (err, html) => {
+    if (err) {
+      console.error('index.html 읽기 실패:', err);
+      return res.status(500).send('Server Error');
+    }
+
+    const canonical =
+      `https://tool.dasaba.co.kr${req.path}`;
+
+    html = html
+      .replace(
+        /<title>[\s\S]*?<\/title>/i,
+        `<title>${config.title}</title>`
+      )
+      .replace(
+        /<meta\s+name=["']description["'][^>]*>/i,
+        `<meta name="description" content="${escapeAttr(config.description)}">`
+      )
+      .replace(
+        /<link\s+rel=["']canonical["'][^>]*>/i,
+        `<link rel="canonical" href="${canonical}">`
+      )
+      .replace(
+        /<meta\s+property=["']og:title["'][^>]*>/i,
+        `<meta property="og:title" content="${escapeAttr(config.title)}">`
+      )
+      .replace(
+        /<meta\s+property=["']og:description["'][^>]*>/i,
+        `<meta property="og:description" content="${escapeAttr(config.description)}">`
+      )
+      .replace(
+        /<meta\s+property=["']og:url["'][^>]*>/i,
+        `<meta property="og:url" content="${canonical}">`
+      )
+      .replace(
+        '</head>',
+        `<script>window.TRADECODE_INITIAL_FEATURE=${JSON.stringify(config.feature)};</script>\n</head>`
+      );
+
+    res.type('html').send(html);
+  });
+}
+
+app.get('/hs-code', renderSeoPage);
+app.get('/coupang-margin', renderSeoPage);
+app.get('/logistics-cost', renderSeoPage);
+  app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
