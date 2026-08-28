@@ -1115,6 +1115,19 @@ async function apiTariff(hsSgn){
   if(!json || !json.rates) return null;
   return json.rates;
 }
+  async function apiClipTariff(hsSgn){
+  const digits = String(hsSgn || '').replace(/\D/g, '');
+
+  if(!/^\d{10}$/.test(digits)) return null;
+
+  const json = await apiFetch(
+    `/api/clip-tariff?hs=${encodeURIComponent(digits)}`
+  );
+
+  if(!json || !Array.isArray(json.rates)) return null;
+
+  return json.rates;
+}
 
 // 실시간(참고용) 환율 조회 - 로켓배송 계산기의 환율 입력칸을 자동으로 채우는 용도.
 // 키/가입 불필요한 공개 API 기반이라 실패해도 조용히 null을 반환하고, 프론트는
@@ -2123,11 +2136,48 @@ async function renderFinalResult(){
   const country = state.selectedCountry;
   const hs = computeHsCode(item, mat);
 
-  let mfnRate, ftaRate, ftaNote, liveMatched = false;
-  // 근사 추정식보다 우선하는, 사용자가 실제 확인한 개별 HS×협정국 오버라이드가 있는지 먼저 확인
-  const ftaOverride = findFtaOverride(hs.code, country.id);
+ let mfnRate, ftaRate, ftaNote, liveMatched = false;
+const ftaOverride = findFtaOverride(hs.code, country.id);
 
-  if(isLive(item)){
+// 정확한 HS 10자리라면 관세청 CLIP 실제 세율표를 최우선 조회
+const hsDigits = String(hs.code || '').replace(/\D/g, '');
+
+let clipRates = null;
+let clipBaseRow = null;
+let clipFtaRow = null;
+
+if(/^\d{10}$/.test(hsDigits)){
+  clipRates = await apiClipTariff(hsDigits);
+
+  if(clipRates && clipRates.length){
+    // C = WTO협정세율, 없으면 A = 기본세율
+    clipBaseRow =
+      clipRates.find(r => r.trrtTpcd === 'C') ||
+      clipRates.find(r => r.trrtTpcd === 'A') ||
+      null;
+
+    // 한·중 FTA 실제 협정세율
+    if(country.id === 'china'){
+      clipFtaRow =
+        clipRates.find(r => r.trrtTpcd === 'FCN1') ||
+        null;
+    }
+  }
+}
+
+if(clipBaseRow && clipFtaRow){
+
+  mfnRate = Number(clipBaseRow.trrt);
+  ftaRate = Number(clipFtaRow.trrt);
+
+  liveMatched = true;
+
+  ftaNote =
+    `🟢 관세청 CLIP 실제 세율: ${clipFtaRow.trrtTpNm} ` +
+    `(HS ${hs.code}) 기준 ${ftaRate}%. ` +
+    `추정치가 아니라 관세청 실제 세율표를 사용했습니다.`;
+
+} else if(isLive(item)){
     if(state.liveTariffPromise) await state.liveTariffPromise;
     const rates = state.liveTariffRates;
     const baseRow = findBaseRate(rates);
