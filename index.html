@@ -2179,10 +2179,24 @@ if(/^\d{10}$/.test(hsDigits)){
 
   if(clipRates && clipRates.length){
     // C = WTO협정세율, 없으면 A = 기본세율
-    clipBaseRow =
-      clipRates.find(r => r.trrtTpcd === 'C') ||
-      clipRates.find(r => r.trrtTpcd === 'A') ||
-      null;
+const clipARow =
+  clipRates.find(r => r.trrtTpcd === 'A') || null;
+
+const clipCRow =
+  clipRates.find(r => r.trrtTpcd === 'C') || null;
+
+// 일반 수입세율:
+// 기본세율(A)과 WTO협정세율(C)이 모두 있으면 더 낮은 세율 적용.
+// 다만 농림축산물 등 일부 예외품목은 별도 우선순위가 있을 수 있으므로
+// 현재는 일반 소비재/공산품 기준으로 처리한다.
+if(clipARow && clipCRow){
+  clipBaseRow =
+    Number(clipCRow.trrt) < Number(clipARow.trrt)
+      ? clipCRow
+      : clipARow;
+} else {
+  clipBaseRow = clipARow || clipCRow || null;
+}
 
 // 선택 국가의 실제 FTA 협정세율
 const clipFtaCode = CLIP_FTA_CODE_MAP[country.id];
