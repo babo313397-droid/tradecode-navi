@@ -551,7 +551,6 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, keyConfigured: !!UNIPASS_KEY, aiConfigured: !!ANTHROPIC_KEY });
 });
 
-app.get('/', (req, res) => {
   // =========================================================
 // SEO용 개별 계산기 URL
 // 기존 index.html 하나를 사용하되 URL별 title/description/canonical 변경
