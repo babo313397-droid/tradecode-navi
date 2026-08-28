@@ -1040,6 +1040,34 @@ const COUNTRIES = [
   {id:'philippines', ko:'필리핀', en:'Philippines', tier:'new', co:'agency', ftaKeyword:['필리핀']},
   {id:'uae', ko:'아랍에미리트 (UAE)', en:'UAE', tier:'new', co:'both', ftaKeyword:['UAE','아랍에미리트']}
 ];
+  // 관세청 CLIP 실제 FTA 세율 구분기호
+const CLIP_FTA_CODE_MAP = {
+  chile: 'FCL1',
+  singapore: 'FSG1',
+
+  efta_no: 'FEF1',
+  efta_is: 'FEF1',
+  efta_ch: 'FEF1',
+
+  asean: 'FAS1',
+  india: 'FIN1',
+  eu: 'FEU1',
+  peru: 'FPE1',
+  usa: 'FUS1',
+  turkiye: 'FTR1',
+  australia: 'FAU1',
+  canada: 'FCA1',
+  china: 'FCN1',
+  newzealand: 'FNZ1',
+  vietnam: 'FVN1',
+  colombia: 'FCO1',
+  uk: 'FGB1',
+  israel: 'FIL1',
+  cambodia: 'FKH1',
+  indonesia: 'FID1',
+  philippines: 'FPH1',
+  uae: 'FAE1'
+};
 
 /* =========================================================
    2.5) LIVE API 연동 (UniPass 관세청 Open API, 백엔드 프록시 경유)
@@ -2156,12 +2184,14 @@ if(/^\d{10}$/.test(hsDigits)){
       clipRates.find(r => r.trrtTpcd === 'A') ||
       null;
 
-    // 한·중 FTA 실제 협정세율
-    if(country.id === 'china'){
-      clipFtaRow =
-        clipRates.find(r => r.trrtTpcd === 'FCN1') ||
-        null;
-    }
+// 선택 국가의 실제 FTA 협정세율
+const clipFtaCode = CLIP_FTA_CODE_MAP[country.id];
+
+if(clipFtaCode){
+  clipFtaRow =
+    clipRates.find(r => r.trrtTpcd === clipFtaCode) ||
+    null;
+}
   }
 }
 
