@@ -238,6 +238,153 @@ app.get('/api/hsk-children', async (req, res) => {
 
   res.json(result);
 });
+// =========================================================
+// 관세청 CLIP 실제 세율표 조회
+// HS 10자리 기준으로 A/C/FCN1 등 실제 세율 행을 읽어온다.
+// =========================================================
+
+function cleanClipRateCell(html) {
+  const values = [];
+
+  for (const m of String(html || '').matchAll(/\bvalue=["']([^"']*)["']/gi)) {
+    const v = decodeHtmlEntities(m[1]).trim();
+    if (v) values.push(v);
+  }
+
+  const text = cleanHtmlCell(html);
+  if (text) values.push(text);
+
+  return [...new Set(values)].join(' ').trim();
+}
+
+function extractPercent(text) {
+  const s = String(text || '');
+
+  const pct = s.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (pct) return parseFloat(pct[1]);
+
+  const nums = s.match(/\d+(?:\.\d+)?/g) || [];
+  for (const n of nums) {
+    const v = parseFloat(n);
+    if (Number.isFinite(v) && v >= 0 && v <= 100) return v;
+  }
+
+  return null;
+}
+
+function parseClipTariffRows(html) {
+  const rows = String(html || '').match(/<tr\b[\s\S]*?<\/tr>/gi) || [];
+  const found = [];
+
+  for (const row of rows) {
+    const rawCells = [
+      ...row.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)
+    ].map(m => m[1]);
+
+    if (rawCells.length < 3) continue;
+
+    const cells = rawCells.map(cleanClipRateCell);
+
+    const code = String(cells[0] || '').trim();
+
+    // A, C, FCN1, FEU1, FUS1 등 세율 구분기호
+    if (!/^[A-Z][A-Z0-9]*\d*$/.test(code)) continue;
+
+    const rate = extractPercent(cells[1]);
+    if (rate === null) continue;
+
+    const name = cells[2] || '';
+
+    found.push({
+      trrtTpcd: code,
+      trrt: rate,
+      trrtTpNm: name,
+      source: 'KCS CLIP'
+    });
+  }
+
+  return found;
+}
+
+async function fetchClipTariff(hs10) {
+  const hs = String(hs10 || '').replace(/\D/g, '');
+
+  if (!/^\d{10}$/.test(hs)) {
+    return {
+      ok: false,
+      error: 'hs는 10자리여야 합니다.',
+      rates: []
+    };
+  }
+
+  const url = new URL(
+    'https://unipass.customs.go.kr/clip/hsinfosrch/openULS0201007Q.do'
+  );
+
+  url.searchParams.set('opnMod', 'P');
+  url.searchParams.set('cntyCd', 'KR');
+  url.searchParams.set('searchVal', hs);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch(url.toString(), {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 TradeCodeNavi/1.0',
+        'Accept': 'text/html,application/xhtml+xml'
+      }
+    });
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: `CLIP HTTP ${response.status}`,
+        rates: []
+      };
+    }
+
+    const html = await response.text();
+    const rates = parseClipTariffRows(html);
+
+    return {
+      ok: true,
+      hs,
+      count: rates.length,
+      rates
+    };
+
+  } catch (err) {
+    return {
+      ok: false,
+      error: `CLIP 세율 조회 실패: ${err.message}`,
+      rates: []
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+app.get('/api/clip-tariff', async (req, res) => {
+  const hs = String(req.query.hs || '').replace(/\D/g, '');
+
+  if (!/^\d{10}$/.test(hs)) {
+    return res.status(400).json({
+      ok: false,
+      error: 'hs 파라미터는 10자리여야 합니다.',
+      rates: []
+    });
+  }
+
+  const result = await fetchClipTariff(hs);
+
+  if (!result.ok) {
+    return res.status(502).json(result);
+  }
+
+  res.json(result);
+});
 app.get('/api/hs-search', async (req, res) => {
   
   const q = (req.query.q || '').trim();
