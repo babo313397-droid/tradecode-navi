@@ -1093,6 +1093,17 @@ async function apiFreeTranslate(q){
 // 10자리 세번들을 관세청 실적통계 기준으로 조회 시도. 가이드 문서의 예제 하나만
 // 보고 만든 기능이라 실제로 후보가 안 나올 수도 있다 - 그 경우 UI에서 조용히
 // "후보를 찾지 못했다"고 안내하고 기존 -0000 placeholder는 그대로 유지된다.
+  async function apiHskChildren(prefix6){
+  const json = await apiFetch(`/api/hsk-children?prefix=${encodeURIComponent(prefix6)}`);
+  if(!json || !Array.isArray(json.candidates)) return null;
+
+  return json.candidates.map((c, idx) => ({
+    hs10Sgn: c.hs10Sgn,
+    prlstNm: [c.korePrnm, c.englPrnm].filter(Boolean).join(' / '),
+    acrsTcntRnk: idx + 1,
+    source: c.source || 'KCS CLIP'
+  }));
+}
 async function apiHsNavigate(heading6){
   const json = await apiFetch(`/api/hs-navigate?heading=${encodeURIComponent(heading6)}`);
   if(!json || !json.candidates) return null;
@@ -2016,8 +2027,15 @@ function renderSubcodeCandidateList(candidates, activeHs10Sgn){
 // originalCode/item은 그 사이 사용자가 다른 재질을 고르거나 뒤로가기를 눌러 화면이
 // 이미 바뀌었는지 확인하기 위한 "오래된 응답 무시" 용도.
 async function loadHsSubcodes(heading6, originalCode, item){
-  const candidates = await apiHsNavigate(heading6);
-  state.hsSubcodeCandidates = candidates || [];
+let candidates = await apiHskChildren(heading6);
+
+// CLIP에서 실제 HSK 후보를 못 가져온 경우에만
+// 기존 UniPass API043을 보조수단으로 사용
+if(!candidates || candidates.length === 0){
+  candidates = await apiHsNavigate(heading6);
+}
+
+state.hsSubcodeCandidates = candidates || [];
 
   const subArea = document.getElementById('hsSubcodeArea');
   const stillCurrent = state.selectedItem === item && document.getElementById('hsCodeBig').textContent === originalCode;
@@ -2028,15 +2046,32 @@ async function loadHsSubcodes(heading6, originalCode, item){
     return;
   }
 
-  // 실적 1위 후보를 자동 적용
-  item._hs10Override = candidates[0].hs10Sgn;
-  item._hs10OverrideLabel = candidates[0].prlstNm;
+// 실제 HSK 후보가 하나뿐이면 자동 적용
+if(candidates.length === 1){
+  const c = candidates[0];
+
+  item._hs10Override = c.hs10Sgn;
+  item._hs10OverrideLabel = c.prlstNm;
   item._hs10AutoApplied = true;
-  // 세번이 실제로 정해졌으니, 이 정확한 10자리 부호 기준으로 관세청 UniPass
-  // 실시간 관세율(API018)도 함께 미리 조회해둔다(isLive 품목과 동일한 방식).
+
   state.liveTariffRates = null;
-  state.liveTariffPromise = apiTariff(candidates[0].hs10Sgn).then(rates=>{ state.liveTariffRates = rates; return rates; });
+  state.liveTariffPromise = apiTariff(c.hs10Sgn).then(rates=>{
+    state.liveTariffRates = rates;
+    return rates;
+  });
+
   renderHsResult();
+  return;
+}
+
+// 후보가 여러 개면 임의로 고르지 않고 사용자가 선택
+item._hs10Override = null;
+item._hs10OverrideLabel = null;
+item._hs10AutoApplied = false;
+
+if(subArea){
+  subArea.innerHTML = renderSubcodeCandidateList(candidates, null);
+}
 }
 
 function pickSubcode(idx){
