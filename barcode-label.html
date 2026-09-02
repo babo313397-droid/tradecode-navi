@@ -1,1 +1,144 @@
 
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>바코드 라벨 생성기 | TradeCode Navi</title>
+  <meta name="description" content="제품명, 재질, 수입원, 주의사항, 제조국과 영문+숫자 바코드를 입력해 실제 라벨 크기에 맞는 바코드 라벨을 만들고 PDF로 저장하세요." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://tool.dasaba.co.kr/barcode-label" />
+
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+
+  <style>
+    :root{--navy:#0b2e4f;--navy-dark:#071f38;--bg:#f4f6f9;--card:#fff;--line:#dfe5ec;--text:#1b2733;--muted:#667381;--danger:#c62828;--success:#157347}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Malgun Gothic",Arial,sans-serif;background:var(--bg);color:var(--text)}
+    header{background:linear-gradient(135deg,var(--navy),var(--navy-dark));color:#fff;padding:20px}
+    .header-inner{max-width:1300px;margin:0 auto}.brand{font-size:22px;font-weight:900;margin-bottom:4px}.header-sub{font-size:13px;color:#cfdae5}
+    main{max-width:1300px;margin:24px auto;padding:0 18px 50px}.page-title{margin-bottom:18px}.page-title h1{margin:0 0 6px;font-size:28px;color:var(--navy-dark)}.page-title p{margin:0;color:var(--muted);font-size:14px}
+    .layout{display:grid;grid-template-columns:minmax(360px,500px) 1fr;gap:22px;align-items:start}
+    .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 5px 22px rgba(10,35,60,.06)}.panel h2{margin:0 0 16px;font-size:19px;color:var(--navy-dark)}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{margin-bottom:12px}.field label{display:block;margin-bottom:5px;font-size:13px;font-weight:800;color:#344150}
+    input,textarea,select{width:100%;border:1px solid #ccd4dd;border-radius:8px;padding:10px 11px;font:inherit;font-size:14px;background:#fff;color:#1a2430;outline:none}input:focus,textarea:focus,select:focus{border-color:#5c82ab;box-shadow:0 0 0 3px rgba(21,101,192,.08)}textarea{resize:vertical;min-height:70px}
+    .section-label{margin:20px 0 10px;padding-top:14px;border-top:1px solid #e8ecf1;font-size:14px;font-weight:900;color:var(--navy)}
+    .preset-row,.button-row{display:flex;flex-wrap:wrap;gap:8px}button{border:0;border-radius:8px;padding:10px 13px;cursor:pointer;font-weight:800;font-size:13px}.btn-primary{background:var(--navy);color:#fff}.btn-secondary{background:#e9eef4;color:#213344}.btn-ghost{background:#fff;color:#213344;border:1px solid #cfd7df}
+    .preview-panel{position:sticky;top:16px}.preview-toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.preview-size{font-size:13px;color:var(--muted);font-weight:700}
+    .preview-stage{min-height:620px;border:1px dashed #bdc8d3;background:#f9fbfd;border-radius:12px;display:flex;align-items:center;justify-content:center;padding:22px;overflow:auto}
+    #previewScaler{transform-origin:center center;transition:transform .15s ease}
+    .label{background:#fff;border:1px solid #222;color:#000;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-start;text-align:center;padding:4mm 3.5mm 3mm;font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif}
+    .label-title{font-weight:900;line-height:1.25;white-space:pre-wrap;overflow-wrap:anywhere}.label-option{font-weight:800;line-height:1.28;margin-top:1.2mm;white-space:pre-wrap;overflow-wrap:anywhere}.label-info{margin-top:2mm;line-height:1.25;white-space:pre-wrap;overflow-wrap:anywhere}.label-warning{margin-top:1.7mm;line-height:1.24;white-space:pre-wrap;overflow-wrap:anywhere}.label-age{margin-top:1.4mm;line-height:1.22;font-weight:700;white-space:pre-wrap}
+    .barcode-area{margin-top:auto;padding-top:1.8mm;width:100%}#barcodeSvg{display:block;width:100%;max-width:100%;margin:0 auto}.barcode-text{font-family:Arial,Helvetica,sans-serif;font-weight:500;line-height:1.05;margin-top:.4mm;white-space:nowrap}.made-in{font-family:Arial,Helvetica,sans-serif;font-weight:900;line-height:1.02;margin-top:.3mm;white-space:nowrap}
+    .overflow-warning{display:none;margin-top:10px;color:var(--danger);background:#fff0f0;border:1px solid #f2bcbc;border-radius:8px;padding:9px 10px;font-size:13px;font-weight:800}.ok-message{margin-top:10px;color:var(--success);font-size:12px}.help{margin-top:10px;color:var(--muted);font-size:12px;line-height:1.55}.range-wrap{display:grid;grid-template-columns:1fr 72px;gap:8px;align-items:center}input[type="range"]{padding:0}
+    #exportStage{position:fixed;left:-100000px;top:0;opacity:0;pointer-events:none}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}.preview-panel{position:static}.preview-stage{min-height:500px}}
+  </style>
+</head>
+<body>
+<header><div class="header-inner"><div class="brand">TradeCode Navi</div><div class="header-sub">바코드 라벨 생성기 · CODE128 · 실제 라벨 크기 PDF 저장</div></div></header>
+<main>
+  <div class="page-title"><h1>바코드 라벨 생성기</h1><p>라벨 크기를 mm로 입력하면 같은 비율로 미리보기하고, PDF도 입력한 실제 크기로 저장합니다.</p></div>
+  <div class="layout">
+    <section class="panel">
+      <h2>라벨 내용 입력</h2>
+      <div class="grid2">
+        <div class="field"><label for="labelWidth">라벨 가로 (mm)</label><input id="labelWidth" type="number" min="20" max="210" step="1" value="60"></div>
+        <div class="field"><label for="labelHeight">라벨 세로 (mm)</label><input id="labelHeight" type="number" min="20" max="297" step="1" value="90"></div>
+      </div>
+      <div class="preset-row" style="margin-bottom:14px"><button class="btn-ghost" type="button" onclick="setPreset(40,60)">40×60</button><button class="btn-ghost" type="button" onclick="setPreset(50,70)">50×70</button><button class="btn-ghost" type="button" onclick="setPreset(60,90)">60×90</button><button class="btn-ghost" type="button" onclick="setPreset(70,100)">70×100</button></div>
+      <div class="field"><label for="productName">제품명</label><textarea id="productName">원이네 곰돌이 아쿠아 습식타월</textarea></div>
+      <div class="field"><label for="optionText">옵션 / 구성 / 규격</label><textarea id="optionText">대형 (보관케이스 포함)
+그레이+민트 2개 85x33cm</textarea></div>
+      <div class="field"><label for="material">재질</label><input id="material" value="인조 스웨이드"></div>
+      <div class="field"><label for="importer">수입원</label><input id="importer" value="코리아원"></div>
+      <div class="field"><label for="address">수입원 주소</label><textarea id="address">경기도 부천시 원미구 도약로 36</textarea></div>
+      <div class="field"><label for="phone">전화번호</label><input id="phone" value="032-901-0000"></div>
+      <div class="field"><label for="warning">주의사항</label><textarea id="warning">사용법에 따라 물빠짐 우려가 있으니, 필히 상세페이지 주의사항을 참조하시길 바랍니다.</textarea></div>
+      <div class="grid2"><div class="field"><label for="age">사용연령</label><input id="age" value="14세 이상"></div><div class="field"><label for="country">제조국</label><input id="country" value="중국"></div></div>
+      <div class="field"><label for="barcodeValue">바코드 번호 (영문 + 숫자 가능)</label><input id="barcodeValue" value="R228526170004" maxlength="40"></div>
+
+      <div class="section-label">글자 / 바코드 크기</div>
+      <div class="field"><label>제품명 글자 크기</label><div class="range-wrap"><input id="titleFont" type="range" min="8" max="28" step="1" value="18"><input id="titleFontNumber" type="number" min="8" max="28" value="18"></div></div>
+      <div class="field"><label>본문 글자 크기</label><div class="range-wrap"><input id="bodyFont" type="range" min="7" max="22" step="1" value="14"><input id="bodyFontNumber" type="number" min="7" max="22" value="14"></div></div>
+      <div class="field"><label>바코드 높이 (mm)</label><div class="range-wrap"><input id="barcodeHeight" type="range" min="8" max="30" step="1" value="16"><input id="barcodeHeightNumber" type="number" min="8" max="30" value="16"></div></div>
+      <div class="field"><label>바코드 숫자 글자 크기</label><div class="range-wrap"><input id="barcodeTextFont" type="range" min="7" max="22" step="1" value="14"><input id="barcodeTextFontNumber" type="number" min="7" max="22" value="14"></div></div>
+
+      <div class="button-row" style="margin-top:18px"><button class="btn-primary" type="button" onclick="downloadLabelPdf()">라벨 PDF 다운로드</button><button class="btn-secondary" type="button" onclick="downloadA4Pdf()">A4 여러 장 PDF</button><button class="btn-ghost" type="button" onclick="resetForm()">초기화</button></div>
+      <div class="help">· PDF 출력 시 프린터 설정은 <b>실제 크기 / 100%</b>를 권장합니다.<br>· CODE128은 영문과 숫자를 함께 사용할 수 있습니다.<br>· GS1/EAN 등 공식 유통 상품바코드가 필요한 경우 임의의 CODE128 번호와는 별도로 확인해야 합니다.</div>
+    </section>
+
+    <section class="panel preview-panel">
+      <div class="preview-toolbar"><h2 style="margin:0">실시간 미리보기</h2><div class="button-row"><button class="btn-ghost" type="button" onclick="setPreviewMode('fit')">화면에 맞춤</button><button class="btn-ghost" type="button" onclick="setPreviewMode('actual')">실제 크기 보기</button></div></div>
+      <div class="preview-size" id="previewSizeText">라벨 크기: 60 × 90 mm</div>
+      <div class="preview-stage" id="previewStage"><div id="previewScaler"><div class="label" id="labelPreview"><div class="label-title" id="outProductName"></div><div class="label-option" id="outOptionText"></div><div class="label-info" id="outInfo"></div><div class="label-warning" id="outWarning"></div><div class="label-age" id="outAge"></div><div class="barcode-area"><svg id="barcodeSvg"></svg><div class="barcode-text" id="outBarcodeText"></div><div class="made-in" id="outMadeIn"></div></div></div></div></div>
+      <div class="overflow-warning" id="overflowWarning">⚠ 내용이 현재 라벨 크기를 초과합니다. 글자 크기를 줄이거나 라벨 높이를 늘려주세요.</div>
+      <div class="ok-message" id="okMessage">✓ 현재 내용이 라벨 안에 들어갑니다.</div>
+    </section>
+  </div>
+</main>
+<div id="exportStage"></div>
+
+<script>
+  const MM_TO_PX = 96 / 25.4;
+  let previewMode = 'fit';
+  const el = id => document.getElementById(id);
+  const formIds=['labelWidth','labelHeight','productName','optionText','material','importer','address','phone','warning','age','country','barcodeValue','titleFont','titleFontNumber','bodyFont','bodyFontNumber','barcodeHeight','barcodeHeightNumber','barcodeTextFont','barcodeTextFontNumber'];
+  formIds.forEach(id=>el(id).addEventListener('input',()=>{syncPairs(id);updateLabel()}));
+  window.addEventListener('resize',applyPreviewScale);
+
+  function syncPairs(changedId){
+    [['titleFont','titleFontNumber'],['bodyFont','bodyFontNumber'],['barcodeHeight','barcodeHeightNumber'],['barcodeTextFont','barcodeTextFontNumber']].forEach(([a,b])=>{if(changedId===a)el(b).value=el(a).value;if(changedId===b)el(a).value=el(b).value});
+  }
+  function setPreset(w,h){el('labelWidth').value=w;el('labelHeight').value=h;updateLabel()}
+  function value(id){return el(id).value.trim()}
+  function countryToEnglish(country){const raw=String(country||'').trim();if(!raw)return'';if(/^MADE\s+IN\s+/i.test(raw))return raw.toUpperCase();const map={'중국':'CHINA','한국':'KOREA','대한민국':'KOREA','베트남':'VIETNAM','대만':'TAIWAN','일본':'JAPAN','태국':'THAILAND','인도':'INDIA','미국':'USA','이탈리아':'ITALY','프랑스':'FRANCE','독일':'GERMANY'};return 'MADE IN '+(map[raw]||raw.toUpperCase())}
+  function clampNumber(v,min,max,fallback){let n=Number(v);if(!Number.isFinite(n))n=fallback;return Math.min(max,Math.max(min,n))}
+
+  function updateLabel(){
+    const wMm=clampNumber(el('labelWidth').value,20,210,60),hMm=clampNumber(el('labelHeight').value,20,297,90);
+    const label=el('labelPreview');label.style.width=(wMm*MM_TO_PX)+'px';label.style.height=(hMm*MM_TO_PX)+'px';el('previewSizeText').textContent=`라벨 크기: ${wMm} × ${hMm} mm`;
+    const titleFont=clampNumber(el('titleFontNumber').value,8,28,18),bodyFont=clampNumber(el('bodyFontNumber').value,7,22,14),barcodeTextFont=clampNumber(el('barcodeTextFontNumber').value,7,22,14),barcodeHeightMm=clampNumber(el('barcodeHeightNumber').value,8,30,16);
+    el('outProductName').style.fontSize=titleFont+'px';el('outOptionText').style.fontSize=titleFont+'px';el('outInfo').style.fontSize=bodyFont+'px';el('outWarning').style.fontSize=bodyFont+'px';el('outAge').style.fontSize=bodyFont+'px';el('outBarcodeText').style.fontSize=barcodeTextFont+'px';el('outMadeIn').style.fontSize=Math.max(10,barcodeTextFont+1)+'px';
+    el('outProductName').textContent=value('productName');el('outOptionText').textContent=value('optionText');
+    const info=[];if(value('material'))info.push(`재질 : ${value('material')}`);const importer=[];if(value('importer'))importer.push(value('importer'));if(value('address'))importer.push(value('address').replace(/\n+/g,' '));if(importer.length)info.push(`수입원 : ${importer.join(' / ')}`);if(value('phone'))info.push(`전화 : ${value('phone')}`);el('outInfo').textContent=info.join('\n');
+    el('outWarning').textContent=value('warning')?`주의 사항 : ${value('warning')}`:'';el('outAge').textContent=value('age')?`사용연령 : ${value('age')}`:'';
+    const barcodeVal=value('barcodeValue')||'R228526170004';el('outBarcodeText').textContent=barcodeVal;el('outMadeIn').textContent=countryToEnglish(value('country'));renderBarcode(barcodeVal,barcodeHeightMm);applyPreviewScale();requestAnimationFrame(checkOverflow);
+  }
+
+  function renderBarcode(barcodeVal,heightMm){
+    const svg=el('barcodeSvg');svg.innerHTML='';
+    try{JsBarcode(svg,barcodeVal,{format:'CODE128',displayValue:false,margin:4,width:1.7,height:Math.round(heightMm*MM_TO_PX),background:'#ffffff',lineColor:'#000000'});svg.style.width='100%';svg.style.height=(heightMm*MM_TO_PX)+'px';svg.setAttribute('preserveAspectRatio','none')}
+    catch(err){svg.innerHTML='';const text=document.createElementNS('http://www.w3.org/2000/svg','text');text.setAttribute('x','50%');text.setAttribute('y','50%');text.setAttribute('text-anchor','middle');text.setAttribute('dominant-baseline','middle');text.setAttribute('font-size','13');text.textContent='바코드 값을 확인하세요';svg.appendChild(text)}
+  }
+
+  function setPreviewMode(mode){previewMode=mode;applyPreviewScale()}
+  function applyPreviewScale(){
+    const label=el('labelPreview'),stage=el('previewStage'),scaler=el('previewScaler');if(!label||!stage)return;
+    if(previewMode==='actual'){scaler.style.transform='scale(1)';return}
+    const st=getComputedStyle(stage),availableW=stage.clientWidth-parseFloat(st.paddingLeft)-parseFloat(st.paddingRight)-8,availableH=stage.clientHeight-parseFloat(st.paddingTop)-parseFloat(st.paddingBottom)-8;
+    const scale=Math.min(availableW/label.offsetWidth,availableH/label.offsetHeight,1.7);scaler.style.transform=`scale(${Math.max(.1,scale)})`;
+  }
+  function checkOverflow(){const label=el('labelPreview'),overflow=label.scrollHeight>label.clientHeight+2||label.scrollWidth>label.clientWidth+2;el('overflowWarning').style.display=overflow?'block':'none';el('okMessage').style.display=overflow?'none':'block'}
+
+  async function makeExportCanvas(){
+    updateLabel();await new Promise(r=>setTimeout(r,120));const original=el('labelPreview'),clone=original.cloneNode(true);clone.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));clone.removeAttribute('id');const stage=el('exportStage');stage.innerHTML='';stage.appendChild(clone);clone.style.transform='none';clone.style.margin='0';clone.style.boxShadow='none';const canvas=await html2canvas(clone,{scale:4,backgroundColor:'#ffffff',useCORS:true,logging:false});stage.innerHTML='';return canvas;
+  }
+
+  async function downloadLabelPdf(){
+    try{const wMm=clampNumber(el('labelWidth').value,20,210,60),hMm=clampNumber(el('labelHeight').value,20,297,90),canvas=await makeExportCanvas(),img=canvas.toDataURL('image/png'),{jsPDF}=window.jspdf,orientation=wMm>hMm?'landscape':'portrait';const pdf=new jsPDF({orientation,unit:'mm',format:[wMm,hMm],compress:true});pdf.addImage(img,'PNG',0,0,wMm,hMm);pdf.save(`barcode-label-${safeFileName(value('barcodeValue')||'label')}.pdf`)}catch(err){console.error(err);alert('PDF 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.')}
+  }
+
+  async function downloadA4Pdf(){
+    try{const labelW=clampNumber(el('labelWidth').value,20,210,60),labelH=clampNumber(el('labelHeight').value,20,297,90),pageW=210,pageH=297,margin=8,gap=3,cols=Math.floor((pageW-margin*2+gap)/(labelW+gap)),rows=Math.floor((pageH-margin*2+gap)/(labelH+gap));if(cols<1||rows<1){alert('현재 라벨 크기는 A4 안에 배치할 수 없습니다.');return}const count=cols*rows;if(!confirm(`A4 한 장에 ${cols}열 × ${rows}행 = 총 ${count}개 라벨을 배치합니다.\n계속할까요?`))return;const canvas=await makeExportCanvas(),img=canvas.toDataURL('image/png'),{jsPDF}=window.jspdf,pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});for(let r=0;r<rows;r++){for(let c=0;c<cols;c++){const x=margin+c*(labelW+gap),y=margin+r*(labelH+gap);pdf.addImage(img,'PNG',x,y,labelW,labelH)}}pdf.save(`barcode-label-A4-${safeFileName(value('barcodeValue')||'label')}.pdf`)}catch(err){console.error(err);alert('A4 PDF 생성 중 오류가 발생했습니다.')}
+  }
+
+  function safeFileName(text){return String(text||'label').replace(/[\\/:*?"<>|]/g,'_').slice(0,50)}
+  function resetForm(){if(!confirm('입력 내용을 초기값으로 되돌릴까요?'))return;el('labelWidth').value=60;el('labelHeight').value=90;el('productName').value='원이네 곰돌이 아쿠아 습식타월';el('optionText').value='대형 (보관케이스 포함)\n그레이+민트 2개 85x33cm';el('material').value='인조 스웨이드';el('importer').value='코리아원';el('address').value='경기도 부천시 원미구 도약로 36';el('phone').value='032-901-0000';el('warning').value='사용법에 따라 물빠짐 우려가 있으니, 필히 상세페이지 주의사항을 참조하시길 바랍니다.';el('age').value='14세 이상';el('country').value='중국';el('barcodeValue').value='R228526170004';el('titleFont').value=18;el('titleFontNumber').value=18;el('bodyFont').value=14;el('bodyFontNumber').value=14;el('barcodeHeight').value=16;el('barcodeHeightNumber').value=16;el('barcodeTextFont').value=14;el('barcodeTextFontNumber').value=14;updateLabel()}
+
+  updateLabel();
+</script>
+</body>
+</html>
