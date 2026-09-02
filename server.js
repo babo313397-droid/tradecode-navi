@@ -639,6 +639,9 @@ function renderSeoPage(req, res) {
 app.get('/hs-code', renderSeoPage);
 app.get('/coupang-margin', renderSeoPage);
 app.get('/logistics-cost', renderSeoPage);
+app.get('/barcode-label', (req, res) => {
+  res.sendFile(path.join(__dirname, 'barcode-label.html'));
+});
   app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
