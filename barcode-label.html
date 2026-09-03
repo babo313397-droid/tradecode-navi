@@ -13,6 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
   <style>
     :root{--navy:#0b2e4f;--navy-dark:#071f38;--bg:#f4f6f9;--card:#fff;--line:#dfe5ec;--text:#1b2733;--muted:#667381;--danger:#c62828;--success:#157347}
@@ -67,8 +68,8 @@
       <div class="field"><label>바코드 높이 (mm)</label><div class="range-wrap"><input id="barcodeHeight" type="range" min="8" max="30" step="1" value="16"><input id="barcodeHeightNumber" type="number" min="8" max="30" value="16"></div></div>
       <div class="field"><label>바코드 숫자 글자 크기</label><div class="range-wrap"><input id="barcodeTextFont" type="range" min="4" max="22" step="0.5" value="12"><input id="barcodeTextFontNumber" type="number" min="4" max="22" step="0.5" value="12"></div></div><div class="field"><label>MADE IN CHINA 글자 크기</label><div class="range-wrap"><input id="madeInFont" type="range" min="3" max="18" step="0.5" value="8"><input id="madeInFontNumber" type="number" min="3" max="18" step="0.5" value="8"></div></div>
 
-      <div class="button-row" style="margin-top:18px"><button class="btn-primary" type="button" onclick="downloadLabelPdf()">라벨 PDF 다운로드</button><button class="btn-secondary" type="button" onclick="downloadA4Pdf()">A4 여러 장 PDF</button><button class="btn-ghost" type="button" onclick="resetForm()">초기화</button></div>
-      <div class="help">· PDF 출력 시 프린터 설정은 <b>실제 크기 / 100%</b>를 권장합니다.<br>· CODE128은 영문과 숫자를 함께 사용할 수 있습니다.<br>· GS1/EAN 등 공식 유통 상품바코드가 필요한 경우 임의의 CODE128 번호와는 별도로 확인해야 합니다.</div>
+      <div class="button-row" style="margin-top:18px"><button class="btn-primary" type="button" onclick="downloadLabelPdf()">라벨 PDF 다운로드</button><button class="btn-secondary" type="button" onclick="downloadA4Pdf()">A4 여러 장 PDF</button><button class="btn-secondary" type="button" onclick="downloadExcel()">엑셀 다운로드</button><button class="btn-ghost" type="button" onclick="resetForm()">초기화</button></div>
+      <div class="help">· PDF 출력 시 프린터 설정은 <b>실제 크기 / 100%</b>를 권장합니다.<br>· 엑셀 다운로드에는 입력한 제품정보와 현재 라벨 미리보기 이미지가 함께 저장됩니다.<br>· CODE128은 영문과 숫자를 함께 사용할 수 있습니다.<br>· GS1/EAN 등 공식 유통 상품바코드가 필요한 경우 임의의 CODE128 번호와는 별도로 확인해야 합니다.</div>
     </section>
 
     <section class="panel preview-panel">
@@ -134,6 +135,146 @@
 
   async function downloadA4Pdf(){
     try{const labelW=clampNumber(el('labelWidth').value,20,210,60),labelH=clampNumber(el('labelHeight').value,20,297,90),pageW=210,pageH=297,margin=8,gap=3,cols=Math.floor((pageW-margin*2+gap)/(labelW+gap)),rows=Math.floor((pageH-margin*2+gap)/(labelH+gap));if(cols<1||rows<1){alert('현재 라벨 크기는 A4 안에 배치할 수 없습니다.');return}const count=cols*rows;if(!confirm(`A4 한 장에 ${cols}열 × ${rows}행 = 총 ${count}개 라벨을 배치합니다.\n계속할까요?`))return;const canvas=await makeExportCanvas(),img=canvas.toDataURL('image/png'),{jsPDF}=window.jspdf,pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});for(let r=0;r<rows;r++){for(let c=0;c<cols;c++){const x=margin+c*(labelW+gap),y=margin+r*(labelH+gap);pdf.addImage(img,'PNG',x,y,labelW,labelH)}}pdf.save(`barcode-label-A4-${safeFileName(value('barcodeValue')||'label')}.pdf`)}catch(err){console.error(err);alert('A4 PDF 생성 중 오류가 발생했습니다.')}
+  }
+
+
+  async function downloadExcel(){
+    try{
+      if(typeof ExcelJS==='undefined'){
+        alert('엑셀 생성 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.');
+        return;
+      }
+
+      updateLabel();
+      await new Promise(r=>setTimeout(r,120));
+
+      const canvas=await makeExportCanvas();
+      const pngBase64=canvas.toDataURL('image/png').split(',')[1];
+
+      const workbook=new ExcelJS.Workbook();
+      workbook.creator='TradeCode Navi';
+      workbook.created=new Date();
+
+      // 1) 입력 데이터 시트
+      const infoSheet=workbook.addWorksheet('라벨정보',{
+        views:[{showGridLines:false}]
+      });
+
+      infoSheet.columns=[
+        {header:'항목',key:'field',width:22},
+        {header:'내용',key:'value',width:58}
+      ];
+
+      const rows=[
+        ['라벨 크기',`${value('labelWidth')} × ${value('labelHeight')} mm`],
+        ['제품명',value('productName')],
+        ['옵션 / 구성 / 규격',value('optionText')],
+        ['재질',value('material')],
+        ['수입원',value('importer')],
+        ['수입원 주소',value('address')],
+        ['전화번호',value('phone')],
+        ['주의사항',value('warning')],
+        ['사용연령',value('age')],
+        ['제조국',value('country')],
+        ['바코드 번호',value('barcodeValue')],
+        ['바코드 형식','CODE128']
+      ];
+
+      rows.forEach(([field,val])=>infoSheet.addRow({field,value:val}));
+
+      infoSheet.getRow(1).font={bold:true};
+      infoSheet.getRow(1).alignment={horizontal:'center',vertical:'middle'};
+      infoSheet.getColumn(1).font={bold:true};
+
+      for(let r=2;r<=infoSheet.rowCount;r++){
+        infoSheet.getRow(r).alignment={vertical:'top',wrapText:true};
+        infoSheet.getRow(r).height=30;
+      }
+
+      infoSheet.eachRow({includeEmpty:false},row=>{
+        row.eachCell(cell=>{
+          cell.border={
+            top:{style:'thin',color:{argb:'FFD9E0E7'}},
+            left:{style:'thin',color:{argb:'FFD9E0E7'}},
+            bottom:{style:'thin',color:{argb:'FFD9E0E7'}},
+            right:{style:'thin',color:{argb:'FFD9E0E7'}}
+          };
+        });
+      });
+
+      // 2) 현재 라벨 이미지 시트
+      const labelSheet=workbook.addWorksheet('라벨이미지',{
+        views:[{showGridLines:false}]
+      });
+      labelSheet.getColumn('A').width=3;
+      for(let c=2;c<=12;c++) labelSheet.getColumn(c).width=10;
+
+      labelSheet.getCell('B2').value='바코드 라벨 미리보기';
+      labelSheet.getCell('B2').font={bold:true,size:14};
+      labelSheet.getCell('B3').value=`실제 라벨 크기: ${value('labelWidth')} × ${value('labelHeight')} mm`;
+      labelSheet.getCell('B3').font={size:10};
+
+      const imageId=workbook.addImage({
+        base64:pngBase64,
+        extension:'png'
+      });
+
+      // 화면에서는 보기 좋게 표시하되 라벨의 가로세로 비율은 유지
+      const wMm=clampNumber(el('labelWidth').value,20,210,60);
+      const hMm=clampNumber(el('labelHeight').value,20,297,90);
+      const pxPerMm=3.7795275591;
+      let imgW=Math.round(wMm*pxPerMm*1.6);
+      let imgH=Math.round(hMm*pxPerMm*1.6);
+
+      const maxW=520,maxH=720;
+      const scale=Math.min(1,maxW/imgW,maxH/imgH);
+      imgW=Math.round(imgW*scale);
+      imgH=Math.round(imgH*scale);
+
+      labelSheet.addImage(imageId,{
+        tl:{col:1,row:3.5},
+        ext:{width:imgW,height:imgH}
+      });
+
+      // 3) 바코드 관리용 한 줄 시트
+      const listSheet=workbook.addWorksheet('바코드목록');
+      listSheet.columns=[
+        {header:'제품명',key:'product',width:34},
+        {header:'옵션/규격',key:'option',width:34},
+        {header:'재질',key:'material',width:20},
+        {header:'바코드번호',key:'barcode',width:24},
+        {header:'제조국',key:'country',width:16}
+      ];
+      listSheet.addRow({
+        product:value('productName'),
+        option:value('optionText').replace(/\n+/g,' / '),
+        material:value('material'),
+        barcode:value('barcodeValue'),
+        country:value('country')
+      });
+      listSheet.getRow(1).font={bold:true};
+      listSheet.getRow(1).alignment={horizontal:'center',vertical:'middle'};
+      listSheet.getRow(2).alignment={vertical:'middle',wrapText:true};
+      listSheet.getRow(2).height=34;
+
+      const buffer=await workbook.xlsx.writeBuffer();
+      const blob=new Blob(
+        [buffer],
+        {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}
+      );
+
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download=`barcode-label-${safeFileName(value('barcodeValue')||'label')}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1500);
+    }catch(err){
+      console.error(err);
+      alert('엑셀 파일 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+    }
   }
 
   function safeFileName(text){return String(text||'label').replace(/[\\/:*?"<>|]/g,'_').slice(0,50)}
