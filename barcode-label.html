@@ -33,7 +33,7 @@
     #previewScaler{transform-origin:center center;transition:transform .15s ease}
     .label{background:#fff;border:none;color:#000;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-start;text-align:center;padding:4mm 3.5mm 3mm;font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif}
     .label-title{font-weight:900;line-height:1.18;white-space:pre-wrap;overflow-wrap:anywhere}.label-option{font-weight:800;line-height:1.18;margin-top:0;white-space:pre-wrap;overflow-wrap:anywhere}.label-info{margin-top:0;line-height:1.18;white-space:pre-wrap;overflow-wrap:anywhere}.label-warning{margin-top:0;line-height:1.18;white-space:pre-wrap;overflow-wrap:anywhere}.label-age{margin-top:0;line-height:1.18;font-weight:700;white-space:pre-wrap}
-    .barcode-area{margin-top:0;padding-top:.8mm;width:100%;border:none;outline:none;box-shadow:none}#barcodeSvg{display:block;width:100%;max-width:100%;margin:0 auto;border:none;outline:none;box-shadow:none}.barcode-text{font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1.05;margin-top:.3mm;white-space:nowrap}.made-in{font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1.02;margin-top:.2mm;white-space:nowrap;color:#333}
+    .barcode-area{margin-top:0;padding-top:0;width:100%;border:none;outline:none;box-shadow:none}#barcodeSvg{display:block;width:100%;max-width:100%;margin:0 auto;padding:0;border:none;outline:none;box-shadow:none;vertical-align:top}.barcode-text{font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1;margin-top:0;white-space:nowrap}.made-in{font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1;margin-top:0;white-space:nowrap;color:#333}
     .overflow-warning{display:none;margin-top:10px;color:var(--danger);background:#fff0f0;border:1px solid #f2bcbc;border-radius:8px;padding:9px 10px;font-size:13px;font-weight:800}.ok-message{margin-top:10px;color:var(--success);font-size:12px}.help{margin-top:10px;color:var(--muted);font-size:12px;line-height:1.55}.range-wrap{display:grid;grid-template-columns:1fr 72px;gap:8px;align-items:center}input[type="range"]{padding:0}
     #exportStage{position:fixed;left:-100000px;top:0;opacity:0;pointer-events:none}
     @media(max-width:900px){.layout{grid-template-columns:1fr}.preview-panel{position:static}.preview-stage{min-height:500px}}
@@ -112,7 +112,7 @@
 
   function renderBarcode(barcodeVal,heightMm){
     const svg=el('barcodeSvg');svg.innerHTML='';
-    try{JsBarcode(svg,barcodeVal,{format:'CODE128',displayValue:false,margin:4,width:1.7,height:Math.round(heightMm*MM_TO_PX),background:'#ffffff',lineColor:'#000000'});svg.style.width='100%';svg.style.height=(heightMm*MM_TO_PX)+'px';svg.setAttribute('preserveAspectRatio','none')}
+    try{JsBarcode(svg,barcodeVal,{format:'CODE128',displayValue:false,margin:0,width:1.7,height:Math.round(heightMm*MM_TO_PX),background:'#ffffff',lineColor:'#000000'});svg.style.width='100%';svg.style.height=(heightMm*MM_TO_PX)+'px';svg.setAttribute('preserveAspectRatio','none')}
     catch(err){svg.innerHTML='';const text=document.createElementNS('http://www.w3.org/2000/svg','text');text.setAttribute('x','50%');text.setAttribute('y','50%');text.setAttribute('text-anchor','middle');text.setAttribute('dominant-baseline','middle');text.setAttribute('font-size','13');text.textContent='바코드 값을 확인하세요';svg.appendChild(text)}
   }
 
