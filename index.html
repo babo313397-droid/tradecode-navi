@@ -315,7 +315,7 @@ footer a{color:var(--sub);text-decoration:underline;}
     <button type="button" class="nav-btn" id="navBtn-calculator" onclick="showFeature('calculator')">📊 TradeCode Navi 관세율 계산</button>
     <button type="button" class="nav-btn" id="navBtn-rocketmargin" onclick="showFeature('rocketmargin')">🚀 로켓배송 원가&amp;마진률 계산</button>
     <button type="button" class="nav-btn" id="navBtn-logistics" onclick="showFeature('logistics')">🚚 물류비 계산기</button
-     <button type="button" class="nav-btn" onclick="window.location.assign('https://tool.dasaba.co.kr/barcode-label')">🏷️ 바코드 라벨 생성기</button>                                                                                      
+    <button type="button" class="nav-btn" id="navBtn-barcode">🏷️ 바코드 라벨 생성기</button>                                                                                   
   </nav>
 
   <div class="main-area">
@@ -3007,6 +3007,9 @@ function recalcWorkCost(){
 /* =========================================================
    INIT
 ========================================================= */
+  document.getElementById('navBtn-barcode').addEventListener('click', function () {
+  window.location.href = '/barcode-label';
+});
 document.getElementById('translateBtn').addEventListener('click', runTranslate);
 document.getElementById('koInput').addEventListener('keydown', e=>{ if(e.key==='Enter') runTranslate(); });
 document.getElementById('toStep3Btn').addEventListener('click', proceedToHsResult);
