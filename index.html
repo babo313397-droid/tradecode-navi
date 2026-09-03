@@ -315,7 +315,11 @@ footer a{color:var(--sub);text-decoration:underline;}
     <button type="button" class="nav-btn" id="navBtn-calculator" onclick="showFeature('calculator')">📊 TradeCode Navi 관세율 계산</button>
     <button type="button" class="nav-btn" id="navBtn-rocketmargin" onclick="showFeature('rocketmargin')">🚀 로켓배송 원가&amp;마진률 계산</button>
     <button type="button" class="nav-btn" id="navBtn-logistics" onclick="showFeature('logistics')">🚚 물류비 계산기</button
-    <a href="/barcode-label" class="nav-btn" style="text-decoration:none;box-sizing:border-box;">🏷️ 바코드 라벨 생성기</a>                                                                                                     
+  <form action="/barcode-label" method="get" style="margin:0;padding:0;">
+  <button type="submit" class="nav-btn" style="cursor:pointer;">
+    🏷️ 바코드 라벨 생성기
+  </button>
+</form>                                                                                              
   </nav>
 
   <div class="main-area">
