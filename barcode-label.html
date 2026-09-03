@@ -27,7 +27,7 @@
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{margin-bottom:12px}.field label{display:block;margin-bottom:5px;font-size:13px;font-weight:800;color:#344150}
     input,textarea,select{width:100%;border:1px solid #ccd4dd;border-radius:8px;padding:10px 11px;font:inherit;font-size:14px;background:#fff;color:#1a2430;outline:none}input:focus,textarea:focus,select:focus{border-color:#5c82ab;box-shadow:0 0 0 3px rgba(21,101,192,.08)}textarea{resize:vertical;min-height:70px}
     .section-label{margin:20px 0 10px;padding-top:14px;border-top:1px solid #e8ecf1;font-size:14px;font-weight:900;color:var(--navy)}
-    .preset-row,.button-row{display:flex;flex-wrap:wrap;gap:8px}button{border:0;border-radius:8px;padding:10px 13px;cursor:pointer;font-weight:800;font-size:13px}.btn-primary{background:var(--navy);color:#fff}.btn-secondary{background:#e9eef4;color:#213344}.btn-ghost{background:#fff;color:#213344;border:1px solid #cfd7df}
+    .preset-row,.button-row{display:flex;flex-wrap:wrap;gap:8px}button{border:0;border-radius:8px;padding:10px 13px;cursor:pointer;font-weight:800;font-size:13px}.btn-primary{background:var(--navy);color:#fff}.btn-secondary{background:#e9eef4;color:#213344}.btn-ghost{background:#fff;color:#213344;border:1px solid #cfd7df}.btn-ghost:disabled{opacity:.45;cursor:not-allowed}
     .preview-panel{position:sticky;top:16px}.preview-toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.preview-size{font-size:13px;color:var(--muted);font-weight:700}
     .preview-stage{min-height:620px;border:1px dashed #bdc8d3;background:#f9fbfd;border-radius:12px;display:flex;align-items:center;justify-content:center;padding:22px;overflow:auto}
     #previewScaler{transform-origin:center center;transition:transform .15s ease}
@@ -68,7 +68,14 @@
       <div class="field"><label>바코드 높이 (mm)</label><div class="range-wrap"><input id="barcodeHeight" type="range" min="8" max="30" step="1" value="16"><input id="barcodeHeightNumber" type="number" min="8" max="30" value="16"></div></div>
       <div class="field"><label>바코드 숫자 글자 크기</label><div class="range-wrap"><input id="barcodeTextFont" type="range" min="4" max="22" step="0.5" value="12"><input id="barcodeTextFontNumber" type="number" min="4" max="22" step="0.5" value="12"></div></div><div class="field"><label>MADE IN CHINA 글자 크기</label><div class="range-wrap"><input id="madeInFont" type="range" min="3" max="18" step="0.5" value="8"><input id="madeInFontNumber" type="number" min="3" max="18" step="0.5" value="8"></div></div>
 
-      <div class="button-row" style="margin-top:18px"><button class="btn-primary" type="button" onclick="downloadLabelPdf()">라벨 PDF 다운로드</button><button class="btn-secondary" type="button" onclick="downloadA4Pdf()">A4 여러 장 PDF</button><button class="btn-secondary" type="button" onclick="downloadExcel()">엑셀 다운로드</button><button class="btn-ghost" type="button" onclick="resetForm()">초기화</button></div>
+      <div class="button-row" style="margin-top:18px">
+        <button class="btn-primary" type="button" onclick="downloadLabelPdf()">라벨 PDF 다운로드</button>
+        <button class="btn-secondary" type="button" onclick="downloadA4Pdf()">A4 여러 장 PDF</button>
+        <button class="btn-secondary" type="button" onclick="downloadExcel()">엑셀 다운로드</button>
+        <button class="btn-ghost" type="button" id="undoBtn" onclick="undoLastState()" disabled>↩ 이전 단계</button>
+        <button class="btn-ghost" type="button" onclick="clearAllContent()">입력 전체 지우기</button>
+        <button class="btn-ghost" type="button" onclick="resetForm()">초기화</button>
+      </div>
       <div class="help">· PDF 출력 시 프린터 설정은 <b>실제 크기 / 100%</b>를 권장합니다.<br>· 엑셀 다운로드에는 입력한 제품정보와 현재 라벨 미리보기 이미지가 함께 저장됩니다.<br>· CODE128은 영문과 숫자를 함께 사용할 수 있습니다.<br>· GS1/EAN 등 공식 유통 상품바코드가 필요한 경우 임의의 CODE128 번호와는 별도로 확인해야 합니다.</div>
     </section>
 
@@ -94,7 +101,7 @@
   function syncPairs(changedId){
     [['titleFont','titleFontNumber'],['bodyFont','bodyFontNumber'],['barcodeHeight','barcodeHeightNumber'],['barcodeTextFont','barcodeTextFontNumber'],['madeInFont','madeInFontNumber']].forEach(([a,b])=>{if(changedId===a)el(b).value=el(a).value;if(changedId===b)el(a).value=el(b).value});
   }
-  function setPreset(w,h){el('labelWidth').value=w;el('labelHeight').value=h;updateLabel()}
+  function setPreset(w,h){rememberCurrentState();el('labelWidth').value=w;el('labelHeight').value=h;updateLabel()}
   function value(id){return el(id).value.trim()}
   function countryToEnglish(country){const raw=String(country||'').trim();if(!raw)return'';if(/^MADE\s+IN\s+/i.test(raw))return raw.toUpperCase();const map={'중국':'CHINA','한국':'KOREA','대한민국':'KOREA','베트남':'VIETNAM','대만':'TAIWAN','일본':'JAPAN','태국':'THAILAND','인도':'INDIA','미국':'USA','이탈리아':'ITALY','프랑스':'FRANCE','독일':'GERMANY'};return 'MADE IN '+(map[raw]||raw.toUpperCase())}
   function clampNumber(v,min,max,fallback){let n=Number(v);if(!Number.isFinite(n))n=fallback;return Math.min(max,Math.max(min,n))}
@@ -107,7 +114,17 @@
     el('outProductName').textContent=value('productName');el('outOptionText').textContent=value('optionText');
     const info=[];if(value('material'))info.push(`재질 : ${value('material')}`);const importer=[];if(value('importer'))importer.push(value('importer'));if(value('address'))importer.push(value('address').replace(/\n+/g,' '));if(importer.length)info.push(`수입원 : ${importer.join(' / ')}`);if(value('phone'))info.push(`전화 : ${value('phone')}`);el('outInfo').textContent=info.join('\n');
     el('outWarning').textContent=value('warning')?`주의 사항 : ${value('warning')}`:'';el('outAge').textContent=value('age')?`사용연령 : ${value('age')}`:'';
-    const barcodeVal=value('barcodeValue')||'R228526170004';el('outBarcodeText').textContent=barcodeVal;el('outMadeIn').textContent=countryToEnglish(value('country'));renderBarcode(barcodeVal,barcodeHeightMm);applyPreviewScale();requestAnimationFrame(checkOverflow);
+    const barcodeVal=value('barcodeValue');
+    el('outBarcodeText').textContent=barcodeVal;
+    el('outMadeIn').textContent=countryToEnglish(value('country'));
+    if(barcodeVal){
+      renderBarcode(barcodeVal,barcodeHeightMm);
+    }else{
+      el('barcodeSvg').innerHTML='';
+      el('barcodeSvg').style.height='0px';
+    }
+    applyPreviewScale();
+    requestAnimationFrame(checkOverflow);
   }
 
   function renderBarcode(barcodeVal,heightMm){
@@ -278,9 +295,99 @@
   }
 
   function safeFileName(text){return String(text||'label').replace(/[\\/:*?"<>|]/g,'_').slice(0,50)}
-  function resetForm(){if(!confirm('입력 내용을 초기값으로 되돌릴까요?'))return;el('labelWidth').value=60;el('labelHeight').value=90;el('productName').value='원이네 곰돌이 아쿠아 습식타월';el('optionText').value='대형 (보관케이스 포함)\n그레이+민트 2개 85x33cm';el('material').value='인조 스웨이드';el('importer').value='코리아원';el('address').value='경기도 부천시 원미구 도약로 36';el('phone').value='032-901-0000';el('warning').value='사용법에 따라 물빠짐 우려가 있으니, 필히 상세페이지 주의사항을 참조하시길 바랍니다.';el('age').value='14세 이상';el('country').value='중국';el('barcodeValue').value='R228526170004';el('titleFont').value=18;el('titleFontNumber').value=18;el('bodyFont').value=14;el('bodyFontNumber').value=14;el('barcodeHeight').value=16;el('barcodeHeightNumber').value=16;el('barcodeTextFont').value=12;el('barcodeTextFontNumber').value=12;el('madeInFont').value=8;el('madeInFontNumber').value=8;updateLabel()}
+
+  // ---------------------------------------------------------
+  // 입력 상태 기록 / 이전 단계
+  // 텍스트 입력은 한 글자마다가 아니라, 한 항목 편집이 끝날 때 1단계로 저장한다.
+  // 전체 지우기/초기화/프리셋 변경 전에도 현재 상태를 저장한다.
+  // ---------------------------------------------------------
+  const undoStack=[];
+  let editStartState=null;
+
+  const contentFieldIds=[
+    'productName','optionText','material','importer','address',
+    'phone','warning','age','country','barcodeValue'
+  ];
+
+  function captureFormState(){
+    const state={};
+    formIds.forEach(id=>{
+      const node=el(id);
+      if(node) state[id]=node.value;
+    });
+    return state;
+  }
+
+  function restoreFormState(state){
+    if(!state) return;
+    formIds.forEach(id=>{
+      if(state[id]!==undefined && el(id)){
+        el(id).value=state[id];
+      }
+    });
+    updateLabel();
+    updateUndoButton();
+  }
+
+  function statesEqual(a,b){
+    return JSON.stringify(a)===JSON.stringify(b);
+  }
+
+  function pushUndoState(state){
+    if(!state) return;
+    const last=undoStack[undoStack.length-1];
+    if(!last || !statesEqual(last,state)){
+      undoStack.push(state);
+      if(undoStack.length>30) undoStack.shift();
+    }
+    updateUndoButton();
+  }
+
+  function rememberCurrentState(){
+    pushUndoState(captureFormState());
+  }
+
+  function updateUndoButton(){
+    const btn=el('undoBtn');
+    if(btn) btn.disabled=undoStack.length===0;
+  }
+
+  function undoLastState(){
+    if(!undoStack.length) return;
+    const previous=undoStack.pop();
+    restoreFormState(previous);
+  }
+
+  function clearAllContent(){
+    rememberCurrentState();
+    contentFieldIds.forEach(id=>{
+      if(el(id)) el(id).value='';
+    });
+    updateLabel();
+  }
+
+  // 한 항목을 편집하기 시작하기 전 상태를 기억해두었다가
+  // 포커스를 벗어날 때 "이전 단계" 1회분으로 저장
+  formIds.forEach(id=>{
+    const node=el(id);
+    if(!node) return;
+
+    node.addEventListener('focus',()=>{
+      editStartState=captureFormState();
+    });
+
+    node.addEventListener('change',()=>{
+      if(editStartState && !statesEqual(editStartState,captureFormState())){
+        pushUndoState(editStartState);
+      }
+      editStartState=null;
+    });
+  });
+
+  function resetForm(){if(!confirm('입력 내용을 초기값으로 되돌릴까요?'))return;rememberCurrentState();el('labelWidth').value=60;el('labelHeight').value=90;el('productName').value='원이네 곰돌이 아쿠아 습식타월';el('optionText').value='대형 (보관케이스 포함)\n그레이+민트 2개 85x33cm';el('material').value='인조 스웨이드';el('importer').value='코리아원';el('address').value='경기도 부천시 원미구 도약로 36';el('phone').value='032-901-0000';el('warning').value='사용법에 따라 물빠짐 우려가 있으니, 필히 상세페이지 주의사항을 참조하시길 바랍니다.';el('age').value='14세 이상';el('country').value='중국';el('barcodeValue').value='R228526170004';el('titleFont').value=18;el('titleFontNumber').value=18;el('bodyFont').value=14;el('bodyFontNumber').value=14;el('barcodeHeight').value=16;el('barcodeHeightNumber').value=16;el('barcodeTextFont').value=12;el('barcodeTextFontNumber').value=12;el('madeInFont').value=8;el('madeInFontNumber').value=8;updateLabel()}
 
   updateLabel();
+  updateUndoButton();
 </script>
 </body>
 </html>
