@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>발주 바코드 출력 | TradeCode Navi</title>
+<meta name="robots" content="noindex,nofollow">
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+<style>
+:root{
+  --navy:#0b2e4f;--navy-dark:#071f38;--blue:#1565c0;--gold:#c99a2e;
+  --bg:#f4f6f9;--card:#fff;--line:#dfe5ec;--text:#1b2733;--muted:#667381;
+  --good:#157347;--bad:#c62828;--warn:#a56400;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--bg);color:var(--text)}
+button,input{font:inherit}
+.app-shell{display:flex;min-height:100vh}
+.sidebar{width:240px;flex-shrink:0;background:var(--navy-dark);color:#fff;padding:24px 16px;position:sticky;top:0;height:100vh;overflow:auto}
+.side-brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15px;margin-bottom:24px;padding:0 4px;cursor:pointer}
+.logo-badge{background:var(--gold);color:var(--navy-dark);width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900}
+.side-brand small{display:block;font-size:10.5px;font-weight:400;color:#9fb3c8}
+.nav-section-label{font-size:11px;font-weight:800;color:#8ea3b8;letter-spacing:.6px;margin:18px 4px 8px}
+.nav-btn{display:block;width:100%;text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);color:#e7edf5;border-radius:10px;padding:13px 14px;font-size:13.5px;font-weight:700;margin-bottom:8px;cursor:pointer}
+.nav-btn:hover{background:rgba(255,255,255,.12)}
+.nav-btn.active{background:var(--gold);color:var(--navy-dark);border-color:var(--gold)}
+.main{flex:1;min-width:0;padding:26px;max-width:1500px}
+h1{margin:0 0 6px;color:var(--navy-dark);font-size:27px}
+.sub{color:var(--muted);font-size:13.5px;margin-bottom:20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 4px 16px rgba(10,35,60,.05);margin-bottom:16px}
+.upload-box{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.file-input{padding:11px;border:1px dashed #aebbc8;border-radius:10px;background:#f8fafc}
+.btn{border:0;border-radius:9px;padding:10px 13px;font-weight:800;cursor:pointer}
+.btn-primary{background:var(--navy);color:#fff}
+.btn-secondary{background:#e8eef5;color:#213344}
+.btn-gold{background:var(--gold);color:var(--navy-dark)}
+.btn-danger{background:#fff0f0;color:#a51d1d;border:1px solid #efc2c2}
+.btn-sm{padding:7px 9px;font-size:12px}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.toolbar-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-top:14px}
+.kpi{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:12px}
+.kpi .lab{font-size:12px;color:var(--muted)}
+.kpi .num{font-size:22px;font-weight:900;color:var(--navy-dark);margin-top:3px}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px}
+table{width:100%;border-collapse:collapse;min-width:1120px;background:#fff}
+th{position:sticky;top:0;background:#eef3f8;color:#3d4b58;font-size:12px;padding:10px 8px;border-bottom:1px solid #cad5df;z-index:2}
+td{font-size:12.5px;padding:9px 8px;border-bottom:1px solid #edf0f3;vertical-align:middle}
+td.center{text-align:center}
+td.name{min-width:310px}
+.qty{width:74px;padding:7px;border:1px solid #cbd5df;border-radius:7px;text-align:right}
+.badge{display:inline-block;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:800}
+.badge.ok{background:#e8f7ef;color:var(--good)}
+.badge.missing{background:#fff0f0;color:var(--bad)}
+.badge.other{background:#fff6df;color:var(--warn)}
+.note{font-size:12px;color:var(--muted);line-height:1.6}
+.progress{font-size:12.5px;color:var(--blue);font-weight:700;min-height:18px;margin-top:8px}
+.size30{background:#f0f8ff}
+.size60{background:#f8f4ff}
+#renderStage{position:fixed;left:-100000px;top:0;opacity:0;pointer-events:none}
+.render-label{background:#fff;color:#000;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-start;text-align:center;padding:2.5mm 3.5mm 3mm;font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif}
+.render-title{font-weight:900;line-height:1.18;white-space:pre-wrap;overflow-wrap:anywhere}
+.render-option{font-weight:800;line-height:1.18;margin-top:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.render-info,.render-warning{margin-top:0;line-height:1.18;white-space:pre-wrap;overflow-wrap:anywhere}
+.render-age{margin-top:0;line-height:1.18;font-weight:700;white-space:pre-wrap}
+.render-barcode{margin-top:0;padding-top:0;width:100%}
+.render-barcode svg{display:block;width:100%;max-width:100%;margin:0 auto}
+.render-barcode-text{font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1;margin-top:0;white-space:nowrap}
+.render-made{font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1;margin-top:0;color:#333;white-space:nowrap}
+@media(max-width:900px){
+  .app-shell{flex-direction:column}.sidebar{width:100%;height:auto;position:relative;display:flex;gap:8px;flex-wrap:wrap}.side-brand{margin:0}.nav-section-label{display:none}.nav-btn{width:auto;margin:0}.main{padding:14px}.summary{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div class="app-shell">
+<nav class="sidebar">
+  <div class="side-brand" onclick="location.href='/'"><div class="logo-badge">TC</div><div>TradeCode Navi<br><small>기능 목록</small></div></div>
+  <div class="nav-section-label">도구</div>
+  <button class="nav-btn" onclick="location.href='/hs-code'">📊 TradeCode Navi 관세율 계산</button>
+  <button class="nav-btn" onclick="location.href='/coupang-margin'">🚀 로켓배송 원가&amp;마진률 계산</button>
+  <button class="nav-btn" onclick="location.href='/logistics-cost'">🚚 물류비 계산기</button>
+  <button class="nav-btn" onclick="location.href='/barcode-label'">🏷️ 바코드 라벨 생성기</button>
+  <button class="nav-btn active" onclick="location.href='/order-barcode.html'">📦 발주 바코드 출력</button>
+</nav>
+
+<main class="main">
+  <h1>📦 발주 바코드 출력</h1>
+  <div class="sub">발주현황 엑셀을 불러오면 저장된 라벨과 자동 매칭하고, 50×30 / 50×60 용지를 따로 일괄 출력하거나 상품별로 원하는 수량만 출력할 수 있습니다.</div>
+
+  <section class="card">
+    <div class="upload-box">
+      <input class="file-input" id="orderFile" type="file" accept=".xlsx,.xls">
+      <button class="btn btn-secondary" onclick="reloadLibrary()">🔄 저장 라벨 다시 불러오기</button>
+      <label style="font-size:13px;font-weight:700;">1회 최대 출력 장수
+        <input id="maxPerFile" type="number" min="1" max="1000" value="100" style="width:80px;padding:8px;border:1px solid #cbd5df;border-radius:7px;margin-left:6px;">
+      </label>
+    </div>
+    <div class="note" style="margin-top:10px;">
+      발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 저장 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.
+      총 출력 장수가 1회 최대 장수를 넘으면 PDF를 여러 개로 나눠 ZIP 파일로 내려받습니다.
+    </div>
+    <div class="progress" id="progress"></div>
+
+    <div class="summary">
+      <div class="kpi"><div class="lab">발주 품목</div><div class="num" id="kpiItems">0</div></div>
+      <div class="kpi"><div class="lab">50×30 출력 장수</div><div class="num" id="kpi30">0</div></div>
+      <div class="kpi"><div class="lab">50×60 출력 장수</div><div class="num" id="kpi60">0</div></div>
+      <div class="kpi"><div class="lab">라벨 미저장</div><div class="num" id="kpiMissing">0</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <button class="btn btn-gold" onclick="batchPrint('50x30')">🖨 50×30 일괄 출력</button>
+        <button class="btn btn-gold" onclick="batchPrint('50x60')">🖨 50×60 일괄 출력</button>
+        <button class="btn btn-primary" onclick="batchPrint('selected')">☑ 선택 품목 출력</button>
+      </div>
+      <div class="toolbar-group">
+        <button class="btn btn-secondary btn-sm" onclick="setAllChecks(true)">전체 선택</button>
+        <button class="btn btn-secondary btn-sm" onclick="setAllChecks(false)">전체 해제</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" style="padding:0;">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>선택</th><th>상품번호</th><th>바코드</th><th>상품명</th>
+            <th>발주수량</th><th>라벨규격</th><th>출력수량</th><th>저장상태</th><th>상품별 출력</th>
+          </tr>
+        </thead>
+        <tbody id="rowsBody">
+          <tr><td colspan="9" class="center" style="padding:30px;color:#667381;">발주현황 엑셀을 선택해 주세요.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+</div>
+<div id="renderStage"></div>
+
+<script>
+const MM_TO_PX=96/25.4;
+const LABEL_LIBRARY_KEY='tradecodeLabelLibraryV1';
+let orderRows=[];
+let labelLibrary=[];
+
+const el=id=>document.getElementById(id);
+const norm=v=>String(v??'').trim();
+const normBc=v=>norm(v).toUpperCase();
+
+function getLibrary(){
+  try{
+    const arr=JSON.parse(localStorage.getItem(LABEL_LIBRARY_KEY)||'[]');
+    return Array.isArray(arr)?arr:[];
+  }catch(e){return[]}
+}
+function reloadLibrary(){
+  labelLibrary=getLibrary();
+  rematchRows();
+  renderRows();
+  setProgress(`저장 라벨 ${labelLibrary.length}개를 다시 불러왔습니다.`);
+}
+function findLabel(barcode,productNumber){
+  const bc=normBc(barcode),pn=norm(productNumber);
+  if(bc){
+    const x=labelLibrary.find(v=>normBc(v.barcode)===bc);
+    if(x)return x;
+  }
+  if(pn){
+    const x=labelLibrary.find(v=>norm(v.productNumber)===pn);
+    if(x)return x;
+  }
+  return null;
+}
+function sizeCode(cfg){
+  if(!cfg)return'missing';
+  const w=Number(cfg.labelWidth),h=Number(cfg.labelHeight);
+  if(Math.abs(w-50)<0.2&&Math.abs(h-30)<0.2)return'50x30';
+  if(Math.abs(w-50)<0.2&&Math.abs(h-60)<0.2)return'50x60';
+  return'other';
+}
+function setProgress(msg){el('progress').textContent=msg||''}
+
+el('orderFile').addEventListener('change',async e=>{
+  const file=e.target.files?.[0];
+  if(!file)return;
+  try{
+    setProgress('엑셀을 읽는 중...');
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    const parsed=parseWorkbook(wb);
+    orderRows=parsed.map((r,i)=>({
+      id:i+1,
+      productNumber:norm(r.productNumber),
+      barcode:norm(r.barcode),
+      productName:norm(r.productName),
+      orderQty:Math.max(0,Number(r.orderQty)||0),
+      printQty:Math.max(0,Number(r.orderQty)||0),
+      checked:true,
+      label:null,
+      size:'missing'
+    }));
+    labelLibrary=getLibrary();
+    rematchRows();
+    renderRows();
+    setProgress(`"${file.name}"에서 ${orderRows.length}개 발주 품목을 불러왔습니다.`);
+  }catch(err){
+    console.error(err);
+    alert('발주현황 엑셀을 읽지 못했습니다. 상품번호/바코드/상품명/발주수량 헤더가 있는지 확인해 주세요.');
+    setProgress('');
+  }
+});
+
+function parseWorkbook(wb){
+  const sheetNames=['상품목록',...wb.SheetNames.filter(n=>n!=='상품목록')];
+  for(const name of sheetNames){
+    const ws=wb.Sheets[name];
+    if(!ws)continue;
+    const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+    for(let r=0;r<matrix.length;r++){
+      const headers=matrix[r].map(v=>norm(v));
+      const pIdx=headers.indexOf('상품번호');
+      const bIdx=headers.indexOf('바코드');
+      const nIdx=headers.indexOf('상품명');
+      const qIdx=headers.indexOf('발주수량');
+      if([pIdx,bIdx,nIdx,qIdx].every(v=>v>=0)){
+        const out=[];
+        for(let i=r+1;i<matrix.length;i++){
+          const row=matrix[i];
+          const pn=norm(row[pIdx]),bc=norm(row[bIdx]),nm=norm(row[nIdx]),qty=row[qIdx];
+          if(!pn&&!bc&&!nm)continue;
+          if(!(Number(qty)>0))continue;
+          out.push({productNumber:pn,barcode:bc,productName:nm,orderQty:Number(qty)});
+        }
+        if(out.length)return out;
+      }
+    }
+  }
+  throw new Error('required headers not found');
+}
+
+function rematchRows(){
+  orderRows.forEach(r=>{
+    r.label=findLabel(r.barcode,r.productNumber);
+    r.size=sizeCode(r.label);
+    if(!r.label)r.checked=false;
+    if(r.label&&r.size!=='50x30'&&r.size!=='50x60')r.checked=false;
+  });
+  updateSummary();
+}
+
+function renderRows(){
+  const body=el('rowsBody');
+  if(!orderRows.length){
+    body.innerHTML='<tr><td colspan="9" class="center" style="padding:30px;color:#667381;">발주현황 엑셀을 선택해 주세요.</td></tr>';
+    updateSummary();return;
+  }
+  body.innerHTML=orderRows.map(r=>{
+    let badge,status,sizeText,rowCls='';
+    if(!r.label){badge='missing';status='라벨 없음';sizeText='-'}
+    else if(r.size==='50x30'){badge='ok';status='저장됨';sizeText='50×30';rowCls='size30'}
+    else if(r.size==='50x60'){badge='ok';status='저장됨';sizeText='50×60';rowCls='size60'}
+    else{badge='other';status='기타 규격';sizeText=`${r.label.labelWidth}×${r.label.labelHeight}`}
+    const disabled=!r.label||!['50x30','50x60'].includes(r.size);
+    return `<tr class="${rowCls}">
+      <td class="center"><input type="checkbox" ${r.checked?'checked':''} ${disabled?'disabled':''} onchange="toggleRow(${r.id},this.checked)"></td>
+      <td class="center">${esc(r.productNumber)}</td>
+      <td>${esc(r.barcode)}</td>
+      <td class="name">${esc(r.productName)}</td>
+      <td class="center"><b>${fmt(r.orderQty)}</b></td>
+      <td class="center">${sizeText}</td>
+      <td class="center"><input class="qty" type="number" min="0" value="${r.printQty}" ${disabled?'disabled':''} onchange="changeQty(${r.id},this.value)"></td>
+      <td class="center"><span class="badge ${badge}">${status}</span></td>
+      <td class="center">
+        ${r.label
+          ? `<button class="btn btn-primary btn-sm" ${disabled?'disabled':''} onclick="printOne(${r.id})">이 상품 출력</button>`
+          : `<button class="btn btn-secondary btn-sm" onclick="makeLabel(${r.id})">라벨 만들기</button>`}
+      </td>
+    </tr>`
+  }).join('');
+  updateSummary();
+}
+function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function fmt(v){return Number(v||0).toLocaleString('ko-KR')}
+function getRow(id){return orderRows.find(r=>r.id===id)}
+function toggleRow(id,checked){const r=getRow(id);if(r)r.checked=checked;updateSummary()}
+function changeQty(id,v){const r=getRow(id);if(r)r.printQty=Math.max(0,Math.floor(Number(v)||0));updateSummary()}
+function setAllChecks(v){orderRows.forEach(r=>{if(r.label&&['50x30','50x60'].includes(r.size))r.checked=v});renderRows()}
+function updateSummary(){
+  el('kpiItems').textContent=fmt(orderRows.length);
+  el('kpi30').textContent=fmt(orderRows.filter(r=>r.checked&&r.size==='50x30').reduce((s,r)=>s+r.printQty,0));
+  el('kpi60').textContent=fmt(orderRows.filter(r=>r.checked&&r.size==='50x60').reduce((s,r)=>s+r.printQty,0));
+  el('kpiMissing').textContent=fmt(orderRows.filter(r=>!r.label).length);
+}
+function makeLabel(id){
+  const r=getRow(id);if(!r)return;
+  const url='/barcode-label?'+new URLSearchParams({
+    productNumber:r.productNumber,barcode:r.barcode,productName:r.productName
+  }).toString();
+  window.open(url,'_blank');
+}
+
+function countryToEnglish(country){
+  const raw=norm(country);
+  if(!raw)return'';
+  if(/^MADE\s+IN\s+/i.test(raw))return raw.toUpperCase();
+  const map={'중국':'CHINA','한국':'KOREA','대한민국':'KOREA','베트남':'VIETNAM','대만':'TAIWAN','일본':'JAPAN','태국':'THAILAND','인도':'INDIA','미국':'USA','이탈리아':'ITALY','프랑스':'FRANCE','독일':'GERMANY'};
+  return 'MADE IN '+(map[raw]||raw.toUpperCase());
+}
+function buildLabelDom(cfg){
+  const root=document.createElement('div');
+  root.className='render-label';
+  root.style.width=(Number(cfg.labelWidth)*MM_TO_PX)+'px';
+  root.style.height=(Number(cfg.labelHeight)*MM_TO_PX)+'px';
+
+  const title=document.createElement('div');title.className='render-title';title.style.fontSize=(Number(cfg.titleFont)||18)+'px';title.textContent=cfg.productName||'';
+  const option=document.createElement('div');option.className='render-option';option.style.fontSize=(Number(cfg.titleFont)||18)+'px';option.textContent=cfg.optionText||'';
+  const info=document.createElement('div');info.className='render-info';info.style.fontSize=(Number(cfg.bodyFont)||14)+'px';
+  const infoLines=[];
+  if(cfg.material)infoLines.push(`재질 : ${cfg.material}`);
+  const importerBits=[];if(cfg.importer)importerBits.push(cfg.importer);if(cfg.address)importerBits.push(String(cfg.address).replace(/\n+/g,' '));
+  if(importerBits.length)infoLines.push(`수입원 : ${importerBits.join(' / ')}`);
+  if(cfg.phone)infoLines.push(`전화 : ${cfg.phone}`);
+  info.textContent=infoLines.join('\n');
+  const warning=document.createElement('div');warning.className='render-warning';warning.style.fontSize=(Number(cfg.bodyFont)||14)+'px';warning.textContent=cfg.warning?`주의 사항 : ${cfg.warning}`:'';
+  const age=document.createElement('div');age.className='render-age';age.style.fontSize=(Number(cfg.bodyFont)||14)+'px';age.textContent=cfg.age?`사용연령 : ${cfg.age}`:'';
+
+  const ba=document.createElement('div');ba.className='render-barcode';
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  ba.appendChild(svg);
+  if(cfg.barcode){
+    JsBarcode(svg,String(cfg.barcode),{format:'CODE128',displayValue:false,margin:0,width:1.7,height:Math.round((Number(cfg.barcodeHeight)||16)*MM_TO_PX),background:'#fff',lineColor:'#000'});
+    svg.style.width='100%';svg.style.height=((Number(cfg.barcodeHeight)||16)*MM_TO_PX)+'px';svg.setAttribute('preserveAspectRatio','none');
+  }else svg.style.height='0px';
+  const bt=document.createElement('div');bt.className='render-barcode-text';bt.style.fontSize=(Number(cfg.barcodeTextFont)||12)+'px';bt.textContent=cfg.barcode||'';
+  const made=document.createElement('div');made.className='render-made';made.style.fontSize=(Number(cfg.madeInFont)||8)+'px';made.textContent=countryToEnglish(cfg.country);
+
+  ba.appendChild(bt);ba.appendChild(made);
+  root.append(title,option,info,warning,age,ba);
+  return root;
+}
+async function renderLabelPng(cfg){
+  const stage=el('renderStage');stage.innerHTML='';
+  const node=buildLabelDom(cfg);stage.appendChild(node);
+  await new Promise(r=>setTimeout(r,50));
+  const canvas=await html2canvas(node,{scale:3,backgroundColor:'#fff',logging:false,useCORS:true});
+  stage.innerHTML='';
+  return canvas.toDataURL('image/png');
+}
+function safeName(v){return String(v||'label').replace(/[\\/:*?"<>|]/g,'_').slice(0,70)}
+async function printOne(id){
+  const r=getRow(id);if(!r||!r.label)return;
+  const qty=Math.max(0,Math.floor(r.printQty));
+  if(!qty){alert('출력수량을 1 이상 입력해 주세요.');return}
+  await generateJobs([{row:r,qty}],`${r.size}-${safeName(r.barcode||r.productNumber)}`);
+}
+async function batchPrint(mode){
+  let rows=orderRows.filter(r=>r.checked&&r.label&&r.printQty>0);
+  if(mode==='50x30')rows=rows.filter(r=>r.size==='50x30');
+  else if(mode==='50x60')rows=rows.filter(r=>r.size==='50x60');
+  else rows=rows.filter(r=>['50x30','50x60'].includes(r.size));
+  if(!rows.length){alert('출력할 품목이 없습니다.');return}
+
+  if(mode==='selected'){
+    const sizes=[...new Set(rows.map(r=>r.size))];
+    if(sizes.length>1){
+      alert('선택 품목에는 50×30과 50×60이 함께 있습니다. 용지 규격별 일괄 출력 버튼을 사용해 주세요.');
+      return;
+    }
+  }
+  const total=rows.reduce((s,r)=>s+r.printQty,0);
+  if(!confirm(`${rows.length}개 품목 / 총 ${total.toLocaleString()}장을 출력용 PDF로 생성할까요?`))return;
+  await generateJobs(rows.map(r=>({row:r,qty:r.printQty})),mode);
+}
+async function generateJobs(items,namePrefix){
+  try{
+    setProgress('라벨 이미지를 준비하는 중...');
+    const maxPer=Math.max(1,Math.floor(Number(el('maxPerFile').value)||100));
+    const imageCache=new Map();
+    for(const it of items){
+      const key=normBc(it.row.barcode)||norm(it.row.productNumber);
+      if(!imageCache.has(key))imageCache.set(key,await renderLabelPng(it.row.label));
+    }
+
+    const chunks=[];
+    let current=[],count=0;
+    for(const it of items){
+      let remain=it.qty;
+      while(remain>0){
+        const room=maxPer-count;
+        const take=Math.min(remain,room);
+        current.push({row:it.row,qty:take});
+        count+=take;remain-=take;
+        if(count>=maxPer){chunks.push(current);current=[];count=0}
+      }
+    }
+    if(current.length)chunks.push(current);
+
+    const files=[];
+    for(let ci=0;ci<chunks.length;ci++){
+      const chunk=chunks[ci];
+      const first=chunk[0].row.label;
+      const w=Number(first.labelWidth),h=Number(first.labelHeight),orientation=w>h?'landscape':'portrait';
+      const {jsPDF}=window.jspdf;
+      const pdf=new jsPDF({orientation,unit:'mm',format:[w,h],compress:true});
+      let page=0;
+      for(const it of chunk){
+        const cfg=it.row.label;
+        const cw=Number(cfg.labelWidth),ch=Number(cfg.labelHeight);
+        if(Math.abs(cw-w)>.2||Math.abs(ch-h)>.2)throw new Error('mixed label sizes');
+        const key=normBc(it.row.barcode)||norm(it.row.productNumber);
+        const img=imageCache.get(key);
+        for(let i=0;i<it.qty;i++){
+          if(page>0)pdf.addPage([w,h],orientation);
+          pdf.addImage(img,'PNG',0,0,w,h);
+          page++;
+        }
+      }
+      files.push({name:`${safeName(namePrefix)}-${String(ci+1).padStart(2,'0')}.pdf`,blob:pdf.output('blob')});
+      setProgress(`PDF 생성 중... ${ci+1}/${chunks.length}`);
+    }
+
+    if(files.length===1){
+      downloadBlob(files[0].blob,files[0].name);
+    }else{
+      setProgress('여러 PDF를 ZIP으로 묶는 중...');
+      const zip=new JSZip();
+      files.forEach(f=>zip.file(f.name,f.blob));
+      const blob=await zip.generateAsync({type:'blob'});
+      downloadBlob(blob,`${safeName(namePrefix)}-분할출력.zip`);
+    }
+    setProgress(`✓ 완료 · 총 ${items.reduce((s,x)=>s+x.qty,0).toLocaleString()}장 / ${files.length}개 파일`);
+  }catch(err){
+    console.error(err);alert('출력용 PDF 생성 중 오류가 발생했습니다.');setProgress('');
+  }
+}
+function downloadBlob(blob,name){
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+labelLibrary=getLibrary();
+</script>
+</body>
+</html>
