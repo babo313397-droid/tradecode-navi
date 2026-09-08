@@ -86,7 +86,7 @@ td.name{min-width:310px}
   <button class="nav-btn" onclick="location.href='/hs-code'">📊 TradeCode Navi 관세율 계산</button>
   <button class="nav-btn" onclick="location.href='/coupang-margin'">🚀 로켓배송 원가&amp;마진률 계산</button>
   <button class="nav-btn" onclick="location.href='/logistics-cost'">🚚 물류비 계산기</button>
-  <button class="nav-btn" onclick="location.href='/barcode-label'">🏷️ 바코드 라벨 생성기</button>
+  <button class="nav-btn" onclick="location.href='/barcode-label.html'">🏷️ 바코드 라벨 생성기</button>
   <button class="nav-btn active" onclick="location.href='/order-barcode.html'">📦 발주 바코드 출력</button>
 </nav>
 
@@ -305,7 +305,7 @@ function updateSummary(){
 }
 function makeLabel(id){
   const r=getRow(id);if(!r)return;
-  const url='/barcode-label?'+new URLSearchParams({
+  const url='/barcode-label.html?'+new URLSearchParams({
     productNumber:r.productNumber,barcode:r.barcode,productName:r.productName
   }).toString();
   window.open(url,'_blank');
