@@ -315,7 +315,7 @@ footer a{color:var(--sub);text-decoration:underline;}
     <button type="button" class="nav-btn" id="navBtn-calculator" onclick="showFeature('calculator')">📊 TradeCode Navi 관세율 계산</button>
     <button type="button" class="nav-btn" id="navBtn-rocketmargin" onclick="showFeature('rocketmargin')">🚀 로켓배송 원가&amp;마진률 계산</button>
     <button type="button" class="nav-btn" id="navBtn-logistics" onclick="showFeature('logistics')">🚚 물류비 계산기</button>
-    <button type="button" class="nav-btn" id="navBtn-barcode" onclick="window.location.href='/barcode-label'">🏷️ 바코드 라벨 생성기</button>
+    <button type="button" class="nav-btn" id="navBtn-barcode" onclick="window.location.href='/barcode-label.html'">🏷️ 바코드 라벨 생성기</button>
     <button type="button" class="nav-btn" id="navBtn-orderbarcode" onclick="window.location.href='/order-barcode.html'">📦 발주 바코드 출력</button>
   </nav>
 
@@ -3009,7 +3009,7 @@ function recalcWorkCost(){
    INIT
 ========================================================= */
   document.getElementById('navBtn-barcode').addEventListener('click', function () {
-  window.location.href = '/barcode-label';
+  window.location.href = '/barcode-label.html';
 });
 document.getElementById('translateBtn').addEventListener('click', runTranslate);
 document.getElementById('koInput').addEventListener('keydown', e=>{ if(e.key==='Enter') runTranslate(); });
