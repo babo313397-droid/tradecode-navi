@@ -106,7 +106,8 @@ td.name{min-width:310px}
   <section class="card">
     <div class="upload-box">
       <input class="file-input" id="orderFile" type="file" accept=".xlsx,.xls">
-      <button class="btn btn-secondary" onclick="reloadLibrary()">🔄 저장 라벨 새로고침</button>
+      <button class="btn btn-secondary" type="button" onclick="window.location.href='/barcode-upload-template.xlsx'">⬇ 바코드 업로드 파일 양식 다운로드</button>
+      <button class="btn btn-secondary" type="button" onclick="reloadLibrary()">🔄 저장 라벨 새로고침</button>
       <label style="font-size:13px;font-weight:700;">1회 최대 출력 장수
         <input id="maxPerFile" type="number" min="1" max="1000" value="100" style="width:80px;padding:8px;border:1px solid #cbd5df;border-radius:7px;margin-left:6px;">
       </label>
