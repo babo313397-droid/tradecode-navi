@@ -1006,61 +1006,117 @@
     return new File([blob],name||'barcode-crop.png',{type:'image/png'});
   }
 
+
+  async function upscaleImageFile(file,scale=2,mode='normal'){
+    const bitmap=await createImageBitmap(file);
+    const c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(bitmap.width*scale));
+    c.height=Math.max(1,Math.round(bitmap.height*scale));
+    const ctx=c.getContext('2d');
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(bitmap,0,0,c.width,c.height);
+    try{bitmap.close()}catch(e){}
+
+    if(mode==='bw'){
+      const img=ctx.getImageData(0,0,c.width,c.height);
+      const d=img.data;
+      for(let i=0;i<d.length;i+=4){
+        const g=d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114;
+        const v=g>=185?255:0;
+        d[i]=d[i+1]=d[i+2]=v;
+      }
+      ctx.putImageData(img,0,0);
+    }
+
+    const blob=await new Promise(resolve=>c.toBlob(resolve,'image/png',0.95));
+    return new File([blob],`scaled-${scale}-${mode}.png`,{type:'image/png'});
+  }
+
+  async function decodeBarcodeFromImageVariants(file){
+    let barcode=await decodeBarcodeFromImage(file);
+    if(barcode)return barcode;
+
+    for(const scale of [2,3]){
+      try{
+        const scaled=await upscaleImageFile(file,scale,'normal');
+        barcode=await decodeBarcodeFromImage(scaled);
+        if(barcode)return barcode;
+      }catch(e){}
+      try{
+        const bw=await upscaleImageFile(file,scale,'bw');
+        barcode=await decodeBarcodeFromImage(bw);
+        if(barcode)return barcode;
+      }catch(e){}
+    }
+    return '';
+  }
+
   async function decodeMultipleByGrid(file,limit=8){
-    // Native multi detector가 지원되지 않거나 한 장만 찾았을 때
-    // 라벨 카드가 여러 개 배치된 캡쳐를 2×4 / 4×2 등의 영역으로 잘라 보조 인식합니다.
+    // Native multi detector가 적게 잡을 때 여러 그리드/확대/흑백 보조 스캔을 모두 시도합니다.
     const canvas=await imageFileToCanvas(file);
     const ratio=canvas.width/Math.max(1,canvas.height);
-    const grids=ratio>=1.15
-      ? [[4,2],[3,2],[2,2],[4,1]]
-      : [[2,4],[2,3],[2,2],[1,4]];
+    const grids=ratio>=1.05
+      ? [[3,2],[4,2],[3,3],[2,2],[4,1],[5,2]]
+      : [[2,3],[2,4],[3,3],[2,2],[1,3],[1,4],[2,5]];
 
-    const found=[];
-    const seen=new Set();
+    const allFound=new Map();
 
     for(const [cols,rows] of grids){
+      const baseW=canvas.width/cols;
+      const baseH=canvas.height/rows;
+      const regionTries=[
+        {ox:0.06,oy:0.06,yStart:0.00,yEnd:1.00},
+        {ox:0.12,oy:0.10,yStart:0.00,yEnd:1.00},
+        {ox:0.04,oy:0.04,yStart:0.18,yEnd:0.98},
+        {ox:0.10,oy:0.08,yStart:0.25,yEnd:1.00},
+        {ox:0.02,oy:0.02,yStart:0.35,yEnd:1.00}
+      ];
+
       for(let row=0;row<rows;row++){
         for(let col=0;col<cols;col++){
-          if(found.length>=limit)return found;
+          if(allFound.size>=limit)break;
 
-          const baseW=canvas.width/cols;
-          const baseH=canvas.height/rows;
-          const overlapX=baseW*0.08;
-          const overlapY=baseH*0.08;
-          const sx=Math.max(0,col*baseW-overlapX);
-          const sy=Math.max(0,row*baseH-overlapY);
-          const ex=Math.min(canvas.width,(col+1)*baseW+overlapX);
-          const ey=Math.min(canvas.height,(row+1)*baseH+overlapY);
+          const rawLeft=col*baseW;
+          const rawTop=row*baseH;
+          let detected='';
 
-          try{
-            const crop=await canvasCropToFile(
-              canvas,sx,sy,ex-sx,ey-sy,
-              `barcode-${row}-${col}.png`
-            );
-            const bc=await decodeBarcodeFromImage(crop);
-            if(bc&&!seen.has(bc)){
-              seen.add(bc);
-              found.push({
-                barcode:bc,
-                x:col*baseW,
-                y:row*baseH,
-                w:baseW,
-                h:baseH
-              });
-            }
-          }catch(e){}
+          for(const t of regionTries){
+            const sx=Math.max(0,rawLeft-baseW*t.ox);
+            const sy=Math.max(0,rawTop-baseH*t.oy + baseH*t.yStart);
+            const ex=Math.min(canvas.width,rawLeft+baseW+baseW*t.ox);
+            const ey=Math.min(canvas.height,rawTop+baseH+baseH*t.oy);
+            const cropYEnd=Math.min(canvas.height, rawTop + baseH*t.yEnd + baseH*t.oy);
+            const sw=ex-sx;
+            const sh=Math.max(1,cropYEnd-sy);
+
+            try{
+              const crop=await canvasCropToFile(canvas,sx,sy,sw,sh,`barcode-${cols}x${rows}-${row}-${col}.png`);
+              detected=await decodeBarcodeFromImageVariants(crop);
+            }catch(e){detected='';}
+            if(detected)break;
+          }
+
+          if(detected && !allFound.has(detected)){
+            allFound.set(detected,{
+              barcode:detected,
+              x:rawLeft,
+              y:rawTop,
+              w:baseW,
+              h:baseH
+            });
+          }
         }
       }
-      if(found.length>=2)break;
+      if(allFound.size>=limit)break;
     }
-    return sortDetectedVisual(found).slice(0,limit);
+    return sortDetectedVisual([...allFound.values()]).slice(0,limit);
   }
 
   async function decodeBarcodesFromImage(file,limit=8){
     let items=await decodeMultipleWithNativeBarcodeDetector(file);
 
-    // 다중 캡쳐인데 브라우저가 한 개만 반환하는 경우를 대비한 보조 스캔
-    if(items.length<2){
+    // 다중 캡쳐인데 일부만 잡히는 경우를 대비해 그리드 보조 스캔으로 누락분을 채웁니다.
+    if(items.length<limit){
       const grid=await decodeMultipleByGrid(file,limit);
       items=uniqueDetected([...items,...grid]);
       items=sortDetectedVisual(items);
