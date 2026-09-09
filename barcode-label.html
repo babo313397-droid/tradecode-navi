@@ -65,7 +65,27 @@
     .auto-status{margin-top:10px;border-radius:9px;padding:9px 10px;background:#f4f7fa;font-size:12px;line-height:1.55;color:#4c5c6c;min-height:40px}
     .auto-status.ok{background:#eaf8ef;color:#126b37}.auto-status.warn{background:#fff7e5;color:#8a5a00}.auto-status.bad{background:#fff0f0;color:#b3261e}
     .auto-match-card{display:none;margin-top:10px;border:1px solid #d9e3ec;border-radius:10px;background:#fff;padding:10px;font-size:12px;line-height:1.6}
-    .auto-match-card.show{display:block}.auto-match-card b{color:#102d48}
+    .auto-match-card.show{display:block}
+    .batch-panel{display:none;margin-top:10px;border:1px solid #d8e1ea;border-radius:10px;background:#fff;padding:10px}
+    .batch-panel.show{display:block}
+    .batch-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+    .batch-head strong{font-size:13px;color:var(--navy-dark)}
+    .batch-nav{display:flex;gap:6px;flex-wrap:wrap}
+    .batch-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+    .batch-item{border:1px solid #d9e2eb;border-radius:8px;padding:8px;background:#f8fafc;cursor:pointer;min-width:0}
+    .batch-item:hover{border-color:#9fb2c5;background:#f4f8fc}
+    .batch-item.current{border:2px solid #0b5cab;background:#eef6ff;padding:7px}
+    .batch-item.saved{border-color:#a8d7bd;background:#f0fbf5}
+    .batch-item.bad{border-color:#efc1c1;background:#fff6f6}
+    .batch-num{font-size:10px;font-weight:900;color:#6d7b88}
+    .batch-barcode{font-size:11.5px;font-weight:900;color:#102b45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+    .batch-name{font-size:10.5px;color:#667381;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+    .batch-state{font-size:10.5px;font-weight:800;margin-top:4px}
+    .batch-item.saved .batch-state{color:#157347}
+    .batch-item.current .batch-state{color:#0b5cab}
+    .batch-item.bad .batch-state{color:#c62828}
+    @media(max-width:1050px){.batch-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.auto-match-card b{color:#102d48}
     .auto-thumb{display:none;max-width:100%;max-height:110px;margin-top:8px;border-radius:8px;border:1px solid #d9e1e8;background:#fff}
     @media(max-width:1050px){.auto-import-grid{grid-template-columns:1fr}}
     @media(max-width:900px){.layout{grid-template-columns:1fr}.preview-panel{position:static}.preview-stage{height:360px;min-height:360px}}
@@ -240,18 +260,18 @@
           <h3>⚡ 바코드 이미지 / 상품 기준파일 자동 불러오기</h3>
           <div class="button-row">
             <button class="btn-ghost" type="button" onclick="autoFillCurrentBarcode()">🔍 현재 바코드로 상품 찾기</button>
-            <button class="btn-ghost" type="button" id="clearBarcodeImageBtn" onclick="clearBarcodeImageUpload()">🗑 업로드 이미지 삭제</button>
+            <button class="btn-ghost" type="button" id="clearBarcodeImageBtn" onclick="clearBarcodeImageUpload()">🗑 업로드 이미지/목록 삭제</button>
           </div>
         </div>
         <div class="auto-import-grid">
           <div>
             <div id="barcodeImageDrop" class="drop-zone" onclick="el('barcodeImageFile').click()">
               <div class="drop-icon">🖼️</div>
-              <strong>바코드 캡쳐본을 여기로 끌어오세요</strong>
-              <small>PNG · JPG · WEBP<br>이미지에서 바코드 번호를 읽고 상품번호/상품명을 자동 매칭합니다.</small>
+              <strong>바코드 캡쳐본을 여기로 끌어오세요 · 최대 8개</strong>
+              <small>PNG · JPG · WEBP<br>한 장에 여러 바코드가 있어도 최대 8개까지 순서대로 인식합니다.<br>여러 이미지 파일도 최대 8개까지 한 번에 선택할 수 있습니다.</small>
               <img id="barcodeImageThumb" class="auto-thumb" alt="업로드 이미지 미리보기">
             </div>
-            <input id="barcodeImageFile" type="file" accept="image/png,image/jpeg,image/webp,image/bmp" style="display:none" onchange="handleBarcodeImageFile(this.files?.[0]);this.value=''">
+            <input id="barcodeImageFile" type="file" multiple accept="image/png,image/jpeg,image/webp,image/bmp" style="display:none" onchange="handleBarcodeImageFiles(this.files);this.value=''">
           </div>
 
           <div class="auto-side">
@@ -266,6 +286,20 @@
           </div>
         </div>
         <div id="autoImportStatus" class="auto-status">캡쳐 이미지를 끌어오거나 파일을 선택하면 자동으로 바코드를 인식합니다.</div>
+
+        <div id="barcodeBatchPanel" class="batch-panel">
+          <div class="batch-head">
+            <strong id="barcodeBatchTitle">인식된 바코드 0개</strong>
+            <div class="batch-nav">
+              <button class="btn-ghost" type="button" onclick="moveBarcodeBatch(-1)">← 이전</button>
+              <button class="btn-ghost" type="button" onclick="moveBarcodeBatch(1)">다음 →</button>
+              <button class="btn-ghost" type="button" onclick="clearBarcodeImageUpload()">목록 비우기</button>
+            </div>
+          </div>
+          <div class="help" style="margin:0 0 8px">현재 항목을 확인한 뒤 <b>공용 라벨 저장</b>을 누르면 저장 완료 처리되고 다음 바코드가 자동으로 열립니다.</div>
+          <div id="barcodeBatchList" class="batch-list"></div>
+        </div>
+
         <div id="autoMatchCard" class="auto-match-card"></div>
       </div>
     </section>
@@ -877,6 +911,9 @@
   // 우선순위: 공용 저장 라벨 전체 복원 -> 상품 기준목록의 상품번호/상품명 매칭
   // ---------------------------------------------------------
   let autoImportBusy=false;
+  let barcodeBatchQueue=[];
+  let barcodeBatchIndex=-1;
+  let barcodeBatchLoading=false;
 
   function setAutoImportStatus(message,type=''){
     const box=el('autoImportStatus');
@@ -900,6 +937,141 @@
 
   function normalizeDetectedBarcode(raw){
     return String(raw||'').trim().replace(/\s+/g,'').toUpperCase();
+  }
+
+
+  function uniqueDetected(items){
+    const seen=new Set();
+    return (items||[]).filter(item=>{
+      const bc=normalizeDetectedBarcode(item?.barcode||item?.rawValue||'');
+      if(!bc||seen.has(bc))return false;
+      seen.add(bc);
+      item.barcode=bc;
+      return true;
+    });
+  }
+
+  function sortDetectedVisual(items){
+    return (items||[]).slice().sort((a,b)=>{
+      const ay=Number(a.y||0),by=Number(b.y||0);
+      const ah=Number(a.h||20),bh=Number(b.h||20);
+      const rowTolerance=Math.max(20,Math.min(ah,bh)*0.7);
+      if(Math.abs(ay-by)>rowTolerance)return ay-by;
+      return Number(a.x||0)-Number(b.x||0);
+    });
+  }
+
+  async function decodeMultipleWithNativeBarcodeDetector(file){
+    if(!('BarcodeDetector' in window))return [];
+    try{
+      let formats=[];
+      try{formats=await BarcodeDetector.getSupportedFormats()}catch(e){}
+      const wanted=['code_128','ean_13','ean_8','upc_a','upc_e','code_39','itf','codabar'];
+      const useFormats=wanted.filter(x=>!formats.length||formats.includes(x));
+      const detector=new BarcodeDetector(useFormats.length?{formats:useFormats}:undefined);
+      const bitmap=await createImageBitmap(file);
+      const results=await detector.detect(bitmap);
+      const list=(results||[]).map(r=>({
+        barcode:normalizeDetectedBarcode(r.rawValue),
+        x:Number(r.boundingBox?.x||0),
+        y:Number(r.boundingBox?.y||0),
+        w:Number(r.boundingBox?.width||1),
+        h:Number(r.boundingBox?.height||1)
+      }));
+      try{bitmap.close()}catch(e){}
+      return sortDetectedVisual(uniqueDetected(list)).slice(0,8);
+    }catch(err){
+      console.warn('BarcodeDetector 다중 인식 실패:',err);
+      return [];
+    }
+  }
+
+  async function imageFileToCanvas(file){
+    const bitmap=await createImageBitmap(file);
+    const canvas=document.createElement('canvas');
+    canvas.width=bitmap.width;
+    canvas.height=bitmap.height;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(bitmap,0,0);
+    try{bitmap.close()}catch(e){}
+    return canvas;
+  }
+
+  async function canvasCropToFile(canvas,sx,sy,sw,sh,name){
+    const c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(sw));
+    c.height=Math.max(1,Math.round(sh));
+    c.getContext('2d').drawImage(canvas,sx,sy,sw,sh,0,0,c.width,c.height);
+    const blob=await new Promise(resolve=>c.toBlob(resolve,'image/png',0.95));
+    return new File([blob],name||'barcode-crop.png',{type:'image/png'});
+  }
+
+  async function decodeMultipleByGrid(file,limit=8){
+    // Native multi detector가 지원되지 않거나 한 장만 찾았을 때
+    // 라벨 카드가 여러 개 배치된 캡쳐를 2×4 / 4×2 등의 영역으로 잘라 보조 인식합니다.
+    const canvas=await imageFileToCanvas(file);
+    const ratio=canvas.width/Math.max(1,canvas.height);
+    const grids=ratio>=1.15
+      ? [[4,2],[3,2],[2,2],[4,1]]
+      : [[2,4],[2,3],[2,2],[1,4]];
+
+    const found=[];
+    const seen=new Set();
+
+    for(const [cols,rows] of grids){
+      for(let row=0;row<rows;row++){
+        for(let col=0;col<cols;col++){
+          if(found.length>=limit)return found;
+
+          const baseW=canvas.width/cols;
+          const baseH=canvas.height/rows;
+          const overlapX=baseW*0.08;
+          const overlapY=baseH*0.08;
+          const sx=Math.max(0,col*baseW-overlapX);
+          const sy=Math.max(0,row*baseH-overlapY);
+          const ex=Math.min(canvas.width,(col+1)*baseW+overlapX);
+          const ey=Math.min(canvas.height,(row+1)*baseH+overlapY);
+
+          try{
+            const crop=await canvasCropToFile(
+              canvas,sx,sy,ex-sx,ey-sy,
+              `barcode-${row}-${col}.png`
+            );
+            const bc=await decodeBarcodeFromImage(crop);
+            if(bc&&!seen.has(bc)){
+              seen.add(bc);
+              found.push({
+                barcode:bc,
+                x:col*baseW,
+                y:row*baseH,
+                w:baseW,
+                h:baseH
+              });
+            }
+          }catch(e){}
+        }
+      }
+      if(found.length>=2)break;
+    }
+    return sortDetectedVisual(found).slice(0,limit);
+  }
+
+  async function decodeBarcodesFromImage(file,limit=8){
+    let items=await decodeMultipleWithNativeBarcodeDetector(file);
+
+    // 다중 캡쳐인데 브라우저가 한 개만 반환하는 경우를 대비한 보조 스캔
+    if(items.length<2){
+      const grid=await decodeMultipleByGrid(file,limit);
+      items=uniqueDetected([...items,...grid]);
+      items=sortDetectedVisual(items);
+    }
+
+    if(!items.length){
+      const single=await decodeBarcodeFromImage(file);
+      if(single)items=[{barcode:single,x:0,y:0,w:1,h:1}];
+    }
+
+    return uniqueDetected(items).slice(0,limit);
   }
 
   async function decodeWithNativeBarcodeDetector(file){
@@ -946,11 +1118,161 @@
   }
 
 
+  function renderBarcodeBatchQueue(){
+    const panel=el('barcodeBatchPanel');
+    const list=el('barcodeBatchList');
+    const title=el('barcodeBatchTitle');
+    if(!panel||!list||!title)return;
+
+    if(!barcodeBatchQueue.length){
+      panel.classList.remove('show');
+      list.innerHTML='';
+      title.textContent='인식된 바코드 0개';
+      return;
+    }
+
+    panel.classList.add('show');
+    const savedCount=barcodeBatchQueue.filter(x=>x.status==='saved').length;
+    title.textContent=`인식된 바코드 ${barcodeBatchQueue.length}개 · 저장 ${savedCount}개`;
+
+    list.innerHTML=barcodeBatchQueue.map((item,index)=>{
+      const state=item.status==='saved'
+        ? '✓ 저장 완료'
+        : index===barcodeBatchIndex
+          ? '● 현재 작업'
+          : item.status==='bad'
+            ? '⚠ 확인 필요'
+            : '대기';
+      const cls=item.status==='saved'?'saved':index===barcodeBatchIndex?'current':item.status==='bad'?'bad':'';
+      return `<div class="batch-item ${cls}" onclick="loadBarcodeBatchItem(${index})">
+        <div class="batch-num">${index+1}/${barcodeBatchQueue.length}</div>
+        <div class="batch-barcode">${escHtml(item.barcode||'인식 실패')}</div>
+        <div class="batch-name">${escHtml(item.productName||item.fileName||'상품정보 확인 전')}</div>
+        <div class="batch-state">${state}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function showBatchItemImage(item){
+    const thumb=el('barcodeImageThumb');
+    if(!thumb)return;
+
+    if(!item?.file){
+      thumb.removeAttribute('src');
+      thumb.style.display='none';
+      return;
+    }
+
+    if(item.previewUrl){
+      thumb.src=item.previewUrl;
+      thumb.style.display='block';
+      return;
+    }
+
+    const url=URL.createObjectURL(item.file);
+    item.previewUrl=url;
+    thumb.src=url;
+    thumb.style.display='block';
+  }
+
+  async function loadBarcodeBatchItem(index){
+    if(barcodeBatchLoading)return;
+    const item=barcodeBatchQueue[index];
+    if(!item||!item.barcode)return;
+
+    barcodeBatchLoading=true;
+    try{
+      if(barcodeBatchIndex>=0&&barcodeBatchQueue[barcodeBatchIndex]?.status==='current'){
+        barcodeBatchQueue[barcodeBatchIndex].status='pending';
+      }
+
+      barcodeBatchIndex=index;
+      if(item.status!=='saved')item.status='current';
+      showBatchItemImage(item);
+      renderBarcodeBatchQueue();
+
+      setAutoImportStatus(
+        `배치 ${index+1}/${barcodeBatchQueue.length} · ${item.barcode} 상품정보를 불러오는 중...`
+      );
+      await autoFillByBarcode(item.barcode,{fromImage:true});
+
+      item.productNumber=value('productNumber');
+      item.productName=value('productName');
+      item.status=item.status==='saved'?'saved':'current';
+      renderBarcodeBatchQueue();
+
+      setAutoImportStatus(
+        `배치 ${index+1}/${barcodeBatchQueue.length} · ${item.barcode} · 확인 후 [공용 라벨 저장]을 누르세요.`,
+        'ok'
+      );
+    }catch(err){
+      console.error(err);
+      item.status='bad';
+      renderBarcodeBatchQueue();
+      setAutoImportStatus(err?.message||'배치 항목 불러오기에 실패했습니다.','bad');
+    }finally{
+      barcodeBatchLoading=false;
+    }
+  }
+
+  function moveBarcodeBatch(step){
+    if(!barcodeBatchQueue.length)return;
+    let next=barcodeBatchIndex<0?0:barcodeBatchIndex+step;
+    next=Math.max(0,Math.min(barcodeBatchQueue.length-1,next));
+    loadBarcodeBatchItem(next);
+  }
+
+  async function completeCurrentBatchItemAndAdvance(savedConfig){
+    if(!barcodeBatchQueue.length||barcodeBatchIndex<0)return;
+
+    const current=barcodeBatchQueue[barcodeBatchIndex];
+    const savedBarcode=normalizeDetectedBarcode(savedConfig?.barcode||'');
+    if(!current||normalizeDetectedBarcode(current.barcode)!==savedBarcode)return;
+
+    current.status='saved';
+    current.productNumber=savedConfig.productNumber||current.productNumber||'';
+    current.productName=savedConfig.productName||current.productName||'';
+    renderBarcodeBatchQueue();
+
+    let next=-1;
+    for(let i=barcodeBatchIndex+1;i<barcodeBatchQueue.length;i++){
+      if(barcodeBatchQueue[i].status!=='saved'){
+        next=i;break;
+      }
+    }
+    if(next<0){
+      for(let i=0;i<barcodeBatchIndex;i++){
+        if(barcodeBatchQueue[i].status!=='saved'){
+          next=i;break;
+        }
+      }
+    }
+
+    if(next>=0){
+      setAutoImportStatus(
+        `✓ ${barcodeBatchIndex+1}번 저장 완료 · 다음 ${next+1}/${barcodeBatchQueue.length}번을 자동으로 불러옵니다.`,
+        'ok'
+      );
+      await loadBarcodeBatchItem(next);
+    }else{
+      setAutoImportStatus(
+        `✓ 배치 ${barcodeBatchQueue.length}개 저장이 모두 완료되었습니다.`,
+        'ok'
+      );
+    }
+  }
+
   function clearBarcodeImageUpload(){
-    // 업로드 이미지 자체만 지웁니다.
-    // 이미 자동 입력된 상품번호/상품명/바코드/라벨 정보는 그대로 유지합니다.
     const input=el('barcodeImageFile');
-    if(input) input.value='';
+    if(input)input.value='';
+
+    barcodeBatchQueue.forEach(item=>{
+      if(item.previewUrl){
+        try{URL.revokeObjectURL(item.previewUrl)}catch(e){}
+      }
+    });
+    barcodeBatchQueue=[];
+    barcodeBatchIndex=-1;
 
     const thumb=el('barcodeImageThumb');
     if(thumb){
@@ -958,33 +1280,77 @@
       thumb.style.display='none';
     }
 
+    renderBarcodeBatchQueue();
     showAutoMatchCard(null);
-    setAutoImportStatus('업로드 이미지를 삭제했습니다. 새 캡쳐 이미지를 끌어오거나 파일을 선택해 주세요.');
+    setAutoImportStatus('업로드 이미지와 배치 목록을 삭제했습니다. 새 캡쳐 이미지를 끌어오거나 파일을 선택해 주세요.');
 
     const zone=el('barcodeImageDrop');
-    if(zone) zone.classList.remove('dragover');
+    if(zone)zone.classList.remove('dragover');
   }
 
-  async function handleBarcodeImageFile(file){
-    if(!file||autoImportBusy)return;
+  async function handleBarcodeImageFiles(fileList){
+    if(autoImportBusy)return;
+
+    const files=[...(fileList||[])].filter(f=>f?.type?.startsWith('image/')).slice(0,8);
+    if(!files.length){
+      setAutoImportStatus('이미지 파일을 선택해 주세요.','warn');
+      return;
+    }
+
     autoImportBusy=true;
+    clearBarcodeImageUpload();
     showAutoMatchCard(null);
+
     try{
-      const thumb=el('barcodeImageThumb');
-      if(thumb){
-        const previewUrl=URL.createObjectURL(file);
-        thumb.src=previewUrl;
-        thumb.style.display='block';
-        thumb.onload=()=>URL.revokeObjectURL(previewUrl);
+      const queue=[];
+      const seen=new Set();
+
+      for(let fileIndex=0;fileIndex<files.length;fileIndex++){
+        const file=files[fileIndex];
+        const remaining=8-queue.length;
+        if(remaining<=0)break;
+
+        setAutoImportStatus(
+          `이미지 분석 중... ${fileIndex+1}/${files.length} · 현재 인식 ${queue.length}/8`
+        );
+
+        const detected=await decodeBarcodesFromImage(file,remaining);
+        for(const d of detected){
+          const bc=normalizeDetectedBarcode(d.barcode);
+          if(!bc||seen.has(bc))continue;
+          seen.add(bc);
+          queue.push({
+            barcode:bc,
+            file,
+            fileName:file.name,
+            x:d.x||0,
+            y:d.y||0,
+            status:'pending',
+            productNumber:'',
+            productName:''
+          });
+          if(queue.length>=8)break;
+        }
       }
-      setAutoImportStatus('이미지에서 바코드 번호를 읽는 중...');
-      const barcode=await decodeBarcodeFromImage(file);
-      if(!barcode){
-        setAutoImportStatus('바코드를 인식하지 못했습니다. 바코드가 선명하고 정면으로 보이는 이미지를 사용해 주세요.','bad');
+
+      if(!queue.length){
+        setAutoImportStatus(
+          '바코드를 인식하지 못했습니다. 바코드가 선명하게 보이는 캡쳐를 사용해 주세요.',
+          'bad'
+        );
         return;
       }
-      setAutoImportStatus(`바코드 인식 완료: ${barcode} · 상품정보를 찾는 중...`);
-      await autoFillByBarcode(barcode,{fromImage:true});
+
+      barcodeBatchQueue=queue;
+      barcodeBatchIndex=-1;
+      renderBarcodeBatchQueue();
+
+      const extraText=files.length>8?' · 처음 8개 이미지만 처리했습니다.':'';
+      setAutoImportStatus(
+        `✓ 바코드 ${queue.length}개를 순서대로 인식했습니다.${extraText} 첫 번째 상품을 불러옵니다.`,
+        'ok'
+      );
+      await loadBarcodeBatchItem(0);
     }catch(err){
       console.error(err);
       setAutoImportStatus(err?.message||'이미지 자동 불러오기에 실패했습니다.','bad');
@@ -992,6 +1358,12 @@
       autoImportBusy=false;
     }
   }
+
+  // 기존 단일 호출 호환
+  async function handleBarcodeImageFile(file){
+    if(file)await handleBarcodeImageFiles([file]);
+  }
+
 
   async function lookupProductCatalog(barcode){
     const bc=normalizeDetectedBarcode(barcode);
@@ -1155,8 +1527,8 @@
       e.preventDefault();e.stopPropagation();zone.classList.remove('dragover');
     }));
     zone.addEventListener('drop',e=>{
-      const file=[...(e.dataTransfer?.files||[])].find(f=>f.type.startsWith('image/'));
-      if(file)handleBarcodeImageFile(file);
+      const files=[...(e.dataTransfer?.files||[])].filter(f=>f.type.startsWith('image/'));
+      if(files.length)handleBarcodeImageFiles(files);
       else setAutoImportStatus('이미지 파일을 끌어와 주세요.','warn');
     });
   }
@@ -1311,6 +1683,7 @@
       await fetchSharedLabels(true);
       renderSavedLibrary();
       setSaveStatus(`✓ 공용 저장 완료 · ${cfg.labelWidth}×${cfg.labelHeight}mm · 공용 보관함 ${getLabelLibrary().length}개`);
+      await completeCurrentBatchItemAndAdvance(cfg);
     }catch(err){
       console.error(err);
       setSaveStatus(err?.message||'공용 라벨 저장 실패',false);
