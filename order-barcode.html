@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js"></script>
 
 <style>
 :root{
@@ -52,6 +53,9 @@ h1{margin:0 0 6px;color:var(--navy-dark);font-size:27px}
 .mode-choice label{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#fff;font-size:13px;font-weight:800;cursor:pointer}
 .mode-choice input{margin:0}
 .sheet-only.hidden{display:none}
+.thermal-connect{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border:1px solid #d4e0ea;border-radius:10px;background:#f7fbff}
+.thermal-connect select{min-width:220px;padding:8px;border:1px solid #cbd5df;border-radius:7px;background:#fff}
+.thermal-status{font-size:11.5px;font-weight:800;color:var(--muted)}.thermal-status.ok{color:var(--good)}.thermal-status.bad{color:var(--bad)}
 @media(max-width:1100px){.print-settings{grid-template-columns:repeat(2,minmax(150px,1fr))}}
 .summary{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-top:14px}
 .kpi{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:12px}
@@ -118,6 +122,13 @@ td.name{min-width:310px}
       <label><input type="radio" name="printMethod" value="continuous" checked onchange="togglePrintMethod()"> ① 1열 연속 라벨 프린터</label>
       <label><input type="radio" name="printMethod" value="sheet" onchange="togglePrintMethod()"> ② 다열 라벨 용지</label>
     </div>
+    <div id="thermalConnectBox" class="thermal-connect">
+      <button class="btn btn-secondary btn-sm" type="button" onclick="connectThermalPrinter()">🔌 Xprinter 연결</button>
+      <select id="thermalPrinterSelect" onchange="saveThermalPrinterChoice()"><option value="">감열프린터를 연결해 주세요</option></select>
+      <label style="font-size:12px;font-weight:800;">라벨 간격(mm) <input id="thermalGapMm" type="number" min="0" max="10" step="0.5" value="2" style="width:66px;padding:7px;border:1px solid #cbd5df;border-radius:7px;"></label>
+      <span id="thermalStatus" class="thermal-status">QZ Tray 설치 후 Xprinter와 직접 통신합니다.</span>
+      <a href="https://qz.io/download/" target="_blank" rel="noopener" style="font-size:12px;font-weight:800;">QZ Tray 설치</a>
+    </div>
 
     <div id="sheetSettings" class="print-settings sheet-only hidden">
       <div class="setting-box"><label>용지 가로 (mm)</label><input id="sheetPaperWidth" type="number" min="50" value="210"></div>
@@ -148,11 +159,11 @@ td.name{min-width:310px}
     <div class="toolbar">
       <div class="toolbar-group">
         <button class="btn btn-gold" onclick="batchPrint('50x30')">📄 50×30 PDF</button>
-        <button class="btn btn-primary" onclick="batchDirectPrint('50x30')">🖨 50×30 프린터</button>
+        <button class="btn btn-primary" onclick="batchDirectPrint('50x30')">🖨 50×30 Xprinter</button>
         <button class="btn btn-gold" onclick="batchPrint('50x60')">📄 50×60 PDF</button>
-        <button class="btn btn-primary" onclick="batchDirectPrint('50x60')">🖨 50×60 프린터</button>
+        <button class="btn btn-primary" onclick="batchDirectPrint('50x60')">🖨 50×60 Xprinter</button>
         <button class="btn btn-secondary" onclick="batchPrint('selected')">📄 선택 품목 PDF</button>
-        <button class="btn btn-primary" onclick="batchDirectPrint('selected')">🖨 선택 품목 프린터</button>
+        <button class="btn btn-primary" onclick="batchDirectPrint('selected')">🖨 선택 품목 Xprinter</button>
       </div>
       <div class="toolbar-group">
         <button class="btn btn-secondary btn-sm" onclick="setSizeChecks('50x30')">50×30 선택</button>
@@ -213,6 +224,14 @@ function getLibrary(){
 function reloadLibrary(){
   labelLibrary=getLibrary();
 restorePrintMethod();
+try{
+  const p=localStorage.getItem(THERMAL_PRINTER_KEY);
+  if(p&&el('thermalPrinterSelect')){
+    el('thermalPrinterSelect').innerHTML=`<option value="${p.replace(/"/g,'&quot;')}">${p}</option>`;
+    el('thermalPrinterSelect').value=p;
+    setThermalStatus(`마지막 선택: ${p}`);
+  }
+}catch(e){}
   rematchRows();
   renderRows();
   setProgress(`저장 라벨 ${labelLibrary.length}개를 다시 불러왔습니다.`);
@@ -237,6 +256,142 @@ function sizeCode(cfg){
   return'other';
 }
 function setProgress(msg){el('progress').textContent=msg||''}
+
+
+const THERMAL_DPMM=8;
+const THERMAL_PRINTER_KEY='tradecodeThermalPrinterV1';
+
+function setThermalStatus(msg,type){
+  const s=el('thermalStatus');
+  if(!s)return;
+  s.textContent=msg;
+  s.classList.remove('ok','bad');
+  if(type)s.classList.add(type);
+}
+
+async function ensureQzConnected(){
+  if(typeof qz==='undefined')throw new Error('QZ Tray 연결 스크립트를 불러오지 못했습니다.');
+  if(qz.websocket.isActive())return;
+  await qz.websocket.connect({retries:2,delay:1});
+}
+
+async function connectThermalPrinter(){
+  try{
+    setThermalStatus('Windows 프린터를 찾는 중...');
+    await ensureQzConnected();
+    const printers=await qz.printers.find();
+    const select=el('thermalPrinterSelect');
+    const saved=localStorage.getItem(THERMAL_PRINTER_KEY)||'';
+    select.innerHTML='';
+
+    const preferred=printers.filter(p=>/XP[-_ ]?370B|Xprinter/i.test(String(p)));
+    const list=[...preferred,...printers.filter(p=>!preferred.includes(p))];
+
+    if(!list.length){
+      select.innerHTML='<option value="">프린터를 찾지 못했습니다</option>';
+      setThermalStatus('Windows 프린터를 찾지 못했습니다.','bad');
+      return;
+    }
+
+    list.forEach(p=>{
+      const opt=document.createElement('option');
+      opt.value=p;opt.textContent=p;select.appendChild(opt);
+    });
+
+    const choice=(saved&&list.includes(saved))?saved:(preferred[0]||list[0]);
+    select.value=choice;
+    localStorage.setItem(THERMAL_PRINTER_KEY,choice);
+    setThermalStatus(`연결됨: ${choice}`,'ok');
+  }catch(err){
+    console.error(err);
+    setThermalStatus('QZ Tray가 실행되지 않았습니다.','bad');
+    alert('Xprinter 직접 연결에 실패했습니다.\n\nQZ Tray를 설치하고 실행한 뒤 다시 [Xprinter 연결]을 눌러주세요.');
+  }
+}
+
+function saveThermalPrinterChoice(){
+  const p=el('thermalPrinterSelect')?.value||'';
+  if(p){
+    localStorage.setItem(THERMAL_PRINTER_KEY,p);
+    setThermalStatus(`선택됨: ${p}`,'ok');
+  }
+}
+
+function concatUint8(parts){
+  const total=parts.reduce((s,p)=>s+p.length,0);
+  const out=new Uint8Array(total);
+  let pos=0;
+  parts.forEach(p=>{out.set(p,pos);pos+=p.length;});
+  return out;
+}
+function textBytes(s){return new TextEncoder().encode(String(s));}
+
+async function pngDataUrlToCanvas(dataUrl){
+  return await new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas');
+      c.width=img.naturalWidth;c.height=img.naturalHeight;
+      c.getContext('2d').drawImage(img,0,0);
+      resolve(c);
+    };
+    img.onerror=reject;
+    img.src=dataUrl;
+  });
+}
+
+function canvasToTsplBytes(sourceCanvas,wMm,hMm,copies){
+  const wDots=Math.max(8,Math.round(Number(wMm)*THERMAL_DPMM));
+  const hDots=Math.max(8,Math.round(Number(hMm)*THERMAL_DPMM));
+  const bytesPerRow=Math.ceil(wDots/8);
+
+  const c=document.createElement('canvas');
+  c.width=wDots;c.height=hDots;
+  const ctx=c.getContext('2d',{willReadFrequently:true});
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,wDots,hDots);
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(sourceCanvas,0,0,wDots,hDots);
+
+  const img=ctx.getImageData(0,0,wDots,hDots).data;
+  const bitmap=new Uint8Array(bytesPerRow*hDots);
+  const threshold=210;
+
+  for(let y=0;y<hDots;y++){
+    for(let x=0;x<wDots;x++){
+      const i=(y*wDots+x)*4;
+      const gray=(img[i]*299+img[i+1]*587+img[i+2]*114)/1000;
+      if(gray<threshold) bitmap[y*bytesPerRow+(x>>3)]|=(0x80>>(x&7));
+    }
+  }
+
+  const gap=Math.max(0,Math.min(10,Number(el('thermalGapMm')?.value)||0));
+  const prefix=[
+    `SIZE ${Number(wMm)} mm,${Number(hMm)} mm\r\n`,
+    `GAP ${gap} mm,0 mm\r\n`,
+    `DIRECTION 1\r\n`,
+    `SPEED 3\r\n`,
+    `DENSITY 10\r\n`,
+    `CLS\r\n`,
+    `BITMAP 0,0,${bytesPerRow},${hDots},0,`
+  ].join('');
+  const suffix=`\r\nPRINT 1,${Math.max(1,Math.floor(Number(copies)||1))}\r\n`;
+  return concatUint8([textBytes(prefix),bitmap,textBytes(suffix)]);
+}
+
+async function sendPngToThermalPrinter(png,wMm,hMm,copies,jobName){
+  await ensureQzConnected();
+  let printer=el('thermalPrinterSelect')?.value||localStorage.getItem(THERMAL_PRINTER_KEY)||'';
+  if(!printer){
+    await connectThermalPrinter();
+    printer=el('thermalPrinterSelect')?.value||'';
+  }
+  if(!printer)throw new Error('Xprinter를 선택해 주세요.');
+
+  const canvas=await pngDataUrlToCanvas(png);
+  const raw=canvasToTsplBytes(canvas,wMm,hMm,copies);
+  const config=qz.configs.create(printer,{jobName:jobName||'TradeCode Barcode'});
+  await qz.print(config,[{type:'raw',format:'command',flavor:'hex',data:raw}]);
+}
 
 function getPrintMethod(){
   return document.querySelector('input[name="printMethod"]:checked')?.value || 'continuous';
@@ -410,7 +565,7 @@ function renderRows(){
       <td class="center">
         ${r.label
           ? `<button class="btn btn-secondary btn-sm" ${disabled?'disabled':''} onclick="printOne(${r.id})">PDF</button>
-             <button class="btn btn-primary btn-sm" ${disabled?'disabled':''} onclick="printOneDirect(${r.id})">프린터</button>`
+             <button class="btn btn-primary btn-sm" ${disabled?'disabled':''} onclick="printOneDirect(${r.id})">Xprinter</button>`
           : `<button class="btn btn-secondary btn-sm" onclick="makeLabel(${r.id})">라벨 만들기</button>`}
       </td>
     </tr>`
@@ -520,7 +675,7 @@ async function printOneDirect(id){
     return;
   }
   if(!confirm(`${r.productName||r.barcode} / ${qty.toLocaleString()}장을 프린터 인쇄창으로 보낼까요?`))return;
-  await directPrintJobs([{row:r,qty}],`${r.size}-${safeName(r.barcode||r.productNumber)}`);
+  await thermalDirectPrintJobs([{row:r,qty}],`${r.size}-${safeName(r.barcode||r.productNumber)}`);
 }
 
 async function batchDirectPrint(mode){
@@ -548,10 +703,60 @@ async function batchDirectPrint(mode){
   }
 
   if(!confirm(`${rows.length}개 품목 / 총 ${total.toLocaleString()}장을 프린터 인쇄창으로 보낼까요?`))return;
-  await directPrintJobs(rows.map(r=>({row:r,qty:r.printQty})),mode);
+  await thermalDirectPrintJobs(rows.map(r=>({row:r,qty:r.printQty})),mode);
 }
 
-async function directPrintJobs(items,namePrefix){
+
+async function thermalDirectPrintJobs(items,namePrefix){
+  try{
+    // 다열 라벨 용지는 일반 프린터/브라우저 인쇄를 사용
+    if(getPrintMethod()==='sheet'){
+      return await browserDirectPrintJobs(items,namePrefix);
+    }
+
+    setProgress('Xprinter 감열 인쇄 데이터를 준비하는 중...');
+    const first=items[0].row.label;
+    const labelW=Number(first.labelWidth),labelH=Number(first.labelHeight);
+
+    for(const it of items){
+      const w=Number(it.row.label.labelWidth),h=Number(it.row.label.labelHeight);
+      if(Math.abs(w-labelW)>.2||Math.abs(h-labelH)>.2){
+        throw new Error('서로 다른 라벨 규격은 한 번에 Xprinter로 출력할 수 없습니다.');
+      }
+    }
+
+    await ensureQzConnected();
+    let printer=el('thermalPrinterSelect')?.value||localStorage.getItem(THERMAL_PRINTER_KEY)||'';
+    if(!printer){
+      await connectThermalPrinter();
+      printer=el('thermalPrinterSelect')?.value||'';
+    }
+    if(!printer)throw new Error('Xprinter를 선택해 주세요.');
+
+    for(let i=0;i<items.length;i++){
+      const it=items[i];
+      const png=await renderLabelPng(it.row.label);
+      setProgress(`Xprinter 전송 중... ${i+1}/${items.length} · ${it.row.productName||it.row.barcode}`);
+      await sendPngToThermalPrinter(
+        png,
+        Number(it.row.label.labelWidth),
+        Number(it.row.label.labelHeight),
+        Number(it.qty),
+        `TradeCode ${it.row.barcode||it.row.productNumber||i+1}`
+      );
+    }
+
+    const total=items.reduce((s,x)=>s+Number(x.qty||0),0);
+    setProgress(`✓ Xprinter 전송 완료 · 총 ${total.toLocaleString()}장 · ${printer}`);
+  }catch(err){
+    console.error(err);
+    setProgress('');
+    alert((err?.message||'Xprinter 출력에 실패했습니다.')+
+      '\n\nQZ Tray가 실행 중인지, Xprinter XP-370B가 Windows에 설치되어 있는지 확인해 주세요.');
+  }
+}
+
+async function browserDirectPrintJobs(items,namePrefix){
   let printWin=null;
   try{
     setProgress('프린터 인쇄용 라벨을 준비하는 중...');
