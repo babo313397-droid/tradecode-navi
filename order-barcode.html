@@ -132,7 +132,7 @@ td.name{min-width:310px}
 
     <div class="note" style="margin-top:10px;">
       발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 저장 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.<br>
-      ① 연속 출력은 라벨 1장당 PDF 1페이지로 생성합니다. ② 다열 라벨 용지는 A4 등 한 장의 용지에 여러 라벨을 가로·세로로 배치합니다.
+      ① 연속 출력은 라벨 1장씩 이어서 출력합니다. ② 다열 라벨 용지는 A4 등 한 장의 용지에 여러 라벨을 가로·세로로 배치합니다. PDF 버튼은 파일 저장, 프린터 버튼은 브라우저 인쇄창을 바로 엽니다.
     </div>
     <div class="progress" id="progress"></div>
 
@@ -147,9 +147,12 @@ td.name{min-width:310px}
   <section class="card">
     <div class="toolbar">
       <div class="toolbar-group">
-        <button class="btn btn-gold" onclick="batchPrint('50x30')">🖨 50×30 일괄 출력</button>
-        <button class="btn btn-gold" onclick="batchPrint('50x60')">🖨 50×60 일괄 출력</button>
-        <button class="btn btn-primary" onclick="batchPrint('selected')">☑ 선택 품목 출력</button>
+        <button class="btn btn-gold" onclick="batchPrint('50x30')">📄 50×30 PDF</button>
+        <button class="btn btn-primary" onclick="batchDirectPrint('50x30')">🖨 50×30 프린터</button>
+        <button class="btn btn-gold" onclick="batchPrint('50x60')">📄 50×60 PDF</button>
+        <button class="btn btn-primary" onclick="batchDirectPrint('50x60')">🖨 50×60 프린터</button>
+        <button class="btn btn-secondary" onclick="batchPrint('selected')">📄 선택 품목 PDF</button>
+        <button class="btn btn-primary" onclick="batchDirectPrint('selected')">🖨 선택 품목 프린터</button>
       </div>
       <div class="toolbar-group">
         <button class="btn btn-secondary btn-sm" onclick="setAllChecks(true)">전체 선택</button>
@@ -375,7 +378,8 @@ function renderRows(){
       <td class="center"><span class="badge ${badge}">${status}</span></td>
       <td class="center">
         ${r.label
-          ? `<button class="btn btn-primary btn-sm" ${disabled?'disabled':''} onclick="printOne(${r.id})">이 상품 출력</button>`
+          ? `<button class="btn btn-secondary btn-sm" ${disabled?'disabled':''} onclick="printOne(${r.id})">PDF</button>
+             <button class="btn btn-primary btn-sm" ${disabled?'disabled':''} onclick="printOneDirect(${r.id})">프린터</button>`
           : `<button class="btn btn-secondary btn-sm" onclick="makeLabel(${r.id})">라벨 만들기</button>`}
       </td>
     </tr>`
@@ -456,6 +460,190 @@ async function printOne(id){
   if(!qty){alert('출력수량을 1 이상 입력해 주세요.');return}
   await generateJobs([{row:r,qty}],`${r.size}-${safeName(r.barcode||r.productNumber)}`);
 }
+
+async function printOneDirect(id){
+  const r=getRow(id);
+  if(!r||!r.label)return;
+  const qty=Math.max(0,Math.floor(r.printQty));
+  if(!qty){
+    alert('출력수량을 1 이상 입력해 주세요.');
+    return;
+  }
+  const maxPer=Math.max(1,Math.floor(Number(el('maxPerFile').value)||100));
+  if(qty>maxPer){
+    alert(`직접 프린터 인쇄는 현재 1회 최대 ${maxPer}장으로 설정되어 있습니다.\n출력수량을 줄이거나 "1회 최대 출력 장수"를 늘려주세요.`);
+    return;
+  }
+  if(!confirm(`${r.productName||r.barcode} / ${qty.toLocaleString()}장을 프린터 인쇄창으로 보낼까요?`))return;
+  await directPrintJobs([{row:r,qty}],`${r.size}-${safeName(r.barcode||r.productNumber)}`);
+}
+
+async function batchDirectPrint(mode){
+  let rows=orderRows.filter(r=>r.checked&&r.label&&r.printQty>0);
+  if(mode==='50x30') rows=rows.filter(r=>r.size==='50x30');
+  else if(mode==='50x60') rows=rows.filter(r=>r.size==='50x60');
+  else rows=rows.filter(r=>['50x30','50x60'].includes(r.size));
+
+  if(!rows.length){
+    alert('프린터로 출력할 품목이 없습니다.');
+    return;
+  }
+
+  const sizes=[...new Set(rows.map(r=>r.size))];
+  if(sizes.length>1){
+    alert('50×30과 50×60 라벨은 한 번의 프린터 인쇄창에서 같이 출력할 수 없습니다.\n규격별 프린터 버튼을 사용해 주세요.');
+    return;
+  }
+
+  const total=rows.reduce((s,r)=>s+r.printQty,0);
+  const maxPer=Math.max(1,Math.floor(Number(el('maxPerFile').value)||100));
+  if(total>maxPer){
+    alert(`직접 프린터 인쇄는 현재 1회 최대 ${maxPer}장으로 설정되어 있습니다.\n현재 선택 수량은 ${total.toLocaleString()}장입니다.\n출력수량을 줄이거나 "1회 최대 출력 장수"를 늘려주세요.`);
+    return;
+  }
+
+  if(!confirm(`${rows.length}개 품목 / 총 ${total.toLocaleString()}장을 프린터 인쇄창으로 보낼까요?`))return;
+  await directPrintJobs(rows.map(r=>({row:r,qty:r.printQty})),mode);
+}
+
+async function directPrintJobs(items,namePrefix){
+  let printWin=null;
+  try{
+    setProgress('프린터 인쇄용 라벨을 준비하는 중...');
+
+    // 사용자가 클릭한 순간 팝업을 먼저 열어 팝업 차단을 줄인다.
+    printWin=window.open('','_blank','width=980,height=760');
+    if(!printWin){
+      alert('인쇄창을 열 수 없습니다. 브라우저의 팝업 차단을 허용해 주세요.');
+      setProgress('');
+      return;
+    }
+    printWin.document.write('<!doctype html><html><head><title>인쇄 준비중...</title></head><body style="font-family:sans-serif;padding:24px;">라벨을 준비하는 중입니다...</body></html>');
+    printWin.document.close();
+
+    const first=items[0].row.label;
+    const labelW=Number(first.labelWidth);
+    const labelH=Number(first.labelHeight);
+
+    for(const it of items){
+      const w=Number(it.row.label.labelWidth),h=Number(it.row.label.labelHeight);
+      if(Math.abs(w-labelW)>.2||Math.abs(h-labelH)>.2){
+        throw new Error('서로 다른 라벨 규격은 한 번에 직접 인쇄할 수 없습니다.');
+      }
+    }
+
+    const imageCache=new Map();
+    for(const it of items){
+      const key=normBc(it.row.barcode)||norm(it.row.productNumber);
+      if(!imageCache.has(key)){
+        imageCache.set(key,await renderLabelPng(it.row.label));
+      }
+    }
+
+    const printMethod=getPrintMethod();
+    let css='';
+    let body='';
+
+    if(printMethod==='continuous'){
+      css=`
+        @page{size:${labelW}mm ${labelH}mm;margin:0}
+        html,body{margin:0;padding:0;background:#fff}
+        .print-page{width:${labelW}mm;height:${labelH}mm;margin:0;padding:0;page-break-after:always;break-after:page;overflow:hidden}
+        .print-page:last-child{page-break-after:auto;break-after:auto}
+        .print-page img{display:block;width:${labelW}mm;height:${labelH}mm;margin:0;padding:0}
+      `;
+      const pages=[];
+      for(const it of items){
+        const key=normBc(it.row.barcode)||norm(it.row.productNumber);
+        const img=imageCache.get(key);
+        for(let i=0;i<it.qty;i++){
+          pages.push(`<div class="print-page"><img src="${img}"></div>`);
+        }
+      }
+      body=pages.join('');
+    }else{
+      const sheet=getSheetSettings(first);
+      css=`
+        @page{size:${sheet.paperW}mm ${sheet.paperH}mm;margin:0}
+        html,body{margin:0;padding:0;background:#fff}
+        .sheet-page{position:relative;width:${sheet.paperW}mm;height:${sheet.paperH}mm;margin:0;padding:0;page-break-after:always;break-after:page;overflow:hidden}
+        .sheet-page:last-child{page-break-after:auto;break-after:auto}
+        .sheet-page img{position:absolute;display:block;width:${sheet.labelW}mm;height:${sheet.labelH}mm;margin:0;padding:0}
+      `;
+
+      const pages=[];
+      let pageItems=[];
+      let slot=0;
+
+      function flushPage(){
+        if(!pageItems.length)return;
+        pages.push(`<div class="sheet-page">${pageItems.join('')}</div>`);
+        pageItems=[];
+        slot=0;
+      }
+
+      for(const it of items){
+        const key=normBc(it.row.barcode)||norm(it.row.productNumber);
+        const img=imageCache.get(key);
+        for(let i=0;i<it.qty;i++){
+          if(slot>=sheet.capacity) flushPage();
+          const col=slot%sheet.cols;
+          const row=Math.floor(slot/sheet.cols);
+          const x=sheet.marginX + col*(sheet.labelW+sheet.gapX);
+          const y=sheet.marginY + row*(sheet.labelH+sheet.gapY);
+          pageItems.push(`<img src="${img}" style="left:${x}mm;top:${y}mm">`);
+          slot++;
+        }
+      }
+      flushPage();
+      body=pages.join('');
+    }
+
+    printWin.document.open();
+    printWin.document.write(`<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${String(namePrefix||'바코드 인쇄').replace(/[<>&"]/g,'')}</title>
+<style>
+${css}
+*{box-sizing:border-box}
+@media print{html,body{margin:0!important;padding:0!important}}
+</style>
+</head>
+<body>
+${body}
+<script>
+(function(){
+  var imgs=Array.from(document.images);
+  Promise.all(imgs.map(function(img){
+    if(img.complete) return Promise.resolve();
+    return new Promise(function(resolve){
+      img.onload=resolve;
+      img.onerror=resolve;
+    });
+  })).then(function(){
+    setTimeout(function(){
+      window.focus();
+      window.print();
+    },150);
+  });
+})();
+<\/script>
+</body>
+</html>`);
+    printWin.document.close();
+
+    const total=items.reduce((s,x)=>s+Number(x.qty||0),0);
+    setProgress(`✓ 프린터 인쇄창 준비 완료 · 총 ${total.toLocaleString()}장`);
+  }catch(err){
+    console.error(err);
+    if(printWin && !printWin.closed) printWin.close();
+    alert(err?.message || '프린터 인쇄 준비 중 오류가 발생했습니다.');
+    setProgress('');
+  }
+}
+
 async function batchPrint(mode){
   let rows=orderRows.filter(r=>r.checked&&r.label&&r.printQty>0);
   if(mode==='50x30')rows=rows.filter(r=>r.size==='50x30');
@@ -471,7 +659,7 @@ async function batchPrint(mode){
     }
   }
   const total=rows.reduce((s,r)=>s+r.printQty,0);
-  if(!confirm(`${rows.length}개 품목 / 총 ${total.toLocaleString()}장을 출력용 PDF로 생성할까요?`))return;
+  if(!confirm(`${rows.length}개 품목 / 총 ${total.toLocaleString()}장을 PDF로 생성할까요?`))return;
   await generateJobs(rows.map(r=>({row:r,qty:r.printQty})),mode);
 }
 async function generateJobs(items,namePrefix){
