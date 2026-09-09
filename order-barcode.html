@@ -105,13 +105,13 @@ td.name{min-width:310px}
 
 <main class="main">
   <h1>📦 발주 바코드 출력</h1>
-  <div class="sub">발주현황 엑셀을 불러오면 저장된 라벨과 자동 매칭하고, 50×30 / 50×60 용지를 따로 일괄 출력하거나 상품별로 원하는 수량만 출력할 수 있습니다.</div>
+  <div class="sub">발주현황 엑셀을 불러오면 공용 보관함의 라벨과 자동 매칭하고, 50×30 / 50×60 용지를 따로 일괄 출력하거나 상품별로 원하는 수량만 출력할 수 있습니다.</div>
 
   <section class="card">
     <div class="upload-box">
       <input class="file-input" id="orderFile" type="file" accept=".xlsx,.xls">
       <button class="btn btn-secondary" type="button" onclick="window.location.href='/barcode-upload-template.xlsx'">⬇ 바코드 업로드 파일 양식 다운로드</button>
-      <button class="btn btn-secondary" type="button" onclick="reloadLibrary()">🔄 저장 라벨 새로고침</button>
+      <button class="btn btn-secondary" type="button" onclick="reloadLibrary()">🔄 공용 라벨 새로고침</button>
       <label style="font-size:13px;font-weight:700;">1회 최대 출력 장수
         <input id="maxPerFile" type="number" min="1" max="1000" value="100" style="width:80px;padding:8px;border:1px solid #cbd5df;border-radius:7px;margin-left:6px;">
       </label>
@@ -142,7 +142,7 @@ td.name{min-width:310px}
     </div>
 
     <div class="note" style="margin-top:10px;">
-      발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 저장 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.<br>
+      발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 공용 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.<br>
       ① 연속 출력은 라벨 1장씩 이어서 출력합니다. ② 다열 라벨 용지는 A4 등 한 장의 용지에 여러 라벨을 가로·세로로 배치합니다. PDF 버튼은 파일 저장, 프린터 버튼은 브라우저 인쇄창을 바로 엽니다.
     </div>
     <div class="progress" id="progress"></div>
@@ -151,7 +151,7 @@ td.name{min-width:310px}
       <div class="kpi"><div class="lab">발주 품목</div><div class="num" id="kpiItems">0</div></div>
       <div class="kpi"><div class="lab">50×30 출력 장수</div><div class="num" id="kpi30">0</div></div>
       <div class="kpi"><div class="lab">50×60 출력 장수</div><div class="num" id="kpi60">0</div></div>
-      <div class="kpi"><div class="lab">라벨 미저장</div><div class="num" id="kpiMissing">0</div></div>
+      <div class="kpi"><div class="lab">공용 라벨 미저장</div><div class="num" id="kpiMissing">0</div></div>
     </div>
   </section>
 
@@ -207,7 +207,7 @@ td.name{min-width:310px}
 
 <script>
 const MM_TO_PX=96/25.4;
-const LABEL_LIBRARY_KEY='tradecodeLabelLibraryV1';
+const LABEL_LIBRARY_KEY='tradecodeSharedLabelCacheV1';
 let orderRows=[];
 let labelLibrary=[];
 
@@ -221,20 +221,29 @@ function getLibrary(){
     return Array.isArray(arr)?arr:[];
   }catch(e){return[]}
 }
-function reloadLibrary(){
-  labelLibrary=getLibrary();
-restorePrintMethod();
-try{
-  const p=localStorage.getItem(THERMAL_PRINTER_KEY);
-  if(p&&el('thermalPrinterSelect')){
-    el('thermalPrinterSelect').innerHTML=`<option value="${p.replace(/"/g,'&quot;')}">${p}</option>`;
-    el('thermalPrinterSelect').value=p;
-    setThermalStatus(`마지막 선택: ${p}`);
+
+function setLibraryCache(arr){
+  labelLibrary=Array.isArray(arr)?arr:[];
+  try{localStorage.setItem(LABEL_LIBRARY_KEY,JSON.stringify(labelLibrary))}catch(e){}
+}
+
+async function reloadLibrary(){
+  try{
+    setProgress('공용 라벨 보관함을 새로고침하는 중...');
+    const res=await fetch('/api/shared-labels',{cache:'no-store'});
+    const data=await res.json();
+    if(!res.ok||!data.ok)throw new Error(data.error||'공용 라벨 조회 실패');
+    setLibraryCache(data.labels||[]);
+    rematchRows();
+    renderRows();
+    setProgress(`✓ 공용 라벨 ${labelLibrary.length}개를 불러왔습니다.`);
+  }catch(err){
+    console.error(err);
+    setLibraryCache(getLibrary());
+    rematchRows();
+    renderRows();
+    setProgress('공용 서버 연결 실패 · 이 PC의 최근 캐시를 사용합니다.');
   }
-}catch(e){}
-  rematchRows();
-  renderRows();
-  setProgress(`저장 라벨 ${labelLibrary.length}개를 다시 불러왔습니다.`);
 }
 function findLabel(barcode,productNumber){
   const bc=normBc(barcode),pn=norm(productNumber);
@@ -476,11 +485,9 @@ el('orderFile').addEventListener('change',async e=>{
       label:null,
       size:'missing'
     }));
-    labelLibrary=getLibrary();
-restorePrintMethod();
-    rematchRows();
-    renderRows();
-    setProgress(`"${file.name}"에서 ${orderRows.length}개 발주 품목을 불러왔습니다.`);
+    await reloadLibrary();
+    restorePrintMethod();
+    setProgress(`"${file.name}"에서 ${orderRows.length}개 발주 품목을 불러왔습니다. · 공용 라벨 ${labelLibrary.length}개 매칭 확인 완료`);
   }catch(err){
     console.error(err);
     alert('발주현황 엑셀을 읽지 못했습니다. 상품번호/바코드/상품명/발주수량 헤더가 있는지 확인해 주세요.');
@@ -1036,7 +1043,8 @@ function downloadBlob(blob,name){
   a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
-labelLibrary=getLibrary();
+setLibraryCache(getLibrary());
+reloadLibrary();
 restorePrintMethod();
 </script>
 </body>
