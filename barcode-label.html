@@ -176,15 +176,17 @@
       <div class="field"><label>바코드 높이 (mm)</label><div class="range-wrap"><input id="barcodeHeight" type="range" min="5" max="30" step="1" value="16"><input id="barcodeHeightNumber" type="number" min="5" max="30" value="16"></div></div>
       <div class="field"><label>바코드 숫자 글자 크기</label><div class="range-wrap"><input id="barcodeTextFont" type="range" min="4" max="22" step="0.5" value="12"><input id="barcodeTextFontNumber" type="number" min="4" max="22" step="0.5" value="12"></div></div><div class="field"><label>MADE IN CHINA 글자 크기</label><div class="range-wrap"><input id="madeInFont" type="range" min="3" max="18" step="0.5" value="8"><input id="madeInFontNumber" type="number" min="3" max="18" step="0.5" value="8"></div></div>
 
-      <div class="section-label">라벨 보관함</div>
+      <div class="section-label">공용 라벨 보관함</div>
       <div class="button-row">
-        <button class="btn-primary" type="button" onclick="saveCurrentLabel()">💾 라벨 저장</button>
-        <button class="btn-secondary" type="button" onclick="loadSavedLabel()">📂 저장 라벨 불러오기</button>
-        <button class="btn-secondary" type="button" onclick="showSavedLibrary()">📚 저장 라벨 보기</button>
-        <button class="btn-ghost" type="button" onclick="deleteSavedLabel()">🗑 저장 라벨 삭제</button>
+        <button class="btn-primary" type="button" onclick="saveCurrentLabel()">💾 공용 라벨 저장</button>
+        <button class="btn-secondary" type="button" onclick="loadSavedLabel()">📂 공용 라벨 불러오기</button>
+        <button class="btn-secondary" type="button" onclick="showSavedLibrary()">📚 공용 라벨 보기</button>
+        <button class="btn-ghost" type="button" onclick="deleteSavedLabel()">🗑 공용 라벨 삭제</button>
+        <button class="btn-secondary" type="button" onclick="migrateLegacyLabels()">⬆ 이 PC 기존 라벨 공용으로 옮기기</button>
+        <button class="btn-ghost" type="button" onclick="window.location.href='/api/shared-labels-backup'">⬇ 공용 라벨 백업</button>
       </div>
       <div id="labelSaveStatus" class="help" style="margin-top:7px;min-height:18px;"></div>
-      <div class="help">※ 라벨을 저장하면 현재 입력값과 글자/바코드 크기를 이 브라우저의 다음 작업 기본값으로 함께 기억합니다.</div>
+      <div class="help">※ 공용 라벨은 다른 컴퓨터에서도 같은 목록을 사용합니다. 개인 기본설정(수입원·글자크기 등)은 현재 브라우저에 따로 기억됩니다.</div>
 
       <div class="section-label">파일 출력</div>
       <div class="button-row">
@@ -218,8 +220,8 @@
 
   <section class="panel library-panel" id="savedLibraryPanel">
     <div class="preview-toolbar">
-      <h2 style="margin:0">📚 저장된 바코드 라벨</h2>
-      <div class="library-count" id="savedLibraryCount">0개 저장됨</div>
+      <h2 style="margin:0">📚 공용 바코드 라벨</h2>
+      <div class="library-count" id="savedLibraryCount">공용 0개</div>
     </div>
     <div class="library-toolbar">
       <input id="savedLibrarySearch" type="text" placeholder="상품번호, 바코드, 제품명 검색" oninput="renderSavedLibrary(this.value)">
@@ -663,13 +665,17 @@
 
 
   // ---------------------------------------------------------
-  // 라벨 보관함 (현재 브라우저 저장소)
+  // 공용 라벨 보관함 (서버 공유)
   // - 바코드 우선, 상품번호 보조 키로 발주서와 매칭
   // - 추후 Supabase 연결 시 이 저장 함수만 서버DB 방식으로 교체 가능
   // ---------------------------------------------------------
-  const LABEL_LIBRARY_KEY='tradecodeLabelLibraryV1';
+  const LEGACY_LABEL_LIBRARY_KEY='tradecodeLabelLibraryV1';
+  const LABEL_LIBRARY_KEY='tradecodeSharedLabelCacheV1';
   const LABEL_DEFAULTS_KEY='tradecodeLabelDefaultsV1';
+  const SHARED_EDIT_KEY_STORE='tradecodeSharedLabelEditKeyV1';
   let savedLibraryView=[];
+  let sharedLabelCache=[];
+  let sharedEditKeyRequired=false;
 
   function normalizeBarcode(v){
     return String(v||'').trim().toUpperCase();
@@ -680,25 +686,103 @@
   }
 
   function getLabelLibrary(){
-    try{
-      const raw=localStorage.getItem(LABEL_LIBRARY_KEY);
-      const arr=raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
-    }catch(e){
-      console.error(e);
-      return [];
-    }
+    return Array.isArray(sharedLabelCache) ? sharedLabelCache : [];
   }
 
   function setLabelLibrary(arr){
-    localStorage.setItem(LABEL_LIBRARY_KEY,JSON.stringify(arr));
+    sharedLabelCache=Array.isArray(arr)?arr:[];
     try{
+      localStorage.setItem(LABEL_LIBRARY_KEY,JSON.stringify(sharedLabelCache));
       if('BroadcastChannel' in window){
         const bc=new BroadcastChannel('tradecode-label-library');
         bc.postMessage({type:'labels-updated',at:Date.now()});
         bc.close();
       }
     }catch(e){}
+  }
+
+  function loadCachedSharedLabels(){
+    try{
+      const arr=JSON.parse(localStorage.getItem(LABEL_LIBRARY_KEY)||'[]');
+      if(Array.isArray(arr)) sharedLabelCache=arr;
+    }catch(e){}
+  }
+
+  function getLegacyLabelLibrary(){
+    try{
+      const arr=JSON.parse(localStorage.getItem(LEGACY_LABEL_LIBRARY_KEY)||'[]');
+      return Array.isArray(arr)?arr:[];
+    }catch(e){
+      return [];
+    }
+  }
+
+  function sharedWriteHeaders(){
+    const headers={'Content-Type':'application/json'};
+    try{
+      const key=localStorage.getItem(SHARED_EDIT_KEY_STORE)||'';
+      if(key) headers['x-label-edit-key']=key;
+    }catch(e){}
+    return headers;
+  }
+
+  async function sharedFetch(url,options={}){
+    let res=await fetch(url,{cache:'no-store',...options,headers:{...(options.headers||{}),...sharedWriteHeaders()}});
+    if(res.status===403){
+      const data=await res.json().catch(()=>({}));
+      if(data.code==='EDIT_KEY_REQUIRED'){
+        const key=prompt('공용 라벨 관리코드를 입력해 주세요.');
+        if(!key) throw new Error('공용 라벨 관리코드가 필요합니다.');
+        localStorage.setItem(SHARED_EDIT_KEY_STORE,key);
+        res=await fetch(url,{cache:'no-store',...options,headers:{...(options.headers||{}),...sharedWriteHeaders()}});
+      }
+    }
+    return res;
+  }
+
+  async function fetchSharedLabels(silent=false){
+    try{
+      const res=await fetch('/api/shared-labels',{cache:'no-store'});
+      const data=await res.json();
+      if(!res.ok||!data.ok) throw new Error(data.error||'공용 라벨 조회 실패');
+      sharedEditKeyRequired=!!data.editKeyRequired;
+      setLabelLibrary(data.labels||[]);
+      if(!silent) setSaveStatus(`✓ 공용 라벨 ${sharedLabelCache.length}개를 불러왔습니다.`);
+      return true;
+    }catch(err){
+      console.error(err);
+      loadCachedSharedLabels();
+      if(!silent) setSaveStatus('공용 서버 연결 실패 · 이 PC의 최근 캐시를 표시합니다.',false);
+      return false;
+    }
+  }
+
+  async function migrateLegacyLabels(){
+    const legacy=getLegacyLabelLibrary();
+    if(!legacy.length){
+      alert('이 PC 브라우저에 옮길 기존 라벨이 없습니다.');
+      return;
+    }
+    if(!confirm(`이 PC에 저장된 기존 라벨 ${legacy.length}개를 공용 보관함으로 옮길까요?\n같은 바코드가 있으면 공용 라벨을 갱신합니다.`))return;
+
+    let ok=0;
+    setSaveStatus(`기존 라벨 공용 이동 중... 0/${legacy.length}`);
+    for(let i=0;i<legacy.length;i++){
+      try{
+        const res=await sharedFetch('/api/shared-labels',{
+          method:'POST',
+          body:JSON.stringify(legacy[i])
+        });
+        const data=await res.json();
+        if(res.ok&&data.ok) ok++;
+      }catch(e){
+        console.error(e);
+      }
+      setSaveStatus(`기존 라벨 공용 이동 중... ${i+1}/${legacy.length}`);
+    }
+    await fetchSharedLabels(true);
+    renderSavedLibrary();
+    setSaveStatus(`✓ 기존 라벨 ${ok}/${legacy.length}개를 공용 보관함으로 옮겼습니다.`);
   }
 
   function getUserDefaults(){
@@ -824,7 +908,7 @@
     s.style.color=ok?'#157347':'#c62828';
   }
 
-  function saveCurrentLabel(){
+  async function saveCurrentLabel(){
     const cfg=currentLabelConfig();
     if(!cfg.barcode && !cfg.productNumber){
       alert('라벨을 저장하려면 바코드 번호 또는 상품번호를 입력해 주세요.');
@@ -835,57 +919,63 @@
       return;
     }
 
-    const lib=getLabelLibrary();
-    let idx=-1;
-    if(cfg.barcode) idx=lib.findIndex(x=>normalizeBarcode(x.barcode)===cfg.barcode);
-    if(idx<0 && cfg.productNumber) idx=lib.findIndex(x=>normalizeProductNo(x.productNumber)===cfg.productNumber);
+    try{
+      setSaveStatus('공용 보관함에 저장 중...');
+      const existing=findSavedLabel(cfg.barcode,cfg.productNumber);
+      if(existing?.id) cfg.id=existing.id;
 
-    if(idx>=0) lib[idx]=cfg;
-    else lib.push(cfg);
+      const res=await sharedFetch('/api/shared-labels',{
+        method:'POST',
+        body:JSON.stringify(cfg)
+      });
+      const data=await res.json();
+      if(!res.ok||!data.ok) throw new Error(data.error||'공용 라벨 저장 실패');
 
-    setLabelLibrary(lib);
-    saveUserDefaults(cfg);
-    renderSavedLibrary();
-  try{
-    const savedThermal=localStorage.getItem(THERMAL_PRINTER_KEY);
-    if(savedThermal && el('thermalPrinterSelect')){
-      el('thermalPrinterSelect').innerHTML=`<option value="${savedThermal.replace(/"/g,'&quot;')}">${savedThermal}</option>`;
-      el('thermalPrinterSelect').value=savedThermal;
-      setThermalStatus(`마지막 선택: ${savedThermal}`);
+      saveUserDefaults(cfg);
+      await fetchSharedLabels(true);
+      renderSavedLibrary();
+      setSaveStatus(`✓ 공용 저장 완료 · ${cfg.labelWidth}×${cfg.labelHeight}mm · 공용 보관함 ${getLabelLibrary().length}개`);
+    }catch(err){
+      console.error(err);
+      setSaveStatus(err?.message||'공용 라벨 저장 실패',false);
+      alert(err?.message||'공용 라벨 저장에 실패했습니다.');
     }
-  }catch(e){}
-    setSaveStatus(`✓ 저장 완료 · ${cfg.labelWidth}×${cfg.labelHeight}mm · 현재 보관함 ${lib.length}개`);
   }
 
-  function loadSavedLabel(){
-    const cfg=findSavedLabel(value('barcodeValue'),value('productNumber'));
+  async function loadSavedLabel(){
+    let cfg=findSavedLabel(value('barcodeValue'),value('productNumber'));
     if(!cfg){
-      setSaveStatus('저장된 라벨을 찾지 못했습니다.',false);
+      await fetchSharedLabels(true);
+      cfg=findSavedLabel(value('barcodeValue'),value('productNumber'));
+    }
+    if(!cfg){
+      setSaveStatus('공용 보관함에서 저장 라벨을 찾지 못했습니다.',false);
       return;
     }
     rememberCurrentState();
     applyLabelConfig(cfg);
-    setSaveStatus(`✓ 저장 라벨을 불러왔습니다. (${cfg.labelWidth}×${cfg.labelHeight}mm)`);
+    setSaveStatus(`✓ 공용 라벨을 불러왔습니다. (${cfg.labelWidth}×${cfg.labelHeight}mm)`);
   }
 
-  function deleteSavedLabel(){
-    const bc=normalizeBarcode(value('barcodeValue'));
-    const pn=normalizeProductNo(value('productNumber'));
-    const cfg=findSavedLabel(bc,pn);
+  async function deleteSavedLabel(){
+    const cfg=findSavedLabel(value('barcodeValue'),value('productNumber'));
     if(!cfg){
-      setSaveStatus('삭제할 저장 라벨을 찾지 못했습니다.',false);
+      setSaveStatus('삭제할 공용 라벨을 찾지 못했습니다.',false);
       return;
     }
-    if(!confirm(`"${cfg.productName||cfg.barcode||cfg.productNumber}" 저장 라벨을 삭제할까요?`)) return;
-    let lib=getLabelLibrary();
-    lib=lib.filter(x=>{
-      if(cfg.barcode && normalizeBarcode(x.barcode)===normalizeBarcode(cfg.barcode)) return false;
-      if(!cfg.barcode && cfg.productNumber && normalizeProductNo(x.productNumber)===normalizeProductNo(cfg.productNumber)) return false;
-      return true;
-    });
-    setLabelLibrary(lib);
-    renderSavedLibrary();
-    setSaveStatus(`삭제 완료 · 현재 보관함 ${lib.length}개`);
+    if(!confirm(`"${cfg.productName||cfg.barcode||cfg.productNumber}" 공용 라벨을 삭제할까요?`)) return;
+
+    try{
+      const res=await sharedFetch(`/api/shared-labels/${encodeURIComponent(cfg.id)}`,{method:'DELETE'});
+      const data=await res.json();
+      if(!res.ok||!data.ok) throw new Error(data.error||'삭제 실패');
+      await fetchSharedLabels(true);
+      renderSavedLibrary();
+      setSaveStatus(`✓ 공용 라벨 삭제 완료 · 현재 ${getLabelLibrary().length}개`);
+    }catch(err){
+      console.error(err);
+      setSaveStatus(err?.message||'공용 라벨 삭제 실패',false);
+    }
   }
 
   function formatSavedDate(v){
@@ -908,7 +998,7 @@
       ].some(v=>String(v||'').toLowerCase().includes(q)));
     }
     savedLibraryView=lib;
-    if(el('savedLibraryCount')) el('savedLibraryCount').textContent=`${lib.length}개 표시 / 전체 ${getLabelLibrary().length}개`;
+    if(el('savedLibraryCount')) el('savedLibraryCount').textContent=`${lib.length}개 표시 / 공용 전체 ${getLabelLibrary().length}개`;
     const body=el('savedLibraryBody');
     if(!body) return;
     if(!lib.length){
@@ -943,19 +1033,22 @@
     window.scrollTo({top:0,behavior:'smooth'});
   }
 
-  function deleteSavedLibraryItem(index){
+  async function deleteSavedLibraryItem(index){
     const cfg=savedLibraryView[index];
     if(!cfg) return;
-    if(!confirm(`"${cfg.productName||cfg.barcode||cfg.productNumber}" 라벨을 삭제할까요?`)) return;
-    let lib=getLabelLibrary();
-    lib=lib.filter(x=>{
-      if(cfg.barcode && normalizeBarcode(x.barcode)===normalizeBarcode(cfg.barcode)) return false;
-      if(!cfg.barcode && cfg.productNumber && normalizeProductNo(x.productNumber)===normalizeProductNo(cfg.productNumber)) return false;
-      return true;
-    });
-    setLabelLibrary(lib);
-    renderSavedLibrary();
-    setSaveStatus(`삭제 완료 · 현재 보관함 ${lib.length}개`);
+    if(!confirm(`"${cfg.productName||cfg.barcode||cfg.productNumber}" 공용 라벨을 삭제할까요?`)) return;
+
+    try{
+      const res=await sharedFetch(`/api/shared-labels/${encodeURIComponent(cfg.id)}`,{method:'DELETE'});
+      const data=await res.json();
+      if(!res.ok||!data.ok) throw new Error(data.error||'삭제 실패');
+      await fetchSharedLabels(true);
+      renderSavedLibrary();
+      setSaveStatus(`✓ 공용 라벨 삭제 완료 · 현재 ${getLabelLibrary().length}개`);
+    }catch(err){
+      console.error(err);
+      setSaveStatus(err?.message||'공용 라벨 삭제 실패',false);
+    }
   }
 
   function applyUrlPrefill(){
@@ -1101,10 +1194,25 @@
     updateLabel();
   }
 
-  updateLabel();
-  updateUndoButton();
-  applyUrlPrefill();
-  renderSavedLibrary();
+  async function initializeSharedLabelPage(){
+    updateLabel();
+    updateUndoButton();
+    loadCachedSharedLabels();
+    await fetchSharedLabels(true);
+    applyUrlPrefill();
+    renderSavedLibrary();
+
+    try{
+      const savedThermal=localStorage.getItem(THERMAL_PRINTER_KEY);
+      if(savedThermal && el('thermalPrinterSelect')){
+        el('thermalPrinterSelect').innerHTML=`<option value="${savedThermal.replace(/"/g,'&quot;')}">${savedThermal}</option>`;
+        el('thermalPrinterSelect').value=savedThermal;
+        setThermalStatus(`마지막 선택: ${savedThermal}`);
+      }
+    }catch(e){}
+  }
+
+  initializeSharedLabelPage();
 </script>
 </body>
 </html>
