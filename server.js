@@ -1035,8 +1035,29 @@ async function getProductCatalogCount() {
     }
   }
 
-  const rows = await supabaseRest('product_catalog?select=barcode');
-  return Array.isArray(rows) ? rows.length : 0;
+  // Supabase/PostgREST는 한 번의 조회에서 기본 최대 1,000행만 반환할 수 있으므로
+  // 1,000개씩 페이지를 넘겨 실제 전체 개수를 계산한다.
+  const pageSize = 1000;
+  let offset = 0;
+  let total = 0;
+
+  while (true) {
+    const rows = await supabaseRest(
+      `product_catalog?select=barcode&limit=${pageSize}&offset=${offset}`
+    );
+    const count = Array.isArray(rows) ? rows.length : 0;
+    total += count;
+
+    if (count < pageSize) break;
+    offset += pageSize;
+
+    // 비정상 무한 루프 방지
+    if (offset > 100000) {
+      throw new Error('상품 기준목록 개수 계산 한도를 초과했습니다.');
+    }
+  }
+
+  return total;
 }
 
 async function findProductCatalogByBarcode(barcode) {
@@ -1150,21 +1171,35 @@ app.post(
 async function seedProductCatalogToSupabase() {
   if (SHARED_LABEL_STORAGE !== 'supabase') return;
   try {
-    const exists = await supabaseRest('product_catalog?select=barcode&limit=1');
-    if (Array.isArray(exists) && exists.length) return;
     if (!fs.existsSync(PRODUCT_CATALOG_SEED_FILE)) return;
 
     const parsed = JSON.parse(fs.readFileSync(PRODUCT_CATALOG_SEED_FILE, 'utf8'));
     const items = Array.isArray(parsed?.items) ? parsed.items : [];
     if (!items.length) return;
 
+    // 일부 배치만 들어간 상태에서도 자동으로 복구할 수 있도록
+    // 현재 실제 개수와 기준 JSON 개수를 비교한다.
+    const currentCount = await getProductCatalogCount();
+    if (currentCount >= items.length) {
+      console.log(`[상품 기준목록] 이미 적재 완료: ${currentCount}개`);
+      return;
+    }
+
+    console.log(
+      `[상품 기준목록] 부족분 확인: 현재 ${currentCount}개 / 기준 ${items.length}개 → 전체 upsert 재동기화`
+    );
+
     const imported = await upsertProductCatalogItems(
       items,
       cleanSharedText(parsed?.source || 'barcode-product-catalog.json', 300)
     );
-    console.log(`[상품 기준목록] 초기 Supabase 적재 완료: ${imported}개`);
+
+    const finalCount = await getProductCatalogCount();
+    console.log(
+      `[상품 기준목록] Supabase 동기화 완료: 처리 ${imported}개 / 최종 ${finalCount}개`
+    );
   } catch (err) {
-    console.error('[상품 기준목록] 초기 적재 실패:', err.message);
+    console.error('[상품 기준목록] 초기/재동기화 실패:', err.message);
   }
 }
 
