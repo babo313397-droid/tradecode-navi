@@ -40,6 +40,7 @@ const UNIPASS_KEY = process.env.UNIPASS_API_KEY || '';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || ''; // 선택: AI 상품명 분석 기능용
 const SHARED_LABEL_EDIT_KEY = String(process.env.SHARED_LABEL_EDIT_KEY || '').trim();
 const SHARED_LABEL_FILE = path.join(__dirname, 'data', 'shared-labels.json');
+const PRODUCT_CATALOG_SEED_FILE = path.join(__dirname, 'barcode-product-catalog.json');
 
 // 공용 라벨 영구 저장소 (Supabase)
 // 2026 기준 신규 프로젝트는 SUPABASE_SECRET_KEY(sb_secret_...) 사용 권장.
@@ -1008,6 +1009,166 @@ async function migrateLocalSharedLabelsToSupabase() {
 }
 
 
+
+// =========================================================
+// 공용 상품 기준목록 (바코드 ↔ 상품번호/SKU ↔ 상품명)
+// Supabase product_catalog 테이블에 영구 저장한다.
+// =========================================================
+
+function sanitizeCatalogItem(input, defaultSource = '') {
+  return {
+    barcode: cleanSharedText(input?.barcode, 80).toUpperCase(),
+    product_number: cleanSharedText(input?.productNumber ?? input?.product_number, 80),
+    product_name: cleanSharedText(input?.productName ?? input?.product_name, 800),
+    source: cleanSharedText(input?.source || defaultSource, 300),
+    updated_at: new Date().toISOString()
+  };
+}
+
+async function getProductCatalogCount() {
+  if (SHARED_LABEL_STORAGE !== 'supabase') {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(PRODUCT_CATALOG_SEED_FILE, 'utf8'));
+      return Array.isArray(parsed?.items) ? parsed.items.length : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  const rows = await supabaseRest('product_catalog?select=barcode');
+  return Array.isArray(rows) ? rows.length : 0;
+}
+
+async function findProductCatalogByBarcode(barcode) {
+  const cleanBarcode = cleanSharedText(barcode, 80).toUpperCase();
+  if (!cleanBarcode) return null;
+
+  if (SHARED_LABEL_STORAGE === 'supabase') {
+    const rows = await supabaseRest(
+      `product_catalog?barcode=eq.${encodeURIComponent(cleanBarcode)}&select=barcode,product_number,product_name,source,updated_at&limit=1`
+    );
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row) return null;
+    return {
+      barcode: row.barcode || '',
+      productNumber: row.product_number || '',
+      productName: row.product_name || '',
+      source: row.source || '',
+      updatedAt: row.updated_at || ''
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(PRODUCT_CATALOG_SEED_FILE, 'utf8'));
+    const item = (parsed?.items || []).find(
+      x => String(x.barcode || '').trim().toUpperCase() === cleanBarcode
+    );
+    return item || null;
+  } catch {
+    return null;
+  }
+}
+
+async function upsertProductCatalogItems(items, source = '') {
+  const map = new Map();
+  for (const item of items || []) {
+    const row = sanitizeCatalogItem(item, source);
+    if (!row.barcode) continue;
+    map.set(row.barcode, row);
+  }
+  const rows = [...map.values()];
+  if (!rows.length) return 0;
+
+  if (SHARED_LABEL_STORAGE !== 'supabase') {
+    throw new Error('상품 기준목록 업데이트에는 Supabase 영구 저장 연결이 필요합니다.');
+  }
+
+  const batchSize = 500;
+  let imported = 0;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const chunk = rows.slice(i, i + batchSize);
+    await supabaseRest('product_catalog?on_conflict=barcode', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(chunk)
+    });
+    imported += chunk.length;
+  }
+  return imported;
+}
+
+app.get('/api/product-catalog', async (req, res) => {
+  try {
+    const barcode = cleanSharedText(req.query.barcode, 80).toUpperCase();
+    if (!barcode) {
+      return res.status(400).json({ ok: false, error: 'barcode 값이 필요합니다.' });
+    }
+    const item = await findProductCatalogByBarcode(barcode);
+    res.json({ ok: true, item, permanent: SHARED_LABEL_STORAGE === 'supabase' });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: `상품 기준목록 조회 실패: ${err.message}` });
+  }
+});
+
+app.get('/api/product-catalog-status', async (req, res) => {
+  try {
+    const count = await getProductCatalogCount();
+    res.json({
+      ok: true,
+      count,
+      storage: SHARED_LABEL_STORAGE,
+      permanent: SHARED_LABEL_STORAGE === 'supabase'
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: `상품 기준목록 상태 조회 실패: ${err.message}` });
+  }
+});
+
+app.post(
+  '/api/product-catalog/import',
+  sharedLabelWriteLimiter,
+  checkSharedLabelEditKey,
+  async (req, res) => {
+    try {
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
+      if (!items.length) {
+        return res.status(400).json({ ok: false, error: '업데이트할 상품목록이 없습니다.' });
+      }
+      if (items.length > 1000) {
+        return res.status(400).json({ ok: false, error: '한 번에 최대 1,000개까지 업데이트할 수 있습니다.' });
+      }
+      const source = cleanSharedText(req.body?.source, 300);
+      const imported = await upsertProductCatalogItems(items, source);
+      res.json({ ok: true, imported, permanent: SHARED_LABEL_STORAGE === 'supabase' });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: `상품 기준목록 업데이트 실패: ${err.message}` });
+    }
+  }
+);
+
+// GitHub에 포함된 현재 기준 JSON을 Supabase가 비어 있을 때 최초 1회 자동 적재한다.
+async function seedProductCatalogToSupabase() {
+  if (SHARED_LABEL_STORAGE !== 'supabase') return;
+  try {
+    const exists = await supabaseRest('product_catalog?select=barcode&limit=1');
+    if (Array.isArray(exists) && exists.length) return;
+    if (!fs.existsSync(PRODUCT_CATALOG_SEED_FILE)) return;
+
+    const parsed = JSON.parse(fs.readFileSync(PRODUCT_CATALOG_SEED_FILE, 'utf8'));
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    if (!items.length) return;
+
+    const imported = await upsertProductCatalogItems(
+      items,
+      cleanSharedText(parsed?.source || 'barcode-product-catalog.json', 300)
+    );
+    console.log(`[상품 기준목록] 초기 Supabase 적재 완료: ${imported}개`);
+  } catch (err) {
+    console.error('[상품 기준목록] 초기 적재 실패:', err.message);
+  }
+}
+
+
 // GET /api/exchange-rate?base=CNY&to=KRW   (키/가입 불필요 - 로켓배송 계산기의 환율 자동 입력용)
 // 실패해도 500 에러 대신 ok:false를 내려주어, 프론트가 조용히 기존 기본값(직접 입력)으로 폴백할 수 있게 한다.
 app.get('/api/exchange-rate', exchangeRateLimiter, async (req, res) => {
@@ -1127,5 +1288,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`공용 라벨 저장소: ${SHARED_LABEL_STORAGE === 'supabase' ? 'Supabase 영구 저장' : '로컬 임시 저장'}`);
   if (SHARED_LABEL_STORAGE === 'supabase') {
     migrateLocalSharedLabelsToSupabase();
+    seedProductCatalogToSupabase();
   }
 });
