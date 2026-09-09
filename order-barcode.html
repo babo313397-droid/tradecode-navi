@@ -155,13 +155,27 @@ td.name{min-width:310px}
         <button class="btn btn-primary" onclick="batchDirectPrint('selected')">🖨 선택 품목 프린터</button>
       </div>
       <div class="toolbar-group">
+        <button class="btn btn-secondary btn-sm" onclick="setSizeChecks('50x30')">50×30 선택</button>
+        <button class="btn btn-secondary btn-sm" onclick="setSizeChecks('50x60')">50×60 선택</button>
         <button class="btn btn-secondary btn-sm" onclick="setAllChecks(true)">전체 선택</button>
         <button class="btn btn-secondary btn-sm" onclick="setAllChecks(false)">전체 해제</button>
       </div>
     </div>
   </section>
 
-  <section class="card" style="padding:0;">
+  <section class="card" style="padding:14px 14px 0;">
+    <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:12px;">
+      <div style="position:relative;width:min(420px,100%);">
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:16px;pointer-events:none;">🔍</span>
+        <input
+          id="orderSearch"
+          type="text"
+          placeholder="상품명 또는 바코드 검색"
+          oninput="renderRows()"
+          style="width:100%;padding:10px 12px 10px 38px;border:1px solid #cbd5df;border-radius:9px;background:#fff;"
+        >
+      </div>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -356,11 +370,28 @@ function rematchRows(){
 
 function renderRows(){
   const body=el('rowsBody');
+  const search=String(el('orderSearch')?.value||'').trim().toLowerCase();
   if(!orderRows.length){
     body.innerHTML='<tr><td colspan="9" class="center" style="padding:30px;color:#667381;">발주현황 엑셀을 선택해 주세요.</td></tr>';
     updateSummary();return;
   }
-  body.innerHTML=orderRows.map(r=>{
+  const visibleRows=orderRows.filter(r=>{
+    if(!search) return true;
+    const haystack=[
+      r.productName,
+      r.barcode,
+      r.productNumber
+    ].map(v=>String(v||'').toLowerCase()).join(' ');
+    return haystack.includes(search);
+  });
+
+  if(!visibleRows.length){
+    body.innerHTML='<tr><td colspan="9" class="center" style="padding:30px;color:#667381;">검색 결과가 없습니다.</td></tr>';
+    updateSummary();
+    return;
+  }
+
+  body.innerHTML=visibleRows.map(r=>{
     let badge,status,sizeText,rowCls='';
     if(!r.label){badge='missing';status='라벨 없음';sizeText='-'}
     else if(r.size==='50x30'){badge='ok';status='저장됨';sizeText='50×30';rowCls='size30'}
@@ -391,7 +422,21 @@ function fmt(v){return Number(v||0).toLocaleString('ko-KR')}
 function getRow(id){return orderRows.find(r=>r.id===id)}
 function toggleRow(id,checked){const r=getRow(id);if(r)r.checked=checked;updateSummary()}
 function changeQty(id,v){const r=getRow(id);if(r)r.printQty=Math.max(0,Math.floor(Number(v)||0));updateSummary()}
-function setAllChecks(v){orderRows.forEach(r=>{if(r.label&&['50x30','50x60'].includes(r.size))r.checked=v});renderRows()}
+function setAllChecks(v){
+  orderRows.forEach(r=>{
+    if(r.label&&['50x30','50x60'].includes(r.size)) r.checked=v;
+  });
+  renderRows();
+}
+
+function setSizeChecks(size){
+  orderRows.forEach(r=>{
+    if(r.label&&['50x30','50x60'].includes(r.size)){
+      r.checked=(r.size===size);
+    }
+  });
+  renderRows();
+}
 function updateSummary(){
   el('kpiItems').textContent=fmt(orderRows.length);
   el('kpi30').textContent=fmt(orderRows.filter(r=>r.checked&&r.size==='50x30').reduce((s,r)=>s+r.printQty,0));
