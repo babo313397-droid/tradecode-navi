@@ -12,6 +12,7 @@
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js"></script>
 
   <style>
     :root{--navy:#0b2e4f;--navy-dark:#071f38;--bg:#f4f6f9;--card:#fff;--line:#dfe5ec;--text:#1b2733;--muted:#667381;--danger:#c62828;--success:#157347}
@@ -45,6 +46,11 @@
     .library-table td.center{text-align:center}
     .library-empty{text-align:center;padding:28px !important;color:var(--muted)}
     .saved-badge{display:inline-block;background:#e8f7ef;color:#157347;border-radius:20px;padding:4px 8px;font-size:11px;font-weight:900}
+    .thermal-box{margin-top:10px;padding:10px 12px;border:1px solid #d4e0ea;border-radius:10px;background:#f7fbff}
+    .thermal-row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+    .thermal-row select{width:auto;min-width:190px;max-width:280px;padding:8px 10px}
+    .thermal-status{font-size:11.5px;font-weight:800;color:#667381}
+    .thermal-status.ok{color:#157347}.thermal-status.bad{color:#c62828}
     @media(max-width:900px){.layout{grid-template-columns:1fr}.preview-panel{position:static}.preview-stage{min-height:500px}}
   
     /* TradeCode Navi 공통 사이드바 */
@@ -193,7 +199,16 @@
     </section>
 
     <section class="panel preview-panel">
-      <div class="preview-toolbar"><h2 style="margin:0">실시간 미리보기</h2><div class="button-row"><button class="btn-ghost" type="button" onclick="setPreviewMode('fit')">화면에 맞춤</button><button class="btn-ghost" type="button" onclick="setPreviewMode('actual')">실제 크기 보기</button><button class="btn-primary" type="button" onclick="printCurrentLabel()">🖨 바로 인쇄</button></div></div>
+      <div class="preview-toolbar"><h2 style="margin:0">실시간 미리보기</h2><div class="button-row"><button class="btn-ghost" type="button" onclick="setPreviewMode('fit')">화면에 맞춤</button><button class="btn-ghost" type="button" onclick="setPreviewMode('actual')">실제 크기 보기</button><button class="btn-primary" type="button" onclick="printCurrentLabelThermal()">🖨 Xprinter 감열 인쇄</button><button class="btn-ghost" type="button" onclick="printCurrentLabel()">일반 인쇄</button></div></div>
+      <div class="thermal-box">
+        <div class="thermal-row">
+          <button class="btn-secondary" type="button" onclick="connectThermalPrinter()">🔌 감열프린터 연결</button>
+          <select id="thermalPrinterSelect" onchange="saveThermalPrinterChoice()"><option value="">프린터를 연결해 주세요</option></select>
+          <label style="font-size:12px;font-weight:800;">라벨 간격(mm) <input id="thermalGapMm" type="number" min="0" max="10" step="0.5" value="2" style="width:66px;padding:7px;"></label>
+          <span id="thermalStatus" class="thermal-status">Xprinter 직접 출력은 최초 1회 QZ Tray 설치가 필요합니다.</span>
+        </div>
+        <div class="help" style="margin-top:6px;">감열프린터가 연결되지 않으면 <a href="https://qz.io/download/" target="_blank" rel="noopener">QZ Tray 설치</a> 후 다시 연결을 눌러주세요.</div>
+      </div>
       <div class="preview-size" id="previewSizeText">라벨 크기: 50 × 60 mm</div>
       <div class="preview-stage" id="previewStage"><div id="previewScaler"><div class="label" id="labelPreview"><div class="label-title" id="outProductName"></div><div class="label-option" id="outOptionText"></div><div class="label-info" id="outInfo"></div><div class="label-warning" id="outWarning"></div><div class="label-age" id="outAge"></div><div class="barcode-area"><svg id="barcodeSvg"></svg><div class="barcode-text" id="outBarcodeText"></div><div class="made-in" id="outMadeIn"></div></div></div></div></div>
       <div class="overflow-warning" id="overflowWarning">⚠ 내용이 현재 라벨 크기를 초과합니다. 글자 크기를 줄이거나 라벨 높이를 늘려주세요.</div>
@@ -282,6 +297,162 @@
     updateLabel();await new Promise(r=>setTimeout(r,120));const original=el('labelPreview'),clone=original.cloneNode(true);clone.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));clone.removeAttribute('id');const stage=el('exportStage');stage.innerHTML='';stage.appendChild(clone);clone.style.transform='none';clone.style.margin='0';clone.style.boxShadow='none';const canvas=await html2canvas(clone,{scale:6,backgroundColor:'#ffffff',useCORS:true,logging:false});stage.innerHTML='';return canvas;
   }
 
+
+
+  // ---------------------------------------------------------
+  // Xprinter 감열프린터 직접 출력
+  // XP-370B: 203dpi(8 dots/mm), TSPL 라벨 모드
+  // 브라우저 인쇄창을 거치지 않고 QZ Tray를 통해 TSPL BITMAP으로 전송한다.
+  // ---------------------------------------------------------
+  const THERMAL_DPMM=8;
+  const THERMAL_PRINTER_KEY='tradecodeThermalPrinterV1';
+
+  function setThermalStatus(msg,type){
+    const s=el('thermalStatus');
+    if(!s)return;
+    s.textContent=msg;
+    s.classList.remove('ok','bad');
+    if(type)s.classList.add(type);
+  }
+
+  async function ensureQzConnected(){
+    if(typeof qz==='undefined'){
+      throw new Error('QZ Tray 연결 스크립트를 불러오지 못했습니다.');
+    }
+    if(qz.websocket.isActive())return;
+    await qz.websocket.connect({retries:2,delay:1});
+  }
+
+  async function connectThermalPrinter(){
+    try{
+      setThermalStatus('프린터를 찾는 중...');
+      await ensureQzConnected();
+      const printers=await qz.printers.find();
+      const select=el('thermalPrinterSelect');
+      const saved=localStorage.getItem(THERMAL_PRINTER_KEY)||'';
+      select.innerHTML='';
+
+      const preferred=printers.filter(p=>/XP[-_ ]?370B|Xprinter/i.test(String(p)));
+      const list=[...preferred,...printers.filter(p=>!preferred.includes(p))];
+
+      if(!list.length){
+        select.innerHTML='<option value="">프린터를 찾지 못했습니다</option>';
+        setThermalStatus('Windows에 설치된 프린터를 찾지 못했습니다.','bad');
+        return;
+      }
+
+      list.forEach(p=>{
+        const opt=document.createElement('option');
+        opt.value=p;opt.textContent=p;
+        select.appendChild(opt);
+      });
+
+      let choice='';
+      if(saved&&list.includes(saved))choice=saved;
+      else choice=preferred[0]||list[0];
+
+      select.value=choice;
+      localStorage.setItem(THERMAL_PRINTER_KEY,choice);
+      setThermalStatus(`연결됨: ${choice}`,'ok');
+    }catch(err){
+      console.error(err);
+      setThermalStatus('QZ Tray가 실행되지 않았습니다. 설치/실행 후 다시 연결하세요.','bad');
+      alert('감열프린터 연결에 실패했습니다.\n\n1. QZ Tray를 설치하고 실행하세요.\n2. 사이트 연결 허용 창이 뜨면 허용하세요.\n3. 다시 [감열프린터 연결]을 누르세요.');
+    }
+  }
+
+  function saveThermalPrinterChoice(){
+    const name=el('thermalPrinterSelect')?.value||'';
+    if(name){
+      localStorage.setItem(THERMAL_PRINTER_KEY,name);
+      setThermalStatus(`선택됨: ${name}`,'ok');
+    }
+  }
+
+  function concatUint8(parts){
+    const total=parts.reduce((s,p)=>s+p.length,0);
+    const out=new Uint8Array(total);
+    let pos=0;
+    parts.forEach(p=>{out.set(p,pos);pos+=p.length;});
+    return out;
+  }
+
+  function textBytes(s){
+    return new TextEncoder().encode(String(s));
+  }
+
+  function canvasToTsplBytes(sourceCanvas,wMm,hMm,copies){
+    const wDots=Math.max(8,Math.round(Number(wMm)*THERMAL_DPMM));
+    const hDots=Math.max(8,Math.round(Number(hMm)*THERMAL_DPMM));
+    const bytesPerRow=Math.ceil(wDots/8);
+
+    const c=document.createElement('canvas');
+    c.width=wDots;c.height=hDots;
+    const ctx=c.getContext('2d',{willReadFrequently:true});
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,wDots,hDots);
+    ctx.imageSmoothingEnabled=true;
+    ctx.drawImage(sourceCanvas,0,0,wDots,hDots);
+
+    const img=ctx.getImageData(0,0,wDots,hDots).data;
+    const bitmap=new Uint8Array(bytesPerRow*hDots);
+
+    // 열전사 출력에서 얇은 글자가 사라지지 않도록 비교적 밝은 회색까지 검정으로 처리
+    const threshold=210;
+    for(let y=0;y<hDots;y++){
+      for(let x=0;x<wDots;x++){
+        const i=(y*wDots+x)*4;
+        const gray=(img[i]*299+img[i+1]*587+img[i+2]*114)/1000;
+        if(gray<threshold){
+          bitmap[y*bytesPerRow+(x>>3)] |= (0x80>>(x&7));
+        }
+      }
+    }
+
+    const gap=Math.max(0,Math.min(10,Number(el('thermalGapMm')?.value)||0));
+    const prefix=[
+      `SIZE ${Number(wMm)} mm,${Number(hMm)} mm\r\n`,
+      `GAP ${gap} mm,0 mm\r\n`,
+      `DIRECTION 1\r\n`,
+      `SPEED 3\r\n`,
+      `DENSITY 10\r\n`,
+      `CLS\r\n`,
+      `BITMAP 0,0,${bytesPerRow},${hDots},0,`
+    ].join('');
+
+    const suffix=`\r\nPRINT 1,${Math.max(1,Math.floor(Number(copies)||1))}\r\n`;
+    return concatUint8([textBytes(prefix),bitmap,textBytes(suffix)]);
+  }
+
+  async function sendCanvasToThermalPrinter(canvas,wMm,hMm,copies,jobName){
+    await ensureQzConnected();
+    let printer=el('thermalPrinterSelect')?.value||localStorage.getItem(THERMAL_PRINTER_KEY)||'';
+
+    if(!printer){
+      await connectThermalPrinter();
+      printer=el('thermalPrinterSelect')?.value||'';
+    }
+    if(!printer)throw new Error('감열프린터를 선택해 주세요.');
+
+    const raw=canvasToTsplBytes(canvas,wMm,hMm,copies);
+    const config=qz.configs.create(printer,{jobName:jobName||'TradeCode Barcode'});
+    const data=[{type:'raw',format:'command',flavor:'hex',data:raw}];
+    await qz.print(config,data);
+  }
+
+  async function printCurrentLabelThermal(){
+    try{
+      setThermalStatus('라벨을 감열프린터용으로 변환하는 중...');
+      const wMm=clampNumber(el('labelWidth').value,20,210,50);
+      const hMm=clampNumber(el('labelHeight').value,20,297,60);
+      const canvas=await makeExportCanvas();
+      await sendCanvasToThermalPrinter(canvas,wMm,hMm,1,'TradeCode '+(value('barcodeValue')||'Barcode'));
+      setThermalStatus('✓ Xprinter로 전송 완료','ok');
+    }catch(err){
+      console.error(err);
+      setThermalStatus(err?.message||'감열프린터 출력 실패','bad');
+      alert((err?.message||'감열프린터 출력에 실패했습니다.')+'\n\nQZ Tray가 실행 중인지, Xprinter XP-370B가 Windows에 설치되어 있는지 확인해 주세요.');
+    }
+  }
 
   async function printCurrentLabel(){
     let printWin=null;
@@ -672,6 +843,14 @@
     setLabelLibrary(lib);
     saveUserDefaults(cfg);
     renderSavedLibrary();
+  try{
+    const savedThermal=localStorage.getItem(THERMAL_PRINTER_KEY);
+    if(savedThermal && el('thermalPrinterSelect')){
+      el('thermalPrinterSelect').innerHTML=`<option value="${savedThermal.replace(/"/g,'&quot;')}">${savedThermal}</option>`;
+      el('thermalPrinterSelect').value=savedThermal;
+      setThermalStatus(`마지막 선택: ${savedThermal}`);
+    }
+  }catch(e){}
     setSaveStatus(`✓ 저장 완료 · ${cfg.labelWidth}×${cfg.labelHeight}mm · 현재 보관함 ${lib.length}개`);
   }
 
