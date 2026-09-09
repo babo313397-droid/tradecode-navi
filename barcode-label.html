@@ -29,7 +29,7 @@
     .section-label{margin:20px 0 10px;padding-top:14px;border-top:1px solid #e8ecf1;font-size:14px;font-weight:900;color:var(--navy)}
     .preset-row,.button-row{display:flex;flex-wrap:wrap;gap:8px}button{border:0;border-radius:8px;padding:10px 13px;cursor:pointer;font-weight:800;font-size:13px}.btn-primary{background:var(--navy);color:#fff}.btn-secondary{background:#e9eef4;color:#213344}.btn-ghost{background:#fff;color:#213344;border:1px solid #cfd7df}.btn-ghost:disabled{opacity:.45;cursor:not-allowed}
     .preview-panel{position:sticky;top:16px}.preview-toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.preview-size{font-size:13px;color:var(--muted);font-weight:700}
-    .preview-stage{min-height:620px;border:1px dashed #bdc8d3;background:#f9fbfd;border-radius:12px;display:flex;align-items:flex-start;justify-content:center;padding:14px 22px 22px;overflow:auto}
+    .preview-stage{height:410px;min-height:410px;border:1px dashed #bdc8d3;background:#f9fbfd;border-radius:12px;display:flex;align-items:flex-start;justify-content:center;padding:12px 22px 16px;overflow:auto}
     #previewScaler{transform-origin:top center;transition:transform .15s ease}
     .label{background:#fff;border:none;color:#000;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-start;text-align:center;padding:2.5mm 3.5mm 3mm;font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;font-synthesis:weight;text-rendering:geometricPrecision;-webkit-font-smoothing:auto}
     .label-title{font-weight:900;line-height:1.12;white-space:pre-wrap;overflow-wrap:anywhere;color:#000;text-shadow:0 0 .32px #000}.label-option{font-weight:900;line-height:1.12;margin-top:0;white-space:pre-wrap;overflow-wrap:anywhere;color:#000;text-shadow:0 0 .32px #000}.label-info{margin-top:0;line-height:1.12;white-space:pre-wrap;overflow-wrap:anywhere;font-weight:800;color:#000;text-shadow:0 0 .28px #000}.label-warning{margin-top:0;line-height:1.12;white-space:pre-wrap;overflow-wrap:anywhere;font-weight:800;color:#000;text-shadow:0 0 .28px #000}.label-age{margin-top:0;line-height:1.12;font-weight:900;white-space:pre-wrap;color:#000;text-shadow:0 0 .32px #000}
@@ -52,7 +52,7 @@
     .thermal-row select{width:auto;min-width:190px;max-width:280px;padding:8px 10px}
     .thermal-status{font-size:11.5px;font-weight:800;color:#667381}
     .thermal-status.ok{color:#157347}.thermal-status.bad{color:#c62828}
-    .auto-import-panel{margin-top:18px;padding-top:16px;border-top:1px solid #e3e8ee}
+    .auto-import-panel{margin-top:10px;padding-top:12px;border-top:1px solid #e3e8ee}
     .auto-import-title{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
     .auto-import-title h3{margin:0;font-size:16px;color:var(--navy-dark)}
     .auto-import-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -68,7 +68,7 @@
     .auto-match-card.show{display:block}.auto-match-card b{color:#102d48}
     .auto-thumb{display:none;max-width:100%;max-height:110px;margin-top:8px;border-radius:8px;border:1px solid #d9e1e8;background:#fff}
     @media(max-width:1050px){.auto-import-grid{grid-template-columns:1fr}}
-    @media(max-width:900px){.layout{grid-template-columns:1fr}.preview-panel{position:static}.preview-stage{min-height:500px}}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}.preview-panel{position:static}.preview-stage{height:360px;min-height:360px}}
   
     /* TradeCode Navi 공통 사이드바 */
     .app-shell{display:flex;align-items:stretch;min-height:100vh;}
