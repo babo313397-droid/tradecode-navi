@@ -13,6 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js"></script>
+  <script src="https://unpkg.com/@zxing/browser@0.2.1/umd/zxing-browser.min.js"></script>
 
   <style>
     :root{--navy:#0b2e4f;--navy-dark:#071f38;--bg:#f4f6f9;--card:#fff;--line:#dfe5ec;--text:#1b2733;--muted:#667381;--danger:#c62828;--success:#157347}
@@ -51,6 +52,22 @@
     .thermal-row select{width:auto;min-width:190px;max-width:280px;padding:8px 10px}
     .thermal-status{font-size:11.5px;font-weight:800;color:#667381}
     .thermal-status.ok{color:#157347}.thermal-status.bad{color:#c62828}
+    .auto-import-panel{margin-top:18px;padding-top:16px;border-top:1px solid #e3e8ee}
+    .auto-import-title{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    .auto-import-title h3{margin:0;font-size:16px;color:var(--navy-dark)}
+    .auto-import-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .drop-zone{border:2px dashed #aab9c8;border-radius:12px;background:#f8fbfe;min-height:150px;padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;cursor:pointer;transition:.18s}
+    .drop-zone:hover,.drop-zone.dragover{border-color:#1565c0;background:#eef6ff}
+    .drop-zone .drop-icon{font-size:30px;margin-bottom:6px}.drop-zone strong{font-size:13px;color:#173a5c}.drop-zone small{margin-top:5px;color:var(--muted);line-height:1.45}
+    .auto-side{border:1px solid #d8e0e8;border-radius:12px;padding:12px;background:#fff}
+    .auto-side h4{margin:0 0 8px;font-size:13px;color:#344150}
+    .auto-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+    .auto-status{margin-top:10px;border-radius:9px;padding:9px 10px;background:#f4f7fa;font-size:12px;line-height:1.55;color:#4c5c6c;min-height:40px}
+    .auto-status.ok{background:#eaf8ef;color:#126b37}.auto-status.warn{background:#fff7e5;color:#8a5a00}.auto-status.bad{background:#fff0f0;color:#b3261e}
+    .auto-match-card{display:none;margin-top:10px;border:1px solid #d9e3ec;border-radius:10px;background:#fff;padding:10px;font-size:12px;line-height:1.6}
+    .auto-match-card.show{display:block}.auto-match-card b{color:#102d48}
+    .auto-thumb{display:none;max-width:100%;max-height:110px;margin-top:8px;border-radius:8px;border:1px solid #d9e1e8;background:#fff}
+    @media(max-width:1050px){.auto-import-grid{grid-template-columns:1fr}}
     @media(max-width:900px){.layout{grid-template-columns:1fr}.preview-panel{position:static}.preview-stage{min-height:500px}}
   
     /* TradeCode Navi 공통 사이드바 */
@@ -217,6 +234,37 @@
       <div class="preview-stage" id="previewStage"><div id="previewScaler"><div class="label" id="labelPreview"><div class="label-title" id="outProductName"></div><div class="label-option" id="outOptionText"></div><div class="label-info" id="outInfo"></div><div class="label-warning" id="outWarning"></div><div class="label-age" id="outAge"></div><div class="barcode-area"><svg id="barcodeSvg"></svg><div class="barcode-text" id="outBarcodeText"></div><div class="made-in" id="outMadeIn"></div></div></div></div></div>
       <div class="overflow-warning" id="overflowWarning">⚠ 내용이 현재 라벨 크기를 초과합니다. 글자 크기를 줄이거나 라벨 높이를 늘려주세요.</div>
       <div class="ok-message" id="okMessage">✓ 현재 내용이 라벨 안에 들어갑니다.</div>
+
+      <div class="auto-import-panel">
+        <div class="auto-import-title">
+          <h3>⚡ 바코드 이미지 / 상품 기준파일 자동 불러오기</h3>
+          <button class="btn-ghost" type="button" onclick="autoFillCurrentBarcode()">🔍 현재 바코드로 상품 찾기</button>
+        </div>
+        <div class="auto-import-grid">
+          <div>
+            <div id="barcodeImageDrop" class="drop-zone" onclick="el('barcodeImageFile').click()">
+              <div class="drop-icon">🖼️</div>
+              <strong>바코드 캡쳐본을 여기로 끌어오세요</strong>
+              <small>PNG · JPG · WEBP<br>이미지에서 바코드 번호를 읽고 상품번호/상품명을 자동 매칭합니다.</small>
+              <img id="barcodeImageThumb" class="auto-thumb" alt="업로드 이미지 미리보기">
+            </div>
+            <input id="barcodeImageFile" type="file" accept="image/png,image/jpeg,image/webp,image/bmp" style="display:none" onchange="handleBarcodeImageFile(this.files?.[0]);this.value=''">
+          </div>
+
+          <div class="auto-side">
+            <h4>📊 상품 기준 엑셀 업데이트</h4>
+            <div class="help" style="margin-top:0">현재 기준: <b>업데이트</b> 시트의 <b>SKU ID / 바코드 / 상품명</b>을 읽습니다. 업로드하면 Supabase 공용 상품목록에 영구 반영됩니다.</div>
+            <div class="auto-actions">
+              <button class="btn-secondary" type="button" onclick="el('productCatalogExcel').click()">📁 기준 엑셀 업로드</button>
+              <button class="btn-ghost" type="button" onclick="loadProductCatalogStatus()">🔄 기준목록 상태</button>
+            </div>
+            <input id="productCatalogExcel" type="file" accept=".xlsx,.xls" style="display:none" onchange="importProductCatalogExcel(this.files?.[0]);this.value=''">
+            <div id="catalogStatus" class="help" style="margin-top:9px">기준 상품목록 확인 중...</div>
+          </div>
+        </div>
+        <div id="autoImportStatus" class="auto-status">캡쳐 이미지를 끌어오거나 파일을 선택하면 자동으로 바코드를 인식합니다.</div>
+        <div id="autoMatchCard" class="auto-match-card"></div>
+      </div>
     </section>
   </div>
 
@@ -820,6 +868,276 @@
     }
   }
 
+
+  // ---------------------------------------------------------
+  // 바코드 이미지 자동 인식 + 공용 상품 기준목록 자동 매칭
+  // 우선순위: 공용 저장 라벨 전체 복원 -> 상품 기준목록의 상품번호/상품명 매칭
+  // ---------------------------------------------------------
+  let autoImportBusy=false;
+
+  function setAutoImportStatus(message,type=''){
+    const box=el('autoImportStatus');
+    if(!box)return;
+    box.textContent=message;
+    box.className='auto-status'+(type?` ${type}`:'');
+  }
+
+  function showAutoMatchCard(data){
+    const card=el('autoMatchCard');
+    if(!card)return;
+    if(!data){card.classList.remove('show');card.innerHTML='';return;}
+    const source=data.source==='shared'?'공용 라벨 보관함':data.source==='catalog'?'공용 상품 기준목록':'이미지 인식';
+    card.innerHTML=`
+      <div><b>매칭 출처:</b> ${escHtml(source)}</div>
+      <div><b>상품번호:</b> ${escHtml(data.productNumber||'-')}</div>
+      <div><b>바코드:</b> ${escHtml(data.barcode||'-')}</div>
+      <div><b>상품명:</b> ${escHtml(data.productName||'-')}</div>`;
+    card.classList.add('show');
+  }
+
+  function normalizeDetectedBarcode(raw){
+    return String(raw||'').trim().replace(/\s+/g,'').toUpperCase();
+  }
+
+  async function decodeWithNativeBarcodeDetector(file){
+    if(!('BarcodeDetector' in window))return '';
+    try{
+      let formats=[];
+      try{formats=await BarcodeDetector.getSupportedFormats()}catch(e){}
+      const wanted=['code_128','ean_13','ean_8','upc_a','upc_e','code_39','itf','codabar'];
+      const useFormats=wanted.filter(x=>!formats.length||formats.includes(x));
+      const detector=new BarcodeDetector(useFormats.length?{formats:useFormats}:undefined);
+      const bitmap=await createImageBitmap(file);
+      const results=await detector.detect(bitmap);
+      try{bitmap.close()}catch(e){}
+      if(results?.length)return normalizeDetectedBarcode(results[0].rawValue);
+    }catch(err){
+      console.warn('BarcodeDetector 실패:',err);
+    }
+    return '';
+  }
+
+  async function decodeWithZxing(file){
+    if(typeof ZXingBrowser==='undefined')return '';
+    const url=URL.createObjectURL(file);
+    try{
+      const img=new Image();
+      img.src=url;
+      await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=reject;});
+      const reader=new ZXingBrowser.BrowserMultiFormatReader();
+      const result=await reader.decodeFromImageElement(img);
+      return normalizeDetectedBarcode(result?.getText?.()||result?.text||'');
+    }catch(err){
+      console.warn('ZXing 실패:',err);
+      return '';
+    }finally{
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function decodeBarcodeFromImage(file){
+    let barcode=await decodeWithNativeBarcodeDetector(file);
+    if(barcode)return barcode;
+    barcode=await decodeWithZxing(file);
+    return barcode;
+  }
+
+  async function handleBarcodeImageFile(file){
+    if(!file||autoImportBusy)return;
+    autoImportBusy=true;
+    showAutoMatchCard(null);
+    try{
+      const thumb=el('barcodeImageThumb');
+      if(thumb){
+        const previewUrl=URL.createObjectURL(file);
+        thumb.src=previewUrl;
+        thumb.style.display='block';
+        thumb.onload=()=>URL.revokeObjectURL(previewUrl);
+      }
+      setAutoImportStatus('이미지에서 바코드 번호를 읽는 중...');
+      const barcode=await decodeBarcodeFromImage(file);
+      if(!barcode){
+        setAutoImportStatus('바코드를 인식하지 못했습니다. 바코드가 선명하고 정면으로 보이는 이미지를 사용해 주세요.','bad');
+        return;
+      }
+      setAutoImportStatus(`바코드 인식 완료: ${barcode} · 상품정보를 찾는 중...`);
+      await autoFillByBarcode(barcode,{fromImage:true});
+    }catch(err){
+      console.error(err);
+      setAutoImportStatus(err?.message||'이미지 자동 불러오기에 실패했습니다.','bad');
+    }finally{
+      autoImportBusy=false;
+    }
+  }
+
+  async function lookupProductCatalog(barcode){
+    const bc=normalizeDetectedBarcode(barcode);
+    if(!bc)return null;
+    try{
+      const res=await fetch(`/api/product-catalog?barcode=${encodeURIComponent(bc)}`,{cache:'no-store'});
+      const data=await res.json();
+      if(!res.ok||!data.ok)throw new Error(data.error||'상품 기준목록 조회 실패');
+      return data.item||null;
+    }catch(err){
+      console.error(err);
+      return null;
+    }
+  }
+
+  async function autoFillByBarcode(barcode,{fromImage=false}={}){
+    const bc=normalizeDetectedBarcode(barcode);
+    if(!bc){
+      setAutoImportStatus('바코드 번호를 확인해 주세요.','bad');
+      return;
+    }
+
+    // 먼저 공용 라벨을 최신 상태로 갱신하고 저장 라벨이 있으면 전체값 복원
+    await fetchSharedLabels(true);
+    const saved=findSavedLabel(bc,'');
+    if(saved){
+      rememberCurrentState();
+      applyLabelConfig(saved);
+      showAutoMatchCard({source:'shared',...saved});
+      setAutoImportStatus(`✓ ${bc} · 공용 라벨 보관함에서 전체 설정을 자동 불러왔습니다.`,'ok');
+      return;
+    }
+
+    // 저장 라벨이 없으면 상품 기준목록에서 상품번호/상품명만 매칭
+    const item=await lookupProductCatalog(bc);
+    rememberCurrentState();
+    el('barcodeValue').value=bc;
+    if(item){
+      if(item.productNumber)el('productNumber').value=item.productNumber;
+      if(item.productName)el('productName').value=item.productName;
+      updateLabel();
+      showAutoMatchCard({source:'catalog',...item});
+      setAutoImportStatus(`✓ 바코드 ${bc}를 기준목록에서 찾았습니다. 상품번호와 상품명을 자동 입력했습니다.`,'ok');
+    }else{
+      updateLabel();
+      showAutoMatchCard({source:'image',barcode:bc});
+      setAutoImportStatus(`바코드 ${bc}는 인식했지만 상품 기준목록에서 찾지 못했습니다. 기준 엑셀을 업데이트해 주세요.`,'warn');
+    }
+  }
+
+  async function autoFillCurrentBarcode(){
+    const bc=value('barcodeValue');
+    if(!bc){
+      setAutoImportStatus('먼저 바코드 번호를 입력해 주세요.','warn');
+      return;
+    }
+    setAutoImportStatus(`${bc} 상품정보를 찾는 중...`);
+    await autoFillByBarcode(bc);
+  }
+
+  function excelCellText(v){
+    if(v===null||v===undefined)return'';
+    if(typeof v==='object'){
+      if(Array.isArray(v.richText))return v.richText.map(x=>x.text||'').join('').trim();
+      if(v.text!==undefined)return String(v.text).trim();
+      if(v.result!==undefined)return String(v.result).trim();
+      if(v.hyperlink&&v.text)return String(v.text).trim();
+    }
+    return String(v).trim().replace(/\.0$/,'');
+  }
+
+  async function parseProductCatalogExcel(file){
+    if(typeof ExcelJS==='undefined')throw new Error('ExcelJS를 불러오지 못했습니다.');
+    const workbook=new ExcelJS.Workbook();
+    await workbook.xlsx.load(await file.arrayBuffer());
+    let ws=workbook.getWorksheet('업데이트')||workbook.worksheets[0];
+    if(!ws)throw new Error('엑셀 시트를 찾지 못했습니다.');
+
+    let headerRow=0,productCol=0,barcodeCol=0,nameCol=0;
+    const scanTo=Math.min(ws.rowCount,20);
+    for(let r=1;r<=scanTo;r++){
+      const row=ws.getRow(r);
+      for(let c=1;c<=Math.min(row.cellCount||20,30);c++){
+        const t=excelCellText(row.getCell(c).value).replace(/\s+/g,'').toLowerCase();
+        if(!productCol&&(t==='skuid'||t==='상품번호'||t==='sku'))productCol=c;
+        if(!barcodeCol&&(t==='바코드'||t==='barcode'))barcodeCol=c;
+        if(!nameCol&&(t==='상품명'||t==='제품명'||t==='품명'))nameCol=c;
+      }
+      if(productCol&&barcodeCol&&nameCol){headerRow=r;break;}
+      productCol=barcodeCol=nameCol=0;
+    }
+
+    if(!headerRow)throw new Error('SKU ID(상품번호) / 바코드 / 상품명 열을 찾지 못했습니다.');
+
+    const map=new Map();
+    for(let r=headerRow+1;r<=ws.rowCount;r++){
+      const row=ws.getRow(r);
+      const productNumber=excelCellText(row.getCell(productCol).value);
+      const barcode=normalizeDetectedBarcode(excelCellText(row.getCell(barcodeCol).value));
+      const productName=excelCellText(row.getCell(nameCol).value);
+      if(!barcode)continue;
+      map.set(barcode,{productNumber,barcode,productName,source:file.name});
+    }
+    return [...map.values()];
+  }
+
+  async function importProductCatalogExcel(file){
+    if(!file)return;
+    try{
+      setAutoImportStatus('기준 엑셀을 읽는 중...');
+      const items=await parseProductCatalogExcel(file);
+      if(!items.length)throw new Error('업로드할 상품정보를 찾지 못했습니다.');
+      if(!confirm(`${items.length.toLocaleString()}개 상품을 공용 상품 기준목록에 업데이트할까요?\n같은 바코드는 상품번호/상품명이 최신 값으로 갱신됩니다.`)){
+        setAutoImportStatus('기준 엑셀 업데이트를 취소했습니다.');
+        return;
+      }
+
+      const chunkSize=350;
+      let done=0;
+      for(let i=0;i<items.length;i+=chunkSize){
+        const chunk=items.slice(i,i+chunkSize);
+        setAutoImportStatus(`Supabase 공용 상품 기준목록 업데이트 중... ${Math.min(i+chunk.length,items.length).toLocaleString()}/${items.length.toLocaleString()}`);
+        const res=await sharedFetch('/api/product-catalog/import',{
+          method:'POST',
+          body:JSON.stringify({items:chunk,source:file.name})
+        });
+        const data=await res.json();
+        if(!res.ok||!data.ok)throw new Error(data.error||'상품 기준목록 업데이트 실패');
+        done+=Number(data.imported||chunk.length);
+      }
+
+      await loadProductCatalogStatus();
+      setAutoImportStatus(`✓ 상품 기준 엑셀 업데이트 완료 · ${done.toLocaleString()}개 처리`,'ok');
+      const bc=value('barcodeValue');
+      if(bc)await autoFillByBarcode(bc);
+    }catch(err){
+      console.error(err);
+      setAutoImportStatus(err?.message||'기준 엑셀 업데이트에 실패했습니다.','bad');
+      alert(err?.message||'기준 엑셀 업데이트에 실패했습니다.');
+    }
+  }
+
+  async function loadProductCatalogStatus(){
+    try{
+      const res=await fetch('/api/product-catalog-status',{cache:'no-store'});
+      const data=await res.json();
+      if(!res.ok||!data.ok)throw new Error(data.error||'상태 조회 실패');
+      el('catalogStatus').textContent=`공용 상품 기준목록: ${Number(data.count||0).toLocaleString()}개 · ${data.permanent?'Supabase 영구 저장':'임시 저장'}`;
+    }catch(err){
+      el('catalogStatus').textContent='공용 상품 기준목록 상태를 불러오지 못했습니다.';
+    }
+  }
+
+  function initBarcodeImageDrop(){
+    const zone=el('barcodeImageDrop');
+    if(!zone)return;
+    ['dragenter','dragover'].forEach(name=>zone.addEventListener(name,e=>{
+      e.preventDefault();e.stopPropagation();zone.classList.add('dragover');
+    }));
+    ['dragleave','drop'].forEach(name=>zone.addEventListener(name,e=>{
+      e.preventDefault();e.stopPropagation();zone.classList.remove('dragover');
+    }));
+    zone.addEventListener('drop',e=>{
+      const file=[...(e.dataTransfer?.files||[])].find(f=>f.type.startsWith('image/'));
+      if(file)handleBarcodeImageFile(file);
+      else setAutoImportStatus('이미지 파일을 끌어와 주세요.','warn');
+    });
+  }
+
   function getUserDefaults(){
     try{
       const raw=localStorage.getItem(LABEL_DEFAULTS_KEY);
@@ -1236,6 +1554,8 @@
     await fetchSharedLabels(true);
     applyUrlPrefill();
     renderSavedLibrary();
+    initBarcodeImageDrop();
+    loadProductCatalogStatus();
 
     try{
       const savedThermal=localStorage.getItem(THERMAL_PRINTER_KEY);
