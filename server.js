@@ -21,6 +21,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const cors = require('cors');
 const { searchHs, getTariff, navigateHsCode, checkCustomsRequirement } = require('./lib/unipass');
 const { analyzeProduct } = require('./lib/ai');
@@ -37,6 +38,8 @@ app.use(express.static(path.join(__dirname)));
 const PORT = process.env.PORT || 4000;
 const UNIPASS_KEY = process.env.UNIPASS_API_KEY || '';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || ''; // 선택: AI 상품명 분석 기능용
+const SHARED_LABEL_EDIT_KEY = String(process.env.SHARED_LABEL_EDIT_KEY || '').trim();
+const SHARED_LABEL_FILE = path.join(__dirname, 'data', 'shared-labels.json');
 
 const MAX_QUERY_LENGTH = 100; // 상품명 입력 길이 제한 (남용/이상 입력 방지)
 const analyzeProductLimiter = createRateLimiter({ windowMs: 60000, max: 10 }); // 분당 10회/IP
@@ -46,6 +49,7 @@ const freeTranslateLimiter = createRateLimiter({ windowMs: 60000, max: 20 });
 const commentWriteLimiter = createRateLimiter({ windowMs: 60000, max: 15 });
 // 환율 조회도 키가 필요 없어 자주 호출될 수 있으므로 넉넉히(분당 20회/IP) 둔다.
 const exchangeRateLimiter = createRateLimiter({ windowMs: 60000, max: 20 });
+const sharedLabelWriteLimiter = createRateLimiter({ windowMs: 60000, max: 60 });
 
 if (!UNIPASS_KEY) {
   console.warn('[경고] UNIPASS_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.');
@@ -532,6 +536,195 @@ app.delete('/api/comments/:id', commentWriteLimiter, (req, res) => {
   if (!result.ok) return res.status(result.error && result.error.includes('일치하지') ? 403 : 400).json(result);
   res.json(result);
 });
+
+
+// =========================================================
+// 공용 바코드 라벨 보관함
+// 로그인 없이 모든 접속자가 같은 라벨 목록을 사용한다.
+// 저장 위치: data/shared-labels.json
+// 선택 보안: Render 환경변수 SHARED_LABEL_EDIT_KEY를 설정하면
+// 저장/수정/삭제 시 공용 관리코드가 필요하다.
+// =========================================================
+
+function ensureSharedLabelFile() {
+  const dir = path.dirname(SHARED_LABEL_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(SHARED_LABEL_FILE)) {
+    fs.writeFileSync(SHARED_LABEL_FILE, '[]', 'utf8');
+  }
+}
+
+function readSharedLabels() {
+  ensureSharedLabelFile();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SHARED_LABEL_FILE, 'utf8') || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error('공용 라벨 파일 읽기 실패:', err);
+    return [];
+  }
+}
+
+function writeSharedLabels(labels) {
+  ensureSharedLabelFile();
+  const temp = `${SHARED_LABEL_FILE}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(labels, null, 2), 'utf8');
+  fs.renameSync(temp, SHARED_LABEL_FILE);
+}
+
+function cleanSharedText(value, max = 1000) {
+  return String(value ?? '').trim().slice(0, max);
+}
+
+function cleanSharedNumber(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function sanitizeSharedLabel(input, existing = null) {
+  const now = new Date().toISOString();
+  const barcode = cleanSharedText(input.barcode, 80).toUpperCase();
+  const productNumber = cleanSharedText(input.productNumber, 80);
+
+  return {
+    id: existing?.id || cleanSharedText(input.id, 120) || crypto.randomUUID(),
+    productNumber,
+    barcode,
+    productName: cleanSharedText(input.productName, 500),
+    optionText: cleanSharedText(input.optionText, 1000),
+    material: cleanSharedText(input.material, 500),
+    importer: cleanSharedText(input.importer, 500),
+    address: cleanSharedText(input.address, 1000),
+    phone: cleanSharedText(input.phone, 100),
+    warning: cleanSharedText(input.warning, 1500),
+    age: cleanSharedText(input.age, 200),
+    country: cleanSharedText(input.country, 200),
+    labelWidth: cleanSharedNumber(input.labelWidth, 20, 210, 50),
+    labelHeight: cleanSharedNumber(input.labelHeight, 20, 297, 60),
+    titleFont: cleanSharedNumber(input.titleFont, 5, 28, 18),
+    bodyFont: cleanSharedNumber(input.bodyFont, 4, 22, 14),
+    barcodeHeight: cleanSharedNumber(input.barcodeHeight, 5, 30, 16),
+    barcodeTextFont: cleanSharedNumber(input.barcodeTextFont, 4, 22, 12),
+    madeInFont: cleanSharedNumber(input.madeInFont, 3, 18, 8),
+    createdAt: existing?.createdAt || cleanSharedText(input.createdAt, 80) || now,
+    updatedAt: now
+  };
+}
+
+function checkSharedLabelEditKey(req, res, next) {
+  if (!SHARED_LABEL_EDIT_KEY) return next();
+  const key = String(req.get('x-label-edit-key') || '');
+  if (key !== SHARED_LABEL_EDIT_KEY) {
+    return res.status(403).json({
+      ok: false,
+      code: 'EDIT_KEY_REQUIRED',
+      error: '공용 라벨 관리코드가 필요합니다.'
+    });
+  }
+  next();
+}
+
+// 전체 공용 라벨 목록
+app.get('/api/shared-labels', (req, res) => {
+  try {
+    const labels = readSharedLabels().sort(
+      (a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
+    );
+    res.json({
+      ok: true,
+      labels,
+      editKeyRequired: !!SHARED_LABEL_EDIT_KEY
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: `공용 라벨 조회 실패: ${err.message}` });
+  }
+});
+
+// 공용 라벨 저장/수정(바코드 우선, 상품번호 보조 매칭)
+app.post(
+  '/api/shared-labels',
+  sharedLabelWriteLimiter,
+  checkSharedLabelEditKey,
+  (req, res) => {
+    try {
+      const input = req.body || {};
+      const barcode = cleanSharedText(input.barcode, 80).toUpperCase();
+      const productNumber = cleanSharedText(input.productNumber, 80);
+
+      if (!barcode && !productNumber) {
+        return res.status(400).json({
+          ok: false,
+          error: '바코드 번호 또는 상품번호가 필요합니다.'
+        });
+      }
+
+      const labels = readSharedLabels();
+      let idx = -1;
+
+      if (input.id) {
+        idx = labels.findIndex(x => String(x.id) === String(input.id));
+      }
+      if (idx < 0 && barcode) {
+        idx = labels.findIndex(
+          x => String(x.barcode || '').trim().toUpperCase() === barcode
+        );
+      }
+      if (idx < 0 && productNumber) {
+        idx = labels.findIndex(
+          x => String(x.productNumber || '').trim() === productNumber
+        );
+      }
+
+      const existing = idx >= 0 ? labels[idx] : null;
+      const saved = sanitizeSharedLabel(input, existing);
+
+      if (idx >= 0) labels[idx] = saved;
+      else labels.push(saved);
+
+      writeSharedLabels(labels);
+      res.status(existing ? 200 : 201).json({ ok: true, label: saved, count: labels.length });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: `공용 라벨 저장 실패: ${err.message}` });
+    }
+  }
+);
+
+// 공용 라벨 삭제
+app.delete(
+  '/api/shared-labels/:id',
+  sharedLabelWriteLimiter,
+  checkSharedLabelEditKey,
+  (req, res) => {
+    try {
+      const labels = readSharedLabels();
+      const before = labels.length;
+      const next = labels.filter(x => String(x.id) !== String(req.params.id));
+
+      if (next.length === before) {
+        return res.status(404).json({ ok: false, error: '삭제할 라벨을 찾지 못했습니다.' });
+      }
+
+      writeSharedLabels(next);
+      res.json({ ok: true, count: next.length });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: `공용 라벨 삭제 실패: ${err.message}` });
+    }
+  }
+);
+
+// 공용 라벨 JSON 백업 다운로드
+app.get('/api/shared-labels-backup', (req, res) => {
+  try {
+    const labels = readSharedLabels();
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Disposition', `attachment; filename="tradecode-shared-labels-${stamp}.json"`);
+    res.type('application/json').send(JSON.stringify(labels, null, 2));
+  } catch (err) {
+    res.status(500).json({ ok: false, error: `공용 라벨 백업 실패: ${err.message}` });
+  }
+});
+
 
 // GET /api/exchange-rate?base=CNY&to=KRW   (키/가입 불필요 - 로켓배송 계산기의 환율 자동 입력용)
 // 실패해도 500 에러 대신 ok:false를 내려주어, 프론트가 조용히 기존 기본값(직접 입력)으로 폴백할 수 있게 한다.
