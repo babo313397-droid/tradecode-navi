@@ -189,11 +189,11 @@
         <button class="btn-ghost" type="button" onclick="clearAllContent()">입력 전체 지우기</button>
         <button class="btn-ghost" type="button" onclick="resetForm()">초기화</button>
       </div>
-      <div class="help">· PDF 출력 시 프린터 설정은 <b>실제 크기 / 100%</b>를 권장합니다.<br>· 엑셀 다운로드에는 입력한 제품정보와 현재 라벨 미리보기 이미지가 함께 저장됩니다.<br>· CODE128은 영문과 숫자를 함께 사용할 수 있습니다.<br>· GS1/EAN 등 공식 유통 상품바코드가 필요한 경우 임의의 CODE128 번호와는 별도로 확인해야 합니다.</div>
+      <div class="help">· <b>바로 인쇄</b>를 누르면 브라우저 인쇄창이 바로 열립니다. 배율은 <b>실제 크기 / 100%</b>를 권장합니다.<br>· 엑셀 다운로드에는 입력한 제품정보와 현재 라벨 미리보기 이미지가 함께 저장됩니다.<br>· CODE128은 영문과 숫자를 함께 사용할 수 있습니다.<br>· GS1/EAN 등 공식 유통 상품바코드가 필요한 경우 임의의 CODE128 번호와는 별도로 확인해야 합니다.</div>
     </section>
 
     <section class="panel preview-panel">
-      <div class="preview-toolbar"><h2 style="margin:0">실시간 미리보기</h2><div class="button-row"><button class="btn-ghost" type="button" onclick="setPreviewMode('fit')">화면에 맞춤</button><button class="btn-ghost" type="button" onclick="setPreviewMode('actual')">실제 크기 보기</button></div></div>
+      <div class="preview-toolbar"><h2 style="margin:0">실시간 미리보기</h2><div class="button-row"><button class="btn-ghost" type="button" onclick="setPreviewMode('fit')">화면에 맞춤</button><button class="btn-ghost" type="button" onclick="setPreviewMode('actual')">실제 크기 보기</button><button class="btn-primary" type="button" onclick="printCurrentLabel()">🖨 바로 인쇄</button></div></div>
       <div class="preview-size" id="previewSizeText">라벨 크기: 50 × 60 mm</div>
       <div class="preview-stage" id="previewStage"><div id="previewScaler"><div class="label" id="labelPreview"><div class="label-title" id="outProductName"></div><div class="label-option" id="outOptionText"></div><div class="label-info" id="outInfo"></div><div class="label-warning" id="outWarning"></div><div class="label-age" id="outAge"></div><div class="barcode-area"><svg id="barcodeSvg"></svg><div class="barcode-text" id="outBarcodeText"></div><div class="made-in" id="outMadeIn"></div></div></div></div></div>
       <div class="overflow-warning" id="overflowWarning">⚠ 내용이 현재 라벨 크기를 초과합니다. 글자 크기를 줄이거나 라벨 높이를 늘려주세요.</div>
@@ -280,6 +280,61 @@
 
   async function makeExportCanvas(){
     updateLabel();await new Promise(r=>setTimeout(r,120));const original=el('labelPreview'),clone=original.cloneNode(true);clone.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));clone.removeAttribute('id');const stage=el('exportStage');stage.innerHTML='';stage.appendChild(clone);clone.style.transform='none';clone.style.margin='0';clone.style.boxShadow='none';const canvas=await html2canvas(clone,{scale:6,backgroundColor:'#ffffff',useCORS:true,logging:false});stage.innerHTML='';return canvas;
+  }
+
+
+  async function printCurrentLabel(){
+    let printWin=null;
+    try{
+      const wMm=clampNumber(el('labelWidth').value,20,210,50);
+      const hMm=clampNumber(el('labelHeight').value,20,297,60);
+
+      printWin=window.open('','_blank','width=760,height=640');
+      if(!printWin){
+        alert('인쇄창을 열 수 없습니다. 브라우저의 팝업 차단을 허용해 주세요.');
+        return;
+      }
+      printWin.document.write('<!doctype html><html><head><title>라벨 인쇄 준비중...</title></head><body style="font-family:sans-serif;padding:24px;">라벨을 준비하는 중입니다...</body></html>');
+      printWin.document.close();
+
+      const canvas=await makeExportCanvas();
+      const img=canvas.toDataURL('image/png');
+
+      printWin.document.open();
+      printWin.document.write(`<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>바코드 라벨 인쇄</title>
+<style>
+  @page{size:${wMm}mm ${hMm}mm;margin:0}
+  html,body{margin:0!important;padding:0!important;width:${wMm}mm;height:${hMm}mm;overflow:hidden;background:#fff}
+  img{display:block;width:${wMm}mm;height:${hMm}mm;margin:0;padding:0}
+  @media print{html,body{margin:0!important;padding:0!important}}
+</style>
+</head>
+<body>
+<img src="${img}" alt="barcode label">
+<script>
+(function(){
+  function run(){
+    setTimeout(function(){ window.focus(); window.print(); },120);
+  }
+  if(document.images[0] && !document.images[0].complete){
+    document.images[0].addEventListener('load',run,{once:true});
+  }else{
+    run();
+  }
+})();
+<\/script>
+</body>
+</html>`);
+      printWin.document.close();
+    }catch(err){
+      console.error(err);
+      if(printWin && !printWin.closed) printWin.close();
+      alert('인쇄 준비 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+    }
   }
 
   async function downloadLabelPdf(){
