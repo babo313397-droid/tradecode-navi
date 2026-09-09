@@ -238,7 +238,10 @@
       <div class="auto-import-panel">
         <div class="auto-import-title">
           <h3>⚡ 바코드 이미지 / 상품 기준파일 자동 불러오기</h3>
-          <button class="btn-ghost" type="button" onclick="autoFillCurrentBarcode()">🔍 현재 바코드로 상품 찾기</button>
+          <div class="button-row">
+            <button class="btn-ghost" type="button" onclick="autoFillCurrentBarcode()">🔍 현재 바코드로 상품 찾기</button>
+            <button class="btn-ghost" type="button" id="clearBarcodeImageBtn" onclick="clearBarcodeImageUpload()">🗑 업로드 이미지 삭제</button>
+          </div>
         </div>
         <div class="auto-import-grid">
           <div>
@@ -940,6 +943,26 @@
     if(barcode)return barcode;
     barcode=await decodeWithZxing(file);
     return barcode;
+  }
+
+
+  function clearBarcodeImageUpload(){
+    // 업로드 이미지 자체만 지웁니다.
+    // 이미 자동 입력된 상품번호/상품명/바코드/라벨 정보는 그대로 유지합니다.
+    const input=el('barcodeImageFile');
+    if(input) input.value='';
+
+    const thumb=el('barcodeImageThumb');
+    if(thumb){
+      thumb.removeAttribute('src');
+      thumb.style.display='none';
+    }
+
+    showAutoMatchCard(null);
+    setAutoImportStatus('업로드 이미지를 삭제했습니다. 새 캡쳐 이미지를 끌어오거나 파일을 선택해 주세요.');
+
+    const zone=el('barcodeImageDrop');
+    if(zone) zone.classList.remove('dragover');
   }
 
   async function handleBarcodeImageFile(file){
