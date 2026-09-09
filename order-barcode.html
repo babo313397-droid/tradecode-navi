@@ -44,6 +44,15 @@ h1{margin:0 0 6px;color:var(--navy-dark);font-size:27px}
 .btn-sm{padding:7px 9px;font-size:12px}
 .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .toolbar-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.print-settings{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-top:12px}
+.setting-box{border:1px solid var(--line);border-radius:10px;padding:10px;background:#f8fafc}
+.setting-box label{display:block;font-size:11.5px;color:var(--muted);font-weight:800;margin-bottom:5px}
+.setting-box input,.setting-box select{width:100%;padding:8px;border:1px solid #cbd5df;border-radius:7px;background:#fff}
+.mode-choice{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mode-choice label{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#fff;font-size:13px;font-weight:800;cursor:pointer}
+.mode-choice input{margin:0}
+.sheet-only.hidden{display:none}
+@media(max-width:1100px){.print-settings{grid-template-columns:repeat(2,minmax(150px,1fr))}}
 .summary{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-top:14px}
 .kpi{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:12px}
 .kpi .lab{font-size:12px;color:var(--muted)}
@@ -74,7 +83,7 @@ td.name{min-width:310px}
 .render-barcode-text{font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1;margin-top:0;white-space:nowrap}
 .render-made{font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1;margin-top:0;color:#333;white-space:nowrap}
 @media(max-width:900px){
-  .app-shell{flex-direction:column}.sidebar{width:100%;height:auto;position:relative;display:flex;gap:8px;flex-wrap:wrap}.side-brand{margin:0}.nav-section-label{display:none}.nav-btn{width:auto;margin:0}.main{padding:14px}.summary{grid-template-columns:1fr 1fr}
+  .app-shell{flex-direction:column}.sidebar{width:100%;height:auto;position:relative;display:flex;gap:8px;flex-wrap:wrap}.side-brand{margin:0}.nav-section-label{display:none}.nav-btn{width:auto;margin:0}.main{padding:14px}.summary{grid-template-columns:1fr 1fr}.print-settings{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -97,14 +106,32 @@ td.name{min-width:310px}
   <section class="card">
     <div class="upload-box">
       <input class="file-input" id="orderFile" type="file" accept=".xlsx,.xls">
-      <button class="btn btn-secondary" onclick="reloadLibrary()">🔄 저장 라벨 다시 불러오기</button>
+      <button class="btn btn-secondary" onclick="reloadLibrary()">🔄 저장 라벨 새로고침</button>
       <label style="font-size:13px;font-weight:700;">1회 최대 출력 장수
         <input id="maxPerFile" type="number" min="1" max="1000" value="100" style="width:80px;padding:8px;border:1px solid #cbd5df;border-radius:7px;margin-left:6px;">
       </label>
     </div>
+
+    <div style="margin-top:14px;font-size:13px;font-weight:900;color:var(--navy-dark);">프린터 출력 방식</div>
+    <div class="mode-choice" style="margin-top:8px;">
+      <label><input type="radio" name="printMethod" value="continuous" checked onchange="togglePrintMethod()"> ① 1열 연속 라벨 프린터</label>
+      <label><input type="radio" name="printMethod" value="sheet" onchange="togglePrintMethod()"> ② 다열 라벨 용지</label>
+    </div>
+
+    <div id="sheetSettings" class="print-settings sheet-only hidden">
+      <div class="setting-box"><label>용지 가로 (mm)</label><input id="sheetPaperWidth" type="number" min="50" value="210"></div>
+      <div class="setting-box"><label>용지 세로 (mm)</label><input id="sheetPaperHeight" type="number" min="50" value="297"></div>
+      <div class="setting-box"><label>가로 라벨 개수(열)</label><input id="sheetColumns" type="number" min="1" max="10" value="4"></div>
+      <div class="setting-box"><label>세로 라벨 개수(행) · 0=자동</label><input id="sheetRows" type="number" min="0" max="30" value="0"></div>
+      <div class="setting-box"><label>좌우 여백 (mm)</label><input id="sheetMarginX" type="number" min="0" step="0.5" value="5"></div>
+      <div class="setting-box"><label>상하 여백 (mm)</label><input id="sheetMarginY" type="number" min="0" step="0.5" value="5"></div>
+      <div class="setting-box"><label>가로 간격 (mm)</label><input id="sheetGapX" type="number" min="0" step="0.5" value="0"></div>
+      <div class="setting-box"><label>세로 간격 (mm)</label><input id="sheetGapY" type="number" min="0" step="0.5" value="0"></div>
+    </div>
+
     <div class="note" style="margin-top:10px;">
-      발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 저장 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.
-      총 출력 장수가 1회 최대 장수를 넘으면 PDF를 여러 개로 나눠 ZIP 파일로 내려받습니다.
+      발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 저장 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.<br>
+      ① 연속 출력은 라벨 1장당 PDF 1페이지로 생성합니다. ② 다열 라벨 용지는 A4 등 한 장의 용지에 여러 라벨을 가로·세로로 배치합니다.
     </div>
     <div class="progress" id="progress"></div>
 
@@ -167,6 +194,7 @@ function getLibrary(){
 }
 function reloadLibrary(){
   labelLibrary=getLibrary();
+restorePrintMethod();
   rematchRows();
   renderRows();
   setProgress(`저장 라벨 ${labelLibrary.length}개를 다시 불러왔습니다.`);
@@ -192,6 +220,67 @@ function sizeCode(cfg){
 }
 function setProgress(msg){el('progress').textContent=msg||''}
 
+function getPrintMethod(){
+  return document.querySelector('input[name="printMethod"]:checked')?.value || 'continuous';
+}
+function togglePrintMethod(){
+  const isSheet=getPrintMethod()==='sheet';
+  el('sheetSettings').classList.toggle('hidden',!isSheet);
+  try{localStorage.setItem('tradecodePrintMethod',getPrintMethod())}catch(e){}
+}
+function restorePrintMethod(){
+  try{
+    const saved=localStorage.getItem('tradecodePrintMethod');
+    if(saved){
+      const radio=document.querySelector(`input[name="printMethod"][value="${saved}"]`);
+      if(radio) radio.checked=true;
+    }
+  }catch(e){}
+  togglePrintMethod();
+}
+function getSheetSettings(labelCfg){
+  const paperW=Math.max(50,Number(el('sheetPaperWidth').value)||210);
+  const paperH=Math.max(50,Number(el('sheetPaperHeight').value)||297);
+  const cols=Math.max(1,Math.floor(Number(el('sheetColumns').value)||1));
+  const marginX=Math.max(0,Number(el('sheetMarginX').value)||0);
+  const marginY=Math.max(0,Number(el('sheetMarginY').value)||0);
+  const gapX=Math.max(0,Number(el('sheetGapX').value)||0);
+  const gapY=Math.max(0,Number(el('sheetGapY').value)||0);
+  const labelW=Number(labelCfg.labelWidth),labelH=Number(labelCfg.labelHeight);
+
+  const usedW=marginX*2 + cols*labelW + Math.max(0,cols-1)*gapX;
+  if(usedW>paperW+0.01){
+    throw new Error(`가로 배치 초과: 현재 설정은 ${usedW.toFixed(1)}mm가 필요하지만 용지는 ${paperW}mm입니다.`);
+  }
+
+  let rows=Math.floor(Number(el('sheetRows').value)||0);
+  if(rows<=0){
+    rows=Math.floor((paperH-marginY*2+gapY)/(labelH+gapY));
+  }
+  rows=Math.max(1,rows);
+
+  const usedH=marginY*2 + rows*labelH + Math.max(0,rows-1)*gapY;
+  if(usedH>paperH+0.01){
+    throw new Error(`세로 배치 초과: 현재 설정은 ${usedH.toFixed(1)}mm가 필요하지만 용지는 ${paperH}mm입니다.`);
+  }
+  return {paperW,paperH,cols,rows,marginX,marginY,gapX,gapY,labelW,labelH,capacity:cols*rows};
+}
+
+window.addEventListener('focus',()=>{
+  if(orderRows.length) reloadLibrary();
+});
+window.addEventListener('storage',e=>{
+  if(e.key===LABEL_LIBRARY_KEY && orderRows.length) reloadLibrary();
+});
+try{
+  if('BroadcastChannel' in window){
+    const labelChannel=new BroadcastChannel('tradecode-label-library');
+    labelChannel.onmessage=()=>{
+      if(orderRows.length) reloadLibrary();
+    };
+  }
+}catch(e){}
+
 el('orderFile').addEventListener('change',async e=>{
   const file=e.target.files?.[0];
   if(!file)return;
@@ -212,6 +301,7 @@ el('orderFile').addEventListener('change',async e=>{
       size:'missing'
     }));
     labelLibrary=getLibrary();
+restorePrintMethod();
     rematchRows();
     renderRows();
     setProgress(`"${file.name}"에서 ${orderRows.length}개 발주 품목을 불러왔습니다.`);
@@ -388,46 +478,95 @@ async function generateJobs(items,namePrefix){
     setProgress('라벨 이미지를 준비하는 중...');
     const maxPer=Math.max(1,Math.floor(Number(el('maxPerFile').value)||100));
     const imageCache=new Map();
+
     for(const it of items){
       const key=normBc(it.row.barcode)||norm(it.row.productNumber);
-      if(!imageCache.has(key))imageCache.set(key,await renderLabelPng(it.row.label));
+      if(!imageCache.has(key)) imageCache.set(key,await renderLabelPng(it.row.label));
     }
 
     const chunks=[];
     let current=[],count=0;
     for(const it of items){
-      let remain=it.qty;
+      let remain=Math.max(0,Math.floor(Number(it.qty)||0));
       while(remain>0){
         const room=maxPer-count;
         const take=Math.min(remain,room);
         current.push({row:it.row,qty:take});
-        count+=take;remain-=take;
-        if(count>=maxPer){chunks.push(current);current=[];count=0}
+        count+=take;
+        remain-=take;
+        if(count>=maxPer){
+          chunks.push(current);
+          current=[];
+          count=0;
+        }
       }
     }
-    if(current.length)chunks.push(current);
+    if(current.length) chunks.push(current);
 
+    const printMethod=getPrintMethod();
     const files=[];
+
     for(let ci=0;ci<chunks.length;ci++){
       const chunk=chunks[ci];
       const first=chunk[0].row.label;
-      const w=Number(first.labelWidth),h=Number(first.labelHeight),orientation=w>h?'landscape':'portrait';
+      const labelW=Number(first.labelWidth),labelH=Number(first.labelHeight);
       const {jsPDF}=window.jspdf;
-      const pdf=new jsPDF({orientation,unit:'mm',format:[w,h],compress:true});
-      let page=0;
+
       for(const it of chunk){
-        const cfg=it.row.label;
-        const cw=Number(cfg.labelWidth),ch=Number(cfg.labelHeight);
-        if(Math.abs(cw-w)>.2||Math.abs(ch-h)>.2)throw new Error('mixed label sizes');
-        const key=normBc(it.row.barcode)||norm(it.row.productNumber);
-        const img=imageCache.get(key);
-        for(let i=0;i<it.qty;i++){
-          if(page>0)pdf.addPage([w,h],orientation);
-          pdf.addImage(img,'PNG',0,0,w,h);
-          page++;
+        const cw=Number(it.row.label.labelWidth),ch=Number(it.row.label.labelHeight);
+        if(Math.abs(cw-labelW)>.2||Math.abs(ch-labelH)>.2){
+          throw new Error('서로 다른 라벨 규격은 같은 PDF에 넣을 수 없습니다.');
         }
       }
-      files.push({name:`${safeName(namePrefix)}-${String(ci+1).padStart(2,'0')}.pdf`,blob:pdf.output('blob')});
+
+      let pdf;
+
+      if(printMethod==='continuous'){
+        const orientation=labelW>labelH?'landscape':'portrait';
+        pdf=new jsPDF({orientation,unit:'mm',format:[labelW,labelH],compress:true});
+        let page=0;
+
+        for(const it of chunk){
+          const key=normBc(it.row.barcode)||norm(it.row.productNumber);
+          const img=imageCache.get(key);
+          for(let i=0;i<it.qty;i++){
+            if(page>0) pdf.addPage([labelW,labelH],orientation);
+            pdf.addImage(img,'PNG',0,0,labelW,labelH);
+            page++;
+          }
+        }
+      }else{
+        const sheet=getSheetSettings(first);
+        const orientation=sheet.paperW>sheet.paperH?'landscape':'portrait';
+        pdf=new jsPDF({orientation,unit:'mm',format:[sheet.paperW,sheet.paperH],compress:true});
+
+        let slot=0;
+        let page=0;
+        for(const it of chunk){
+          const key=normBc(it.row.barcode)||norm(it.row.productNumber);
+          const img=imageCache.get(key);
+
+          for(let i=0;i<it.qty;i++){
+            if(slot>=sheet.capacity){
+              pdf.addPage([sheet.paperW,sheet.paperH],orientation);
+              slot=0;
+              page++;
+            }
+            const col=slot%sheet.cols;
+            const row=Math.floor(slot/sheet.cols);
+            const x=sheet.marginX + col*(sheet.labelW+sheet.gapX);
+            const y=sheet.marginY + row*(sheet.labelH+sheet.gapY);
+            pdf.addImage(img,'PNG',x,y,sheet.labelW,sheet.labelH);
+            slot++;
+          }
+        }
+      }
+
+      const methodName=printMethod==='continuous'?'1열연속':'다열라벨용지';
+      files.push({
+        name:`${safeName(namePrefix)}-${methodName}-${String(ci+1).padStart(2,'0')}.pdf`,
+        blob:pdf.output('blob')
+      });
       setProgress(`PDF 생성 중... ${ci+1}/${chunks.length}`);
     }
 
@@ -440,17 +579,23 @@ async function generateJobs(items,namePrefix){
       const blob=await zip.generateAsync({type:'blob'});
       downloadBlob(blob,`${safeName(namePrefix)}-분할출력.zip`);
     }
-    setProgress(`✓ 완료 · 총 ${items.reduce((s,x)=>s+x.qty,0).toLocaleString()}장 / ${files.length}개 파일`);
+
+    const total=items.reduce((s,x)=>s+Number(x.qty||0),0);
+    setProgress(`✓ 완료 · 총 ${total.toLocaleString()}장 / ${files.length}개 파일 · ${printMethod==='continuous'?'1열 연속':'다열 라벨 용지'} 방식`);
   }catch(err){
-    console.error(err);alert('출력용 PDF 생성 중 오류가 발생했습니다.');setProgress('');
+    console.error(err);
+    alert(err?.message || '출력용 PDF 생성 중 오류가 발생했습니다.');
+    setProgress('');
   }
 }
+
 function downloadBlob(blob,name){
   const url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
 labelLibrary=getLibrary();
+restorePrintMethod();
 </script>
 </body>
 </html>
