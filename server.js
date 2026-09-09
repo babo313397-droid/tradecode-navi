@@ -32,7 +32,7 @@ const { getExchangeRate } = require('./lib/exchangeRate');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '20kb' })); // 댓글 등 POST/PUT/DELETE 본문(JSON) 파싱용
+app.use(express.json({ limit: '1mb' })); // 댓글 등 POST/PUT/DELETE 본문(JSON) 파싱용
 app.use(express.static(path.join(__dirname)));
 
 const PORT = process.env.PORT || 4000;
@@ -40,6 +40,17 @@ const UNIPASS_KEY = process.env.UNIPASS_API_KEY || '';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || ''; // 선택: AI 상품명 분석 기능용
 const SHARED_LABEL_EDIT_KEY = String(process.env.SHARED_LABEL_EDIT_KEY || '').trim();
 const SHARED_LABEL_FILE = path.join(__dirname, 'data', 'shared-labels.json');
+
+// 공용 라벨 영구 저장소 (Supabase)
+// 2026 기준 신규 프로젝트는 SUPABASE_SECRET_KEY(sb_secret_...) 사용 권장.
+// 기존 service_role 키도 폴백으로 지원한다.
+const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+const SUPABASE_SECRET_KEY = String(
+  process.env.SUPABASE_SECRET_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  ''
+).trim();
+const SHARED_LABEL_STORAGE = (SUPABASE_URL && SUPABASE_SECRET_KEY) ? 'supabase' : 'local';
 
 const MAX_QUERY_LENGTH = 100; // 상품명 입력 길이 제한 (남용/이상 입력 방지)
 const analyzeProductLimiter = createRateLimiter({ windowMs: 60000, max: 10 }); // 분당 10회/IP
@@ -540,10 +551,9 @@ app.delete('/api/comments/:id', commentWriteLimiter, (req, res) => {
 
 // =========================================================
 // 공용 바코드 라벨 보관함
-// 로그인 없이 모든 접속자가 같은 라벨 목록을 사용한다.
-// 저장 위치: data/shared-labels.json
-// 선택 보안: Render 환경변수 SHARED_LABEL_EDIT_KEY를 설정하면
-// 저장/수정/삭제 시 공용 관리코드가 필요하다.
+// - SUPABASE_URL + SUPABASE_SECRET_KEY가 있으면 Supabase 영구 저장
+// - 환경변수가 없으면 기존 data/shared-labels.json 임시 저장으로 폴백
+// - 프론트 API 주소는 동일하므로 화면 코드는 그대로 사용 가능
 // =========================================================
 
 function ensureSharedLabelFile() {
@@ -554,18 +564,18 @@ function ensureSharedLabelFile() {
   }
 }
 
-function readSharedLabels() {
+function readLocalSharedLabels() {
   ensureSharedLabelFile();
   try {
     const parsed = JSON.parse(fs.readFileSync(SHARED_LABEL_FILE, 'utf8') || '[]');
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
-    console.error('공용 라벨 파일 읽기 실패:', err);
+    console.error('공용 라벨 로컬 파일 읽기 실패:', err);
     return [];
   }
 }
 
-function writeSharedLabels(labels) {
+function writeLocalSharedLabels(labels) {
   ensureSharedLabelFile();
   const temp = `${SHARED_LABEL_FILE}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(labels, null, 2), 'utf8');
@@ -612,6 +622,192 @@ function sanitizeSharedLabel(input, existing = null) {
   };
 }
 
+function labelToDbRow(label) {
+  return {
+    id: label.id,
+    product_number: label.productNumber || '',
+    barcode: label.barcode || '',
+    product_name: label.productName || '',
+    option_text: label.optionText || '',
+    material: label.material || '',
+    importer: label.importer || '',
+    address: label.address || '',
+    phone: label.phone || '',
+    warning: label.warning || '',
+    age: label.age || '',
+    country: label.country || '',
+    label_width: Number(label.labelWidth) || 50,
+    label_height: Number(label.labelHeight) || 60,
+    title_font: Number(label.titleFont) || 18,
+    body_font: Number(label.bodyFont) || 14,
+    barcode_height: Number(label.barcodeHeight) || 16,
+    barcode_text_font: Number(label.barcodeTextFont) || 12,
+    made_in_font: Number(label.madeInFont) || 8,
+    created_at: label.createdAt || new Date().toISOString(),
+    updated_at: label.updatedAt || new Date().toISOString()
+  };
+}
+
+function dbRowToLabel(row) {
+  return {
+    id: row.id,
+    productNumber: row.product_number || '',
+    barcode: row.barcode || '',
+    productName: row.product_name || '',
+    optionText: row.option_text || '',
+    material: row.material || '',
+    importer: row.importer || '',
+    address: row.address || '',
+    phone: row.phone || '',
+    warning: row.warning || '',
+    age: row.age || '',
+    country: row.country || '',
+    labelWidth: Number(row.label_width) || 50,
+    labelHeight: Number(row.label_height) || 60,
+    titleFont: Number(row.title_font) || 18,
+    bodyFont: Number(row.body_font) || 14,
+    barcodeHeight: Number(row.barcode_height) || 16,
+    barcodeTextFont: Number(row.barcode_text_font) || 12,
+    madeInFont: Number(row.made_in_font) || 8,
+    createdAt: row.created_at || '',
+    updatedAt: row.updated_at || ''
+  };
+}
+
+async function supabaseRest(resource, options = {}) {
+  if (SHARED_LABEL_STORAGE !== 'supabase') {
+    throw new Error('Supabase 환경변수가 설정되지 않았습니다.');
+  }
+
+  const url = `${SUPABASE_URL}/rest/v1/${resource}`;
+  const headers = {
+    apikey: SUPABASE_SECRET_KEY,
+    Accept: 'application/json',
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    ...(options.headers || {})
+  };
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+    signal: AbortSignal.timeout(15000)
+  });
+
+  const text = await response.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); }
+    catch { data = text; }
+  }
+
+  if (!response.ok) {
+    const detail = typeof data === 'object'
+      ? (data?.message || data?.details || JSON.stringify(data))
+      : String(data || '');
+    throw new Error(`Supabase ${response.status}: ${detail}`);
+  }
+
+  return data;
+}
+
+async function readSharedLabels() {
+  if (SHARED_LABEL_STORAGE === 'supabase') {
+    const rows = await supabaseRest(
+      'shared_labels?select=*&order=updated_at.desc'
+    );
+    return Array.isArray(rows) ? rows.map(dbRowToLabel) : [];
+  }
+
+  return readLocalSharedLabels().sort(
+    (a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
+  );
+}
+
+async function findExistingSharedLabel(input, labels = null) {
+  const list = labels || await readSharedLabels();
+  const id = cleanSharedText(input.id, 120);
+  const barcode = cleanSharedText(input.barcode, 80).toUpperCase();
+  const productNumber = cleanSharedText(input.productNumber, 80);
+
+  if (id) {
+    const found = list.find(x => String(x.id) === id);
+    if (found) return found;
+  }
+  if (barcode) {
+    const found = list.find(
+      x => String(x.barcode || '').trim().toUpperCase() === barcode
+    );
+    if (found) return found;
+  }
+  if (productNumber) {
+    const found = list.find(
+      x => String(x.productNumber || '').trim() === productNumber
+    );
+    if (found) return found;
+  }
+  return null;
+}
+
+async function saveSharedLabel(input) {
+  const all = await readSharedLabels();
+  const existing = await findExistingSharedLabel(input, all);
+  const saved = sanitizeSharedLabel(input, existing);
+
+  if (SHARED_LABEL_STORAGE === 'supabase') {
+    const row = labelToDbRow(saved);
+
+    if (existing?.id) {
+      const rows = await supabaseRest(
+        `shared_labels?id=eq.${encodeURIComponent(existing.id)}`,
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify(row)
+        }
+      );
+      return Array.isArray(rows) && rows[0] ? dbRowToLabel(rows[0]) : saved;
+    }
+
+    const rows = await supabaseRest(
+      'shared_labels',
+      {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(row)
+      }
+    );
+    return Array.isArray(rows) && rows[0] ? dbRowToLabel(rows[0]) : saved;
+  }
+
+  const idx = all.findIndex(x => x.id === existing?.id);
+  if (idx >= 0) all[idx] = saved;
+  else all.push(saved);
+  writeLocalSharedLabels(all);
+  return saved;
+}
+
+async function deleteSharedLabel(id) {
+  const cleanId = cleanSharedText(id, 120);
+  if (!cleanId) return false;
+
+  if (SHARED_LABEL_STORAGE === 'supabase') {
+    const rows = await supabaseRest(
+      `shared_labels?id=eq.${encodeURIComponent(cleanId)}`,
+      {
+        method: 'DELETE',
+        headers: { Prefer: 'return=representation' }
+      }
+    );
+    return Array.isArray(rows) && rows.length > 0;
+  }
+
+  const labels = readLocalSharedLabels();
+  const next = labels.filter(x => String(x.id) !== cleanId);
+  if (next.length === labels.length) return false;
+  writeLocalSharedLabels(next);
+  return true;
+}
+
 function checkSharedLabelEditKey(req, res, next) {
   if (!SHARED_LABEL_EDIT_KEY) return next();
   const key = String(req.get('x-label-edit-key') || '');
@@ -625,15 +821,36 @@ function checkSharedLabelEditKey(req, res, next) {
   next();
 }
 
-// 전체 공용 라벨 목록
-app.get('/api/shared-labels', (req, res) => {
+// 저장소 상태 확인
+app.get('/api/shared-labels-status', async (req, res) => {
   try {
-    const labels = readSharedLabels().sort(
-      (a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
-    );
+    const labels = await readSharedLabels();
+    res.json({
+      ok: true,
+      storage: SHARED_LABEL_STORAGE,
+      permanent: SHARED_LABEL_STORAGE === 'supabase',
+      count: labels.length,
+      editKeyRequired: !!SHARED_LABEL_EDIT_KEY
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      storage: SHARED_LABEL_STORAGE,
+      permanent: false,
+      error: err.message
+    });
+  }
+});
+
+// 전체 공용 라벨 목록
+app.get('/api/shared-labels', async (req, res) => {
+  try {
+    const labels = await readSharedLabels();
     res.json({
       ok: true,
       labels,
+      storage: SHARED_LABEL_STORAGE,
+      permanent: SHARED_LABEL_STORAGE === 'supabase',
       editKeyRequired: !!SHARED_LABEL_EDIT_KEY
     });
   } catch (err) {
@@ -641,12 +858,12 @@ app.get('/api/shared-labels', (req, res) => {
   }
 });
 
-// 공용 라벨 저장/수정(바코드 우선, 상품번호 보조 매칭)
+// 공용 라벨 저장/수정
 app.post(
   '/api/shared-labels',
   sharedLabelWriteLimiter,
   checkSharedLabelEditKey,
-  (req, res) => {
+  async (req, res) => {
     try {
       const input = req.body || {};
       const barcode = cleanSharedText(input.barcode, 80).toUpperCase();
@@ -659,31 +876,16 @@ app.post(
         });
       }
 
-      const labels = readSharedLabels();
-      let idx = -1;
+      const before = await findExistingSharedLabel(input);
+      const saved = await saveSharedLabel(input);
+      const labels = await readSharedLabels();
 
-      if (input.id) {
-        idx = labels.findIndex(x => String(x.id) === String(input.id));
-      }
-      if (idx < 0 && barcode) {
-        idx = labels.findIndex(
-          x => String(x.barcode || '').trim().toUpperCase() === barcode
-        );
-      }
-      if (idx < 0 && productNumber) {
-        idx = labels.findIndex(
-          x => String(x.productNumber || '').trim() === productNumber
-        );
-      }
-
-      const existing = idx >= 0 ? labels[idx] : null;
-      const saved = sanitizeSharedLabel(input, existing);
-
-      if (idx >= 0) labels[idx] = saved;
-      else labels.push(saved);
-
-      writeSharedLabels(labels);
-      res.status(existing ? 200 : 201).json({ ok: true, label: saved, count: labels.length });
+      res.status(before ? 200 : 201).json({
+        ok: true,
+        label: saved,
+        count: labels.length,
+        storage: SHARED_LABEL_STORAGE
+      });
     } catch (err) {
       res.status(500).json({ ok: false, error: `공용 라벨 저장 실패: ${err.message}` });
     }
@@ -695,18 +897,19 @@ app.delete(
   '/api/shared-labels/:id',
   sharedLabelWriteLimiter,
   checkSharedLabelEditKey,
-  (req, res) => {
+  async (req, res) => {
     try {
-      const labels = readSharedLabels();
-      const before = labels.length;
-      const next = labels.filter(x => String(x.id) !== String(req.params.id));
+      const deleted = await deleteSharedLabel(req.params.id);
 
-      if (next.length === before) {
-        return res.status(404).json({ ok: false, error: '삭제할 라벨을 찾지 못했습니다.' });
+      if (!deleted) {
+        return res.status(404).json({
+          ok: false,
+          error: '삭제할 라벨을 찾지 못했습니다.'
+        });
       }
 
-      writeSharedLabels(next);
-      res.json({ ok: true, count: next.length });
+      const labels = await readSharedLabels();
+      res.json({ ok: true, count: labels.length, storage: SHARED_LABEL_STORAGE });
     } catch (err) {
       res.status(500).json({ ok: false, error: `공용 라벨 삭제 실패: ${err.message}` });
     }
@@ -714,16 +917,95 @@ app.delete(
 );
 
 // 공용 라벨 JSON 백업 다운로드
-app.get('/api/shared-labels-backup', (req, res) => {
+app.get('/api/shared-labels-backup', async (req, res) => {
   try {
-    const labels = readSharedLabels();
+    const labels = await readSharedLabels();
     const stamp = new Date().toISOString().slice(0, 10);
-    res.setHeader('Content-Disposition', `attachment; filename="tradecode-shared-labels-${stamp}.json"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="tradecode-shared-labels-${stamp}.json"`
+    );
     res.type('application/json').send(JSON.stringify(labels, null, 2));
   } catch (err) {
     res.status(500).json({ ok: false, error: `공용 라벨 백업 실패: ${err.message}` });
   }
 });
+
+// 공용 라벨 JSON 백업 복원
+app.post(
+  '/api/shared-labels-restore',
+  sharedLabelWriteLimiter,
+  checkSharedLabelEditKey,
+  async (req, res) => {
+    try {
+      const labels = Array.isArray(req.body)
+        ? req.body
+        : (Array.isArray(req.body?.labels) ? req.body.labels : []);
+
+      if (!labels.length) {
+        return res.status(400).json({
+          ok: false,
+          error: '복원할 라벨 백업 데이터가 없습니다.'
+        });
+      }
+
+      if (labels.length > 3000) {
+        return res.status(400).json({
+          ok: false,
+          error: '한 번에 복원할 수 있는 라벨은 최대 3,000개입니다.'
+        });
+      }
+
+      let savedCount = 0;
+      for (const item of labels) {
+        if (!item || (!item.barcode && !item.productNumber)) continue;
+        await saveSharedLabel(item);
+        savedCount++;
+      }
+
+      const all = await readSharedLabels();
+      res.json({
+        ok: true,
+        restored: savedCount,
+        count: all.length,
+        storage: SHARED_LABEL_STORAGE
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: `공용 라벨 백업 복원 실패: ${err.message}`
+      });
+    }
+  }
+);
+
+// 구 Render 임시 JSON에 데이터가 있고 Supabase가 비어 있는 경우 자동 1회 이전.
+// 같은 인스턴스에서 전환할 때 데이터 유실을 줄이기 위한 안전장치다.
+async function migrateLocalSharedLabelsToSupabase() {
+  if (SHARED_LABEL_STORAGE !== 'supabase') return;
+
+  try {
+    const local = readLocalSharedLabels();
+    if (!local.length) return;
+
+    const remote = await readSharedLabels();
+    let migrated = 0;
+
+    for (const item of local) {
+      const existing = await findExistingSharedLabel(item, remote);
+      if (existing) continue;
+      await saveSharedLabel(item);
+      remote.push(item);
+      migrated++;
+    }
+
+    if (migrated) {
+      console.log(`[공용 라벨] 로컬 JSON → Supabase 자동 이전: ${migrated}개`);
+    }
+  } catch (err) {
+    console.error('[공용 라벨] Supabase 자동 이전 실패:', err.message);
+  }
+}
 
 
 // GET /api/exchange-rate?base=CNY&to=KRW   (키/가입 불필요 - 로켓배송 계산기의 환율 자동 입력용)
@@ -842,4 +1124,8 @@ app.get('/barcode-label', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`TradeCode Navi 백엔드 프록시 실행 중: http://localhost:${PORT}`);
   console.log(`인증키 설정 여부: ${UNIPASS_KEY ? 'O' : 'X (미설정)'}`);
+  console.log(`공용 라벨 저장소: ${SHARED_LABEL_STORAGE === 'supabase' ? 'Supabase 영구 저장' : '로컬 임시 저장'}`);
+  if (SHARED_LABEL_STORAGE === 'supabase') {
+    migrateLocalSharedLabelsToSupabase();
+  }
 });
