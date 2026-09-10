@@ -156,7 +156,7 @@ td.name{min-width:310px}
     <div class="note" style="margin-top:10px;">
       발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 공용 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.<br>
       ① 연속 출력은 라벨 1장씩 이어서 출력합니다. ② 다열 라벨 용지는 A4 등 한 장의 용지에 여러 라벨을 가로·세로로 배치합니다. PDF 버튼은 파일 저장, 프린터 버튼은 브라우저 인쇄창을 바로 엽니다.<br>
-      엑셀의 <b>발주수량 셀</b>이 노란색/빨간색이면 웹 표에도 같은 의미의 색으로 표시합니다. <b>현재 출력매수</b>는 같은 발주 파일을 다시 불러와도 이 브라우저에서 기억하며, 발주수량 이상 출력되면 초록색으로 표시합니다.
+      엑셀의 <b>발주수량 셀 실제 채우기색</b>을 직접 읽어 노란색/빨간색이면 웹 표에도 표시합니다. 초록색은 기존처럼 흰색으로 표시합니다. <b>현재 출력매수</b>는 같은 발주 파일을 다시 불러와도 이 브라우저에서 기억하며, 발주수량 이상 출력되면 초록색으로 표시합니다.
     </div>
     <div class="progress" id="progress"></div>
 
@@ -340,6 +340,126 @@ function classifyExcelFill(cell){
     if([5,13].includes(idx))return 'yellow';
   }
   return '';
+}
+
+
+function rawColorClass(colorEl){
+  if(!colorEl)return '';
+
+  const rgb=colorEl.getAttribute('rgb');
+  if(rgb){
+    const cls=rgbToHueClass(rgb);
+    if(cls)return cls;
+  }
+
+  const indexed=Number(colorEl.getAttribute('indexed'));
+  if([2,10].includes(indexed))return 'red';
+  if([5,13].includes(indexed))return 'yellow';
+
+  return '';
+}
+
+function xmlChildrenByLocalName(parent,name){
+  if(!parent)return [];
+  return Array.from(parent.children||[]).filter(x=>x.localName===name);
+}
+
+function firstXmlChild(parent,name){
+  return xmlChildrenByLocalName(parent,name)[0]||null;
+}
+
+async function extractRawXlsxFillMap(buf){
+  const result={};
+  if(typeof JSZip==='undefined')return result;
+
+  try{
+    const zip=await JSZip.loadAsync(buf);
+
+    const stylesFile=zip.file('xl/styles.xml');
+    const workbookFile=zip.file('xl/workbook.xml');
+    const relsFile=zip.file('xl/_rels/workbook.xml.rels');
+
+    if(!stylesFile||!workbookFile||!relsFile)return result;
+
+    const parser=new DOMParser();
+    const stylesDoc=parser.parseFromString(await stylesFile.async('string'),'application/xml');
+    const workbookDoc=parser.parseFromString(await workbookFile.async('string'),'application/xml');
+    const relsDoc=parser.parseFromString(await relsFile.async('string'),'application/xml');
+
+    // fillId -> yellow / red / ''
+    const fillsNode=Array.from(stylesDoc.getElementsByTagName('*')).find(x=>x.localName==='fills');
+    const fillNodes=fillsNode?xmlChildrenByLocalName(fillsNode,'fill'):[];
+    const fillClasses=fillNodes.map(fill=>{
+      const pattern=firstXmlChild(fill,'patternFill');
+      if(!pattern)return '';
+
+      const fg=firstXmlChild(pattern,'fgColor');
+      const bg=firstXmlChild(pattern,'bgColor');
+
+      // 실사용 발주현황 파일은 fgColor에 FFFFEB9C(노랑), FFC6EFCE(초록) 등이 저장됨.
+      // 초록은 웹에서 흰색으로 유지하므로 yellow/red만 반환.
+      return rawColorClass(fg)||rawColorClass(bg)||'';
+    });
+
+    // style index(s) -> fill class
+    const cellXfsNode=Array.from(stylesDoc.getElementsByTagName('*')).find(x=>x.localName==='cellXfs');
+    const xfNodes=cellXfsNode?xmlChildrenByLocalName(cellXfsNode,'xf'):[];
+    const styleClasses=xfNodes.map(xf=>{
+      const fillId=Number(xf.getAttribute('fillId')||0);
+      return fillClasses[fillId]||'';
+    });
+
+    // relationship Id -> worksheet XML path
+    const relMap={};
+    Array.from(relsDoc.getElementsByTagName('*'))
+      .filter(x=>x.localName==='Relationship')
+      .forEach(rel=>{
+        const id=rel.getAttribute('Id');
+        let target=rel.getAttribute('Target')||'';
+        if(!id||!target)return;
+        target=target.replace(/^\/+/,'');
+        if(!target.startsWith('xl/'))target='xl/'+target.replace(/^\.\//,'');
+        relMap[id]=target;
+      });
+
+    const sheets=Array.from(workbookDoc.getElementsByTagName('*')).filter(x=>x.localName==='sheet');
+
+    for(const sheet of sheets){
+      const sheetName=sheet.getAttribute('name')||'';
+      let rid=sheet.getAttribute('r:id')||'';
+
+      if(!rid){
+        for(const attr of Array.from(sheet.attributes||[])){
+          if(attr.localName==='id'){
+            rid=attr.value;
+            break;
+          }
+        }
+      }
+
+      const path=relMap[rid];
+      const file=path?zip.file(path):null;
+      if(!sheetName||!file)continue;
+
+      const sheetDoc=parser.parseFromString(await file.async('string'),'application/xml');
+      const map={};
+
+      Array.from(sheetDoc.getElementsByTagName('*'))
+        .filter(x=>x.localName==='c')
+        .forEach(cell=>{
+          const ref=cell.getAttribute('r')||'';
+          const styleIndex=Number(cell.getAttribute('s')||0);
+          const cls=styleClasses[styleIndex]||'';
+          if(ref&&cls)map[ref]=cls;
+        });
+
+      result[sheetName]=map;
+    }
+  }catch(err){
+    console.warn('XLSX 원본 셀 색상 판독 실패:',err);
+  }
+
+  return result;
 }
 
 async function reloadLibrary(){
@@ -588,7 +708,8 @@ el('orderFile').addEventListener('change',async e=>{
     setProgress('엑셀을 읽는 중...');
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array',cellStyles:true});
-    const parsed=parseWorkbook(wb);
+    const rawFillMap=await extractRawXlsxFillMap(buf);
+    const parsed=parseWorkbook(wb,rawFillMap);
     currentOrderProgressKey=await makeOrderProgressKey(file,buf);
     const savedPrintProgress=loadPrintProgress();
 
@@ -620,7 +741,7 @@ el('orderFile').addEventListener('change',async e=>{
   }
 });
 
-function parseWorkbook(wb){
+function parseWorkbook(wb,rawFillMap={}){
   const sheetNames=['상품목록',...wb.SheetNames.filter(n=>n!=='상품목록')];
   for(const name of sheetNames){
     const ws=wb.Sheets[name];
@@ -639,8 +760,12 @@ function parseWorkbook(wb){
           const pn=norm(row[pIdx]),bc=norm(row[bIdx]),nm=norm(row[nIdx]),qty=row[qIdx];
           if(!pn&&!bc&&!nm)continue;
           if(!(Number(qty)>0))continue;
-          const qtyCell=ws[XLSX.utils.encode_cell({r:i,c:qIdx})];
-          const orderQtyColor=classifyExcelFill(qtyCell);
+          const qtyRef=XLSX.utils.encode_cell({r:i,c:qIdx});
+          const qtyCell=ws[qtyRef];
+          const orderQtyColor=
+            rawFillMap?.[name]?.[qtyRef] ||
+            classifyExcelFill(qtyCell) ||
+            '';
           out.push({
             productNumber:pn,
             barcode:bc,
