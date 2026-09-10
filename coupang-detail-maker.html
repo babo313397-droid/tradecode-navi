@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>쿠팡 상세페이지 자동 제작기 | TradeCode Navi</title>
+<meta name="description" content="1688 PDF·이미지에서 상품정보와 중국어 문구를 추출해 한국어 쿠팡 상세페이지 초안을 만들고 직접 편집하는 도구">
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<style>
+:root{
+  --navy:#0b2f4f;--navy2:#08253f;--gold:#d6a52b;--bg:#f3f6fa;--card:#fff;
+  --line:#d8e1ea;--muted:#677789;--text:#152434;--good:#18864b;--bad:#c63c3c;--warn:#b7791f;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:258px;background:linear-gradient(180deg,var(--navy2),var(--navy));padding:22px 15px;overflow:auto;z-index:10}
+.side-brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;font-size:17px;margin-bottom:18px}
+.logo-badge{width:38px;height:38px;border-radius:10px;background:var(--gold);color:#08253f;display:grid;place-items:center;font-weight:1000}
+.side-brand small{font-size:11px;font-weight:500;color:#c8d4df}
+.nav-section-label{font-size:10.5px;color:#8fa6ba;margin:14px 8px 7px;font-weight:900;letter-spacing:.08em}
+.nav-btn{display:block;width:100%;text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);color:#e8eef4;border-radius:10px;padding:12px 12px;font-size:13px;font-weight:800;margin-bottom:7px;text-decoration:none}
+.nav-btn:hover{background:rgba(255,255,255,.12)}
+.nav-btn.active{background:var(--gold);color:#08253f;border-color:var(--gold)}
+.main{margin-left:258px;padding:24px;min-width:0}
+.page-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:16px}
+.page-head h1{margin:0 0 7px;font-size:27px;color:#062c4e}
+.page-head p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+.badge{display:inline-flex;align-items:center;border-radius:999px;padding:7px 10px;font-size:11px;font-weight:900;background:#eaf4ff;color:#145b9a}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 8px 24px rgba(20,48,70,.04);margin-bottom:15px}
+.card h2{font-size:18px;margin:0 0 12px;color:#082d4d}
+.sub{font-size:12px;color:var(--muted);line-height:1.55}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+label.field{display:block;font-size:12px;font-weight:900;color:#2a3a49}
+.field input,.field textarea,.field select{width:100%;margin-top:6px;border:1px solid #cad5df;border-radius:9px;padding:10px;background:#fff}
+.field textarea{min-height:78px;resize:vertical;line-height:1.5}
+.btn{border:1px solid transparent;border-radius:9px;padding:10px 13px;font-weight:900;font-size:12.5px}
+.btn-primary{background:#0a3a64;color:#fff}
+.btn-gold{background:var(--gold);color:#08253f}
+.btn-secondary{background:#eef3f8;color:#193650;border-color:#d8e1ea}
+.btn-ghost{background:#fff;color:#30465a;border-color:#d2dce5}
+.btn-danger{background:#fff0f0;color:#a92323;border-color:#f0caca}
+.btn-sm{padding:7px 9px;font-size:11.5px}
+.button-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.dropzone{border:2px dashed #9fb7cd;border-radius:14px;background:#f7fbff;padding:28px 16px;text-align:center;transition:.15s}
+.dropzone.drag{border-color:#176bb1;background:#edf7ff}
+.dropzone .big{font-size:28px;margin-bottom:7px}
+.dropzone strong{display:block;color:#0d3658;margin-bottom:5px}
+.dropzone input{display:none}
+.file-pill{display:inline-flex;gap:6px;align-items:center;background:#eef5fb;border:1px solid #d8e5ef;border-radius:999px;padding:6px 10px;font-size:11.5px;font-weight:800;margin-top:8px}
+.status{margin-top:10px;padding:10px 12px;border-radius:9px;background:#f3f6f9;color:#526476;font-size:12px;font-weight:800;min-height:36px}
+.status.ok{background:#eaf8f0;color:#177747}.status.bad{background:#fff0f0;color:#b52d2d}.status.warn{background:#fff8e8;color:#94600d}
+.options-table{width:100%;border-collapse:collapse;margin-top:9px}
+.options-table th,.options-table td{border-bottom:1px solid #edf1f4;padding:7px}
+.options-table th{font-size:11px;color:#627385;text-align:left;background:#f7f9fb}
+.options-table input{width:100%;border:1px solid #cdd7e0;border-radius:7px;padding:8px}
+.pages-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
+.page-card{border:1px solid #d8e1ea;border-radius:10px;overflow:hidden;background:#fff}
+.page-thumb{height:210px;background:#eef2f6;display:grid;place-items:center;overflow:hidden}
+.page-thumb img{width:100%;height:100%;object-fit:contain;background:#fff}
+.page-meta{padding:9px}
+.page-top{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.page-no{font-weight:900;font-size:12px}
+.page-meta select{width:100%;margin-top:7px;border:1px solid #ccd7e0;border-radius:7px;padding:7px;font-size:11px}
+.page-meta label{display:flex;gap:5px;align-items:center;font-size:11px;font-weight:800;margin-top:7px}
+.page-reason{font-size:10.5px;color:#68798a;margin-top:6px;line-height:1.4;min-height:29px}
+.workspace{display:grid;grid-template-columns:minmax(430px,.92fr) minmax(480px,1.08fr);gap:14px;align-items:start}
+.sticky{position:sticky;top:14px}
+.section-card{border:1px solid #d8e1ea;border-radius:11px;background:#fff;margin-bottom:9px;overflow:hidden}
+.section-head{display:flex;justify-content:space-between;gap:8px;align-items:center;background:#f6f8fa;padding:9px 10px;border-bottom:1px solid #e4e9ee}
+.section-head strong{font-size:12px}
+.section-body{padding:10px}
+.section-body textarea,.section-body input,.section-body select{width:100%;border:1px solid #cad5df;border-radius:8px;padding:8px;margin-top:5px}
+.section-body textarea{min-height:64px;resize:vertical}
+.section-row{display:grid;grid-template-columns:1fr 125px;gap:8px}
+.original{margin-top:8px;border-left:3px solid #ccd7e2;padding:7px 9px;background:#f8fafc;color:#68798a;font-size:10.5px;line-height:1.5;max-height:80px;overflow:auto}
+.preview-wrap{background:#e9eef3;border-radius:12px;padding:13px;overflow:auto}
+.preview-scale{width:800px;max-width:none;transform-origin:top left;background:#fff}
+.detail-preview{width:800px;background:#fff;color:#111;overflow:hidden}
+.hero-block{padding:56px 50px 46px;text-align:center;background:linear-gradient(180deg,#f8fafc,#fff)}
+.hero-block .eyebrow{font-size:18px;font-weight:900;color:#627385;margin-bottom:14px}
+.hero-block h2{font-size:40px;line-height:1.25;margin:0;color:#111;word-break:keep-all}
+.hero-block .opt{margin-top:18px;font-size:18px;color:#4c5c68;font-weight:700}
+.detail-section{padding:44px 48px;border-top:1px solid #eee;text-align:center}
+.detail-section h3{font-size:30px;line-height:1.3;margin:0 0 16px;word-break:keep-all}
+.detail-section p{font-size:18px;line-height:1.65;margin:0 auto;max-width:650px;white-space:pre-wrap;word-break:keep-all}
+.detail-img{width:100%;display:block;max-height:760px;object-fit:contain;background:#f7f7f7;margin:0 auto 24px}
+.info-grid{display:grid;grid-template-columns:160px 1fr;max-width:630px;margin:0 auto;text-align:left;border-top:2px solid #111}
+.info-grid div{padding:12px 14px;border-bottom:1px solid #ddd;font-size:16px}
+.info-grid div:nth-child(odd){font-weight:900;background:#f6f6f6}
+.footer-note{padding:28px 48px 40px;text-align:center;font-size:13px;color:#666;line-height:1.6}
+.conflict{border:1px solid #f0ca82;background:#fff8e8;color:#7a520d;border-radius:9px;padding:9px 11px;margin-bottom:7px;font-size:11.5px}
+.empty{text-align:center;color:#758596;padding:38px 10px;font-size:12px}
+.project-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.notice{background:#fff8e8;border:1px solid #eed39e;color:#765216;border-radius:10px;padding:10px 12px;font-size:11.5px;line-height:1.55}
+.hidden{display:none!important}
+@media(max-width:1180px){
+ .workspace{grid-template-columns:1fr}.sticky{position:static}.preview-wrap{max-height:none}
+ .pages-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:820px){
+ .sidebar{position:static;width:auto;display:flex;gap:6px;overflow:auto;padding:10px}
+ .side-brand,.nav-section-label{display:none}.nav-btn{width:auto;white-space:nowrap;margin:0}
+ .main{margin-left:0;padding:12px}.grid2,.grid3{grid-template-columns:1fr}
+ .pages-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .page-head{display:block}.badge{margin-top:8px}
+}
+</style>
+</head>
+<body>
+<nav class="sidebar">
+  <div class="side-brand"><div class="logo-badge">TC</div><div>TradeCode Navi<br><small>기능 목록</small></div></div>
+  <div class="nav-section-label">도구</div>
+  <a class="nav-btn" href="/">📊 TradeCode Navi 관세율 계산</a>
+  <a class="nav-btn" href="/coupang-margin">🚀 로켓배송 원가&amp;마진률 계산</a>
+  <a class="nav-btn" href="/logistics-cost">🚚 물류비 계산기</a>
+  <a class="nav-btn" href="/barcode-label.html">🏷️ 바코드 라벨 생성기</a>
+  <a class="nav-btn" href="/order-barcode.html">📦 발주 바코드 출력</a>
+  <a class="nav-btn active" href="/detail-maker">✨ 쿠팡 상세페이지 자동 제작</a>
+</nav>
+
+<main class="main">
+  <header class="page-head">
+    <div>
+      <h1>✨ 쿠팡 상세페이지 자동 제작기</h1>
+      <p>1688 PDF·JPG·PNG를 분석해 불필요한 화면을 제외하고 한국어 판매페이지 초안을 만듭니다.<br>AI가 만든 내용은 모두 사용자가 직접 수정한 뒤 최종 미리보기와 PNG로 저장할 수 있습니다.</p>
+    </div>
+    <span class="badge">1차 편집형 버전</span>
+  </header>
+
+  <section class="card">
+    <h2>1. 원본 자료 업로드</h2>
+    <div id="sourceDrop" class="dropzone">
+      <div class="big">📄</div>
+      <strong>1688 PDF 또는 상품 이미지를 여기에 끌어오세요</strong>
+      <div class="sub">PDF / JPG / PNG / WEBP · PDF는 페이지별 이미지와 텍스트를 자동 추출합니다.</div>
+      <button class="btn btn-primary" type="button" style="margin-top:12px" onclick="document.getElementById('sourceFile').click()">파일 선택</button>
+      <input id="sourceFile" type="file" accept=".pdf,image/png,image/jpeg,image/webp">
+      <div id="fileName"></div>
+    </div>
+    <div id="sourceStatus" class="status">원본 자료를 올려주세요.</div>
+    <div class="notice" style="margin-top:10px">공급업체 이미지·문구를 상업적으로 사용할 권한은 판매자가 확인해야 합니다. 자동 초안은 실제 상품 사양과 등록 카테고리를 최종 확인한 뒤 사용하세요.</div>
+  </section>
+
+  <section class="card">
+    <h2>2. 판매 정보 직접 입력</h2>
+    <div class="grid2">
+      <label class="field">최종 제품명
+        <input id="productName" type="text" placeholder="쿠팡에 사용할 제품명을 직접 입력하세요" oninput="renderPreview();saveDraftSoon()">
+      </label>
+      <label class="field">짧은 한줄 설명
+        <input id="tagline" type="text" placeholder="예: 간편한 사용과 깔끔한 보관" oninput="renderPreview();saveDraftSoon()">
+      </label>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:14px">
+      <strong style="font-size:13px">판매 옵션</strong>
+      <button class="btn btn-secondary btn-sm" type="button" onclick="addOptionRow()">+ 옵션 추가</button>
+    </div>
+    <table class="options-table">
+      <thead><tr><th style="width:32%">옵션 구분</th><th>옵션값 (쉼표로 구분)</th><th style="width:70px">삭제</th></tr></thead>
+      <tbody id="optionsBody"></tbody>
+    </table>
+
+    <div class="grid3" style="margin-top:14px">
+      <label class="field">재질<input id="material" oninput="renderPreview();saveDraftSoon()" placeholder="예: ABS"></label>
+      <label class="field">사이즈<input id="sizeText" oninput="renderPreview();saveDraftSoon()" placeholder="예: 91×63×26mm"></label>
+      <label class="field">구성<input id="composition" oninput="renderPreview();saveDraftSoon()" placeholder="예: 본품 1개"></label>
+      <label class="field">제조국<input id="country" oninput="renderPreview();saveDraftSoon()" placeholder="예: 중국"></label>
+      <label class="field">수입원<input id="importer" oninput="renderPreview();saveDraftSoon()" placeholder="수입원 직접 입력"></label>
+      <label class="field">사용연령<input id="age" oninput="renderPreview();saveDraftSoon()" placeholder="필요한 경우 입력"></label>
+    </div>
+    <label class="field" style="margin-top:10px">주의사항
+      <textarea id="warning" oninput="renderPreview();saveDraftSoon()" placeholder="실제 상품에 맞는 주의사항을 직접 확인해 입력하세요."></textarea>
+    </label>
+  </section>
+
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+      <div>
+        <h2 style="margin-bottom:4px">3. 원본 페이지 선별</h2>
+        <div class="sub">가격·리뷰·판매자 정보·추천상품·1688 플랫폼 안내 등은 자동으로 제외 후보 처리합니다. 사용 여부는 직접 변경할 수 있습니다.</div>
+      </div>
+      <div class="button-row">
+        <button class="btn btn-secondary" onclick="selectRecommendedPages()">추천 페이지만 사용</button>
+        <button class="btn btn-secondary" onclick="setAllPages(true)">전체 사용</button>
+        <button class="btn btn-ghost" onclick="setAllPages(false)">전체 해제</button>
+      </div>
+    </div>
+    <div id="pagesGrid" class="pages-grid"><div class="empty" style="grid-column:1/-1">PDF 또는 이미지를 먼저 업로드하세요.</div></div>
+  </section>
+
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+      <div>
+        <h2 style="margin-bottom:4px">4. 한국어 상세페이지 초안</h2>
+        <div class="sub">원본 텍스트와 선택 페이지를 바탕으로 AI가 한국어 판매 문구 초안을 만듭니다. 생성된 문구는 아래에서 전부 수정할 수 있습니다.</div>
+      </div>
+      <div class="button-row">
+        <button class="btn btn-gold" id="aiDraftBtn" onclick="makeAiDraft()">✨ AI 초안 만들기</button>
+        <button class="btn btn-secondary" onclick="addSection()">+ 섹션 직접 추가</button>
+      </div>
+    </div>
+    <div id="aiStatus" class="status">원본 업로드 후 제품명과 옵션을 입력하고 AI 초안 만들기를 누르세요.</div>
+    <div id="conflicts" style="margin-top:10px"></div>
+  </section>
+
+  <section class="workspace">
+    <div class="card" style="margin:0">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+        <h2 style="margin:0">5. 문구·섹션 편집</h2>
+        <span class="sub">수정 즉시 오른쪽 미리보기 반영</span>
+      </div>
+      <div id="sectionsEditor" style="margin-top:12px"><div class="empty">AI 초안을 만들거나 섹션을 직접 추가하세요.</div></div>
+      <div class="project-bar">
+        <button class="btn btn-primary" onclick="saveProject()">💾 작업 저장</button>
+        <button class="btn btn-secondary" onclick="loadProject()">📂 저장 작업 불러오기</button>
+        <button class="btn btn-ghost" onclick="downloadProjectJson()">⬇ 편집본 JSON</button>
+        <button class="btn btn-danger" onclick="resetProject()">초기화</button>
+      </div>
+    </div>
+
+    <div class="card sticky" style="margin:0">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+        <h2 style="margin:0">6. 쿠팡 상세페이지 초안 미리보기</h2>
+        <div class="button-row">
+          <button class="btn btn-secondary btn-sm" onclick="fitPreview()">화면에 맞춤</button>
+          <button class="btn btn-gold btn-sm" onclick="downloadPreviewPng()">PNG 다운로드</button>
+        </div>
+      </div>
+      <div id="previewInfo" class="sub" style="margin:8px 0">가로 800px 기준</div>
+      <div id="previewWrap" class="preview-wrap">
+        <div id="previewScale" class="preview-scale">
+          <div id="detailPreview" class="detail-preview"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const PROJECT_KEY='tradecodeDetailMakerDraftV1';
+let sourcePages=[];
+let sections=[];
+let options=[
+  {name:'색상',values:''},
+  {name:'사이즈',values:''}
+];
+let saveTimer=null;
+
+if(window.pdfjsLib){
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+}
+
+function esc(v){
+  return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function setStatus(id,msg,type=''){
+  const el=$(id); if(!el)return;
+  el.textContent=msg; el.className='status'+(type?' '+type:'');
+}
+function debounce(fn,ms=500){
+  let t; return (...args)=>{clearTimeout(t);t=setTimeout(()=>fn(...args),ms)};
+}
+const saveDraftSoon=debounce(()=>saveProject(true),700);
+
+function addOptionRow(data){
+  options.push(data||{name:'',values:''});
+  renderOptions();
+  renderPreview();
+  saveDraftSoon();
+}
+function deleteOptionRow(i){
+  options.splice(i,1);
+  renderOptions();renderPreview();saveDraftSoon();
+}
+function updateOption(i,key,val){
+  options[i][key]=val;
+  renderPreview();saveDraftSoon();
+}
+function renderOptions(){
+  $('optionsBody').innerHTML=options.map((o,i)=>`
+    <tr>
+      <td><input value="${esc(o.name)}" placeholder="색상/사이즈/구성" oninput="updateOption(${i},'name',this.value)"></td>
+      <td><input value="${esc(o.values)}" placeholder="브라운, 차콜, 블랙" oninput="updateOption(${i},'values',this.value)"></td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteOptionRow(${i})">삭제</button></td>
+    </tr>`).join('');
+}
+
+function defaultPageRole(text,pageNum){
+  const t=String(text||'');
+  const skipWords=['商品评价','客服','同款推荐','热门推荐','搭配组货','价格','立即下单','采购车','阿里巴巴','法律声明','服务条款','隐私政策','优惠','订单','店铺','平台活动','全网销量'];
+  if(skipWords.some(w=>t.includes(w)))return {use:false,role:'제외',reason:'가격·리뷰·플랫폼/판매자 정보 가능성'};
+  if(/尺寸|规格|产品信息|商品属性|参数/.test(t))return {use:true,role:'상품정보',reason:'사이즈·재질·사양 정보'};
+  if(/操作|使用|教程|步骤/.test(t))return {use:true,role:'사용방법',reason:'사용방법/조작 설명'};
+  if(/细节|展示|详情/.test(t))return {use:true,role:'디테일',reason:'제품 디테일/특징'};
+  if(pageNum===1)return {use:false,role:'제외',reason:'1688 상품 헤더/판매정보 가능성'};
+  return {use:true,role:'특징',reason:'제품 설명/상세 이미지 후보'};
+}
+
+async function handleSourceFile(file){
+  if(!file)return;
+  $('fileName').innerHTML=`<span class="file-pill">📎 ${esc(file.name)}</span>`;
+  setStatus('sourceStatus','원본 자료를 읽는 중...');
+  sourcePages=[];sections=[];
+  renderSections();renderPreview();
+
+  try{
+    if(file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')){
+      await loadPdf(file);
+    }else if(file.type.startsWith('image/')){
+      const url=await fileToDataUrl(file);
+      sourcePages=[{page:1,text:'',image:url,use:true,role:'대표/특징',reason:'업로드 이미지'}];
+    }else{
+      throw new Error('PDF 또는 이미지 파일만 사용할 수 있습니다.');
+    }
+    renderPages();
+    setStatus('sourceStatus',`✓ ${sourcePages.length}개 페이지/이미지를 불러왔습니다. 사용할 페이지를 확인해 주세요.`,'ok');
+    fitPreview();
+  }catch(err){
+    console.error(err);
+    setStatus('sourceStatus',err.message||'파일을 읽지 못했습니다.','bad');
+  }
+}
+
+function fileToDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);
+  });
+}
+
+async function loadPdf(file){
+  if(!window.pdfjsLib)throw new Error('PDF 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.');
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+
+  for(let p=1;p<=pdf.numPages;p++){
+    setStatus('sourceStatus',`PDF 분석 중... ${p}/${pdf.numPages} 페이지`);
+    const page=await pdf.getPage(p);
+    const viewport=page.getViewport({scale:1.25});
+    const canvas=document.createElement('canvas');
+    const ctx=canvas.getContext('2d');
+    canvas.width=Math.ceil(viewport.width);
+    canvas.height=Math.ceil(viewport.height);
+    await page.render({canvasContext:ctx,viewport}).promise;
+
+    const tc=await page.getTextContent();
+    const text=tc.items.map(x=>x.str).join(' ').replace(/\s+/g,' ').trim();
+    const decision=defaultPageRole(text,p);
+    sourcePages.push({
+      page:p,text,
+      image:canvas.toDataURL('image/jpeg',.82),
+      use:decision.use,
+      role:decision.role,
+      reason:decision.reason
+    });
+  }
+}
+
+function renderPages(){
+  const grid=$('pagesGrid');
+  if(!sourcePages.length){
+    grid.innerHTML='<div class="empty" style="grid-column:1/-1">PDF 또는 이미지를 먼저 업로드하세요.</div>';return;
+  }
+  grid.innerHTML=sourcePages.map((p,i)=>`
+    <div class="page-card">
+      <div class="page-thumb"><img src="${p.image}"></div>
+      <div class="page-meta">
+        <div class="page-top"><span class="page-no">${p.page}페이지</span><span style="font-size:10px;color:${p.use?'#16834a':'#b23b3b'}">${p.use?'사용':'제외'}</span></div>
+        <select onchange="sourcePages[${i}].role=this.value;saveDraftSoon()">
+          ${['대표/특징','특징','사용방법','상품정보','디테일','옵션','주의사항','제외'].map(v=>`<option ${p.role===v?'selected':''}>${v}</option>`).join('')}
+        </select>
+        <label><input type="checkbox" ${p.use?'checked':''} onchange="sourcePages[${i}].use=this.checked;renderPages();renderPreview();saveDraftSoon()"> 상세페이지에 사용</label>
+        <div class="page-reason">${esc(p.reason||'')}</div>
+      </div>
+    </div>`).join('');
+}
+function setAllPages(v){sourcePages.forEach(p=>p.use=v);renderPages();renderPreview();saveDraftSoon()}
+function selectRecommendedPages(){sourcePages.forEach(p=>p.use=p.role!=='제외');renderPages();renderPreview();saveDraftSoon()}
+
+function pageTextPayload(){
+  return sourcePages.map(p=>({
+    page:p.page,
+    use:p.use,
+    role:p.role,
+    text:String(p.text||'').slice(0,7000)
+  }));
+}
+function manualInfo(){
+  return {
+    productName:$('productName').value.trim(),
+    tagline:$('tagline').value.trim(),
+    options:options.filter(o=>o.name||o.values),
+    material:$('material').value.trim(),
+    size:$('sizeText').value.trim(),
+    composition:$('composition').value.trim(),
+    country:$('country').value.trim(),
+    importer:$('importer').value.trim(),
+    age:$('age').value.trim(),
+    warning:$('warning').value.trim()
+  };
+}
+
+async function makeAiDraft(){
+  if(!sourcePages.length){alert('먼저 PDF 또는 이미지를 업로드해 주세요.');return}
+  const btn=$('aiDraftBtn');
+  btn.disabled=true;
+  setStatus('aiStatus','AI가 불필요 페이지, 상품정보, 중국어 문구를 분석해 한국어 초안을 만드는 중입니다...');
+
+  try{
+    const res=await fetch('/api/detail-draft',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({manual:manualInfo(),pages:pageTextPayload()})
+    });
+    const data=await res.json();
+    if(!res.ok||!data.ok)throw new Error(data.error||'AI 초안 생성 실패');
+
+    if(data.productFacts){
+      if(!$('material').value&&data.productFacts.material)$('material').value=data.productFacts.material;
+      if(!$('sizeText').value&&data.productFacts.size)$('sizeText').value=data.productFacts.size;
+      if(!$('composition').value&&data.productFacts.composition)$('composition').value=data.productFacts.composition;
+    }
+
+    if(Array.isArray(data.pageDecisions)){
+      data.pageDecisions.forEach(d=>{
+        const p=sourcePages.find(x=>Number(x.page)===Number(d.page));
+        if(!p)return;
+        if(typeof d.use==='boolean')p.use=d.use;
+        if(d.role)p.role=d.role;
+        if(d.reason)p.reason=d.reason;
+      });
+      renderPages();
+    }
+
+    sections=(Array.isArray(data.sections)?data.sections:[]).map((s,i)=>({
+      id:cryptoRandom(),
+      use:s.use!==false,
+      type:s.type||'특징',
+      sourcePage:Number(s.sourcePage)||0,
+      showImage:s.showImage!==false,
+      title:s.title||'',
+      body:s.body||'',
+      original:s.original||''
+    }));
+
+    renderConflicts(data.conflicts||[]);
+    renderSections();renderPreview();saveProject(true);
+    setStatus('aiStatus',`✓ 한국어 초안 ${sections.length}개 섹션을 만들었습니다. 문구·사용 페이지를 직접 수정하세요.`,'ok');
+  }catch(err){
+    console.error(err);
+    setStatus('aiStatus',err.message||'AI 초안 생성에 실패했습니다.','bad');
+  }finally{
+    btn.disabled=false;
+  }
+}
+
+function renderConflicts(items){
+  const box=$('conflicts');
+  if(!Array.isArray(items)||!items.length){box.innerHTML='';return}
+  box.innerHTML=items.map(x=>`<div class="conflict">⚠ <b>${esc(x.field||'정보')}</b> — ${esc(x.message||'원본 정보가 서로 다릅니다.')}<br>${esc((x.values||[]).join(' / '))}</div>`).join('');
+}
+
+function cryptoRandom(){
+  try{return crypto.randomUUID()}catch(e){return Date.now()+'-'+Math.random().toString(16).slice(2)}
+}
+function addSection(){
+  sections.push({id:cryptoRandom(),use:true,type:'특징',sourcePage:0,showImage:false,title:'새 섹션 제목',body:'설명 문구를 입력하세요.',original:''});
+  renderSections();renderPreview();saveDraftSoon();
+}
+function deleteSection(i){sections.splice(i,1);renderSections();renderPreview();saveDraftSoon()}
+function moveSection(i,dir){
+  const n=i+dir;if(n<0||n>=sections.length)return;
+  [sections[i],sections[n]]=[sections[n],sections[i]];
+  renderSections();renderPreview();saveDraftSoon();
+}
+function updateSection(i,key,val){
+  sections[i][key]=val;renderPreview();saveDraftSoon();
+}
+
+function renderSections(){
+  const box=$('sectionsEditor');
+  if(!sections.length){box.innerHTML='<div class="empty">AI 초안을 만들거나 섹션을 직접 추가하세요.</div>';return}
+  box.innerHTML=sections.map((s,i)=>`
+    <div class="section-card">
+      <div class="section-head">
+        <strong>${i+1}. ${esc(s.type||'섹션')}</strong>
+        <div class="button-row">
+          <button class="btn btn-ghost btn-sm" onclick="moveSection(${i},-1)">↑</button>
+          <button class="btn btn-ghost btn-sm" onclick="moveSection(${i},1)">↓</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteSection(${i})">삭제</button>
+        </div>
+      </div>
+      <div class="section-body">
+        <div class="section-row">
+          <select onchange="updateSection(${i},'type',this.value)">
+            ${['대표','특징','사용방법','상품정보','디테일','옵션','주의사항'].map(v=>`<option ${s.type===v?'selected':''}>${v}</option>`).join('')}
+          </select>
+          <select onchange="updateSection(${i},'sourcePage',Number(this.value))">
+            <option value="0">이미지 없음</option>
+            ${sourcePages.map(p=>`<option value="${p.page}" ${Number(s.sourcePage)===Number(p.page)?'selected':''}>${p.page}페이지</option>`).join('')}
+          </select>
+        </div>
+        <label style="display:flex;gap:6px;align-items:center;font-size:11px;font-weight:800;margin:8px 0">
+          <input type="checkbox" ${s.use?'checked':''} onchange="updateSection(${i},'use',this.checked)"> 사용
+          <input type="checkbox" ${s.showImage?'checked':''} onchange="updateSection(${i},'showImage',this.checked)" style="margin-left:10px"> 원본 이미지 표시
+        </label>
+        <input value="${esc(s.title)}" placeholder="한국어 제목" oninput="updateSection(${i},'title',this.value)">
+        <textarea placeholder="한국어 설명 — 자유롭게 수정하세요" oninput="updateSection(${i},'body',this.value)">${esc(s.body)}</textarea>
+        ${s.original?`<div class="original"><b>원문 참고</b><br>${esc(s.original)}</div>`:''}
+      </div>
+    </div>`).join('');
+}
+
+function optionSummary(){
+  return options.filter(o=>o.name&&o.values).map(o=>`${o.name}: ${o.values}`).join(' · ');
+}
+function pageImage(pageNo){
+  return sourcePages.find(p=>Number(p.page)===Number(pageNo))?.image||'';
+}
+function renderPreview(){
+  const name=$('productName').value.trim()||'제품명을 입력하세요';
+  const tagline=$('tagline').value.trim()||'상품의 핵심 장점을 한눈에';
+  const opt=optionSummary();
+  const active=sections.filter(s=>s.use);
+
+  let html=`<section class="hero-block">
+    <div class="eyebrow">${esc(tagline)}</div>
+    <h2>${esc(name)}</h2>
+    ${opt?`<div class="opt">${esc(opt)}</div>`:''}
+  </section>`;
+
+  if(!active.length){
+    html+=`<section class="detail-section"><p style="color:#777">왼쪽에서 AI 초안을 만들거나 섹션을 추가하면 여기에 상세페이지가 생성됩니다.</p></section>`;
+  }else{
+    active.forEach(s=>{
+      const img=s.showImage?pageImage(s.sourcePage):'';
+      html+=`<section class="detail-section">
+        ${img?`<img class="detail-img" src="${img}">`:''}
+        ${s.title?`<h3>${esc(s.title)}</h3>`:''}
+        ${s.body?`<p>${esc(s.body)}</p>`:''}
+      </section>`;
+    });
+  }
+
+  const facts=[
+    ['재질',$('material').value.trim()],
+    ['사이즈',$('sizeText').value.trim()],
+    ['구성',$('composition').value.trim()],
+    ['제조국',$('country').value.trim()],
+    ['수입원',$('importer').value.trim()],
+    ['사용연령',$('age').value.trim()]
+  ].filter(x=>x[1]);
+
+  if(facts.length){
+    html+=`<section class="detail-section"><h3>상품정보</h3><div class="info-grid">${facts.map(([k,v])=>`<div>${esc(k)}</div><div>${esc(v)}</div>`).join('')}</div></section>`;
+  }
+  if($('warning').value.trim()){
+    html+=`<section class="detail-section"><h3>사용 전 확인해 주세요</h3><p>${esc($('warning').value.trim())}</p></section>`;
+  }
+
+  html+=`<div class="footer-note">※ 실제 상품 사양 및 표시사항을 최종 확인한 뒤 판매페이지에 사용하세요.</div>`;
+  $('detailPreview').innerHTML=html;
+  setTimeout(fitPreview,0);
+}
+
+function fitPreview(){
+  const wrap=$('previewWrap'),scale=$('previewScale');
+  if(!wrap||!scale)return;
+  const available=Math.max(300,wrap.clientWidth-26);
+  const ratio=Math.min(1,available/800);
+  scale.style.transform=`scale(${ratio})`;
+  scale.style.width='800px';
+  const h=$('detailPreview').scrollHeight*ratio;
+  wrap.style.height=Math.max(430,Math.min(760,h+28))+'px';
+  $('previewInfo').textContent=`가로 800px 기준 · 화면 표시 ${Math.round(ratio*100)}%`;
+}
+
+function projectData(){
+  return {
+    version:1,
+    savedAt:new Date().toISOString(),
+    manual:manualInfo(),
+    options,
+    sections,
+    pages:sourcePages.map(p=>({
+      page:p.page,text:p.text,use:p.use,role:p.role,reason:p.reason,image:p.image
+    }))
+  };
+}
+function saveProject(silent=false){
+  try{
+    localStorage.setItem(PROJECT_KEY,JSON.stringify(projectData()));
+    if(!silent)alert('현재 상세페이지 초안을 이 브라우저에 저장했습니다.');
+  }catch(err){
+    if(!silent)alert('저장 용량이 부족합니다. 편집본 JSON 다운로드를 이용해 주세요.');
+  }
+}
+function applyProject(data){
+  if(!data)return;
+  const m=data.manual||{};
+  $('productName').value=m.productName||'';
+  $('tagline').value=m.tagline||'';
+  $('material').value=m.material||'';
+  $('sizeText').value=m.size||'';
+  $('composition').value=m.composition||'';
+  $('country').value=m.country||'';
+  $('importer').value=m.importer||'';
+  $('age').value=m.age||'';
+  $('warning').value=m.warning||'';
+  options=Array.isArray(data.options)?data.options:[{name:'색상',values:''},{name:'사이즈',values:''}];
+  sections=Array.isArray(data.sections)?data.sections:[];
+  sourcePages=Array.isArray(data.pages)?data.pages:[];
+  renderOptions();renderPages();renderSections();renderPreview();
+}
+function loadProject(){
+  try{
+    const raw=localStorage.getItem(PROJECT_KEY);
+    if(!raw){alert('이 브라우저에 저장된 상세페이지 초안이 없습니다.');return}
+    applyProject(JSON.parse(raw));
+    alert('저장된 초안을 불러왔습니다.');
+  }catch(e){alert('저장된 초안을 불러오지 못했습니다.')}
+}
+function resetProject(){
+  if(!confirm('현재 상세페이지 작업을 초기화할까요?'))return;
+  localStorage.removeItem(PROJECT_KEY);
+  sourcePages=[];sections=[];options=[{name:'색상',values:''},{name:'사이즈',values:''}];
+  ['productName','tagline','material','sizeText','composition','country','importer','age','warning'].forEach(id=>$(id).value='');
+  $('fileName').innerHTML='';
+  renderOptions();renderPages();renderSections();renderPreview();
+  setStatus('sourceStatus','원본 자료를 올려주세요.');
+  setStatus('aiStatus','원본 업로드 후 제품명과 옵션을 입력하고 AI 초안 만들기를 누르세요.');
+  $('conflicts').innerHTML='';
+}
+function downloadBlob(blob,name){
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)
+}
+function downloadProjectJson(){
+  const blob=new Blob([JSON.stringify(projectData(),null,2)],{type:'application/json'});
+  downloadBlob(blob,`coupang-detail-draft-${Date.now()}.json`);
+}
+async function downloadPreviewPng(){
+  const node=$('detailPreview');
+  if(!node)return;
+  const oldTransform=$('previewScale').style.transform;
+  $('previewScale').style.transform='none';
+  try{
+    const canvas=await html2canvas(node,{scale:2,backgroundColor:'#fff',useCORS:true,logging:false});
+    canvas.toBlob(blob=>downloadBlob(blob,`coupang-detail-${Date.now()}.png`),'image/png');
+  }finally{
+    $('previewScale').style.transform=oldTransform;
+    setTimeout(fitPreview,0);
+  }
+}
+
+const drop=$('sourceDrop');
+drop.addEventListener('click',e=>{if(e.target===drop||e.target.closest('.big,strong,.sub'))$('sourceFile').click()});
+drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('drag')});
+drop.addEventListener('dragleave',()=>drop.classList.remove('drag'));
+drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('drag');const f=e.dataTransfer?.files?.[0];if(f)handleSourceFile(f)});
+$('sourceFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)handleSourceFile(f);e.target.value=''});
+
+window.addEventListener('resize',debounce(fitPreview,150));
+renderOptions();renderPages();renderSections();renderPreview();
+</script>
+</body>
+</html>
