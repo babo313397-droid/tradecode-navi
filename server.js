@@ -37,7 +37,8 @@ app.use(express.static(path.join(__dirname)));
 
 const PORT = process.env.PORT || 4000;
 const UNIPASS_KEY = process.env.UNIPASS_API_KEY || '';
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || ''; // 선택: AI 상품명 분석 기능용
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || ''; // 기존 AI 상품명 분석 기능 호환용
+const OPENAI_KEY = process.env.OPENAI_API_KEY || ''; // 쿠팡 상세페이지 AI 초안용
 const SHARED_LABEL_EDIT_KEY = String(process.env.SHARED_LABEL_EDIT_KEY || '').trim();
 const SHARED_LABEL_FILE = path.join(__dirname, 'data', 'shared-labels.json');
 const PRODUCT_CATALOG_SEED_FILE = path.join(__dirname, 'barcode-product-catalog.json');
@@ -68,18 +69,21 @@ if (!UNIPASS_KEY) {
   console.warn('[경고] UNIPASS_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.');
 }
 if (!ANTHROPIC_KEY) {
-  console.warn('[안내] ANTHROPIC_API_KEY 미설정 - AI 상품명 분석(선택 기능)은 비활성화 상태입니다.');
+  console.warn('[안내] ANTHROPIC_API_KEY 미설정 - 기존 AI 상품명 분석(선택 기능)은 비활성화 상태입니다.');
+}
+if (!OPENAI_KEY) {
+  console.warn('[안내] OPENAI_API_KEY 미설정 - 쿠팡 상세페이지 AI 초안 기능은 비활성화 상태입니다.');
 }
 
 
 // POST /api/detail-draft
-// 1688 PDF에서 추출한 텍스트를 바탕으로 쿠팡 상세페이지 "편집 가능한 초안"을 생성.
-// 원본 이미지 자체를 AI가 재디자인하는 단계가 아니라, 페이지 선별/한국어 문구/정보충돌을 구조화한다.
+// OpenAI Responses API를 사용해 1688 PDF 텍스트를 쿠팡 상세페이지 "편집 가능한 초안"으로 구조화한다.
+// 기존 바코드/Supabase 저장소와는 완전히 독립된 기능이다.
 app.post('/api/detail-draft', detailDraftLimiter, async (req, res) => {
-  if (!ANTHROPIC_KEY) {
+  if (!OPENAI_KEY) {
     return res.status(503).json({
       ok: false,
-      error: 'ANTHROPIC_API_KEY가 설정되어 있지 않아 AI 초안 기능을 사용할 수 없습니다.'
+      error: 'OPENAI_API_KEY가 설정되어 있지 않아 AI 초안 기능을 사용할 수 없습니다.'
     });
   }
 
@@ -108,7 +112,7 @@ app.post('/api/detail-draft', detailDraftLimiter, async (req, res) => {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
+  const timeout = setTimeout(() => controller.abort(), 60000);
 
   try {
     const prompt = [
@@ -157,39 +161,56 @@ app.post('/api/detail-draft', detailDraftLimiter, async (req, res) => {
       JSON.stringify(safeText)
     ].join('\n');
 
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const aiRes = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
-        'content-type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_KEY}`
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4200,
-        temperature: 0.2,
-        messages: [{ role: 'user', content: prompt }]
+        model: 'gpt-5.6-luna',
+        input: prompt,
+        max_output_tokens: 4200,
+        reasoning: { effort: 'low' }
       }),
       signal: controller.signal
     });
 
     const json = await aiRes.json();
+
     if (!aiRes.ok) {
+      const apiMessage =
+        json?.error?.message ||
+        json?.message ||
+        `OpenAI HTTP ${aiRes.status}`;
       return res.status(502).json({
         ok: false,
-        error: json?.error?.message || `AI HTTP ${aiRes.status}`
+        error: `OpenAI API 오류: ${apiMessage}`
       });
     }
 
-    const text = (json?.content || [])
-      .filter(x => x?.type === 'text')
-      .map(x => x.text || '')
+    // Responses API의 output[] 안 output_text 항목들을 합친다.
+    const text = (json?.output || [])
+      .flatMap(item => Array.isArray(item?.content) ? item.content : [])
+      .filter(part => part?.type === 'output_text' && typeof part?.text === 'string')
+      .map(part => part.text)
       .join('\n')
       .trim();
 
+    if (!text) {
+      return res.status(502).json({
+        ok: false,
+        error: 'OpenAI 응답에서 상세페이지 초안 텍스트를 찾지 못했습니다.'
+      });
+    }
+
+    // 모델이 혹시 앞뒤 설명을 붙여도 JSON 부분만 안전하게 파싱
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) {
-      return res.status(502).json({ ok: false, error: 'AI 응답에서 JSON 초안을 찾지 못했습니다.' });
+      return res.status(502).json({
+        ok: false,
+        error: 'OpenAI 응답에서 JSON 초안을 찾지 못했습니다.'
+      });
     }
 
     const parsed = JSON.parse(match[0]);
@@ -219,7 +240,9 @@ app.post('/api/detail-draft', detailDraftLimiter, async (req, res) => {
     const conflicts = Array.isArray(parsed.conflicts)
       ? parsed.conflicts.slice(0, 10).map(x => ({
           field: String(x?.field || '').slice(0, 100),
-          values: Array.isArray(x?.values) ? x.values.slice(0, 6).map(v => String(v).slice(0, 200)) : [],
+          values: Array.isArray(x?.values)
+            ? x.values.slice(0, 6).map(v => String(v).slice(0, 200))
+            : [],
           message: String(x?.message || '').slice(0, 400)
         }))
       : [];
@@ -230,26 +253,31 @@ app.post('/api/detail-draft', detailDraftLimiter, async (req, res) => {
 
     res.json({
       ok: true,
+      provider: 'openai',
+      model: 'gpt-5.6-luna',
       pageDecisions,
       productFacts: {
         material: String(f.material || '').slice(0, 300),
         size: String(f.size || '').slice(0, 300),
         composition: String(f.composition || '').slice(0, 300),
-        colors: Array.isArray(f.colors) ? f.colors.slice(0, 20).map(v => String(v).slice(0, 100)) : []
+        colors: Array.isArray(f.colors)
+          ? f.colors.slice(0, 20).map(v => String(v).slice(0, 100))
+          : []
       },
       conflicts,
       sections
     });
+
   } catch (err) {
     const msg = err?.name === 'AbortError'
-      ? 'AI 분석 시간이 초과되었습니다. 사용할 페이지를 줄여 다시 시도해 주세요.'
-      : `상세페이지 AI 초안 생성 실패: ${err.message}`;
+      ? 'OpenAI 분석 시간이 초과되었습니다. 사용할 페이지를 줄여 다시 시도해 주세요.'
+      : `상세페이지 OpenAI 초안 생성 실패: ${err.message}`;
+
     res.status(504).json({ ok: false, error: msg });
   } finally {
     clearTimeout(timeout);
   }
 });
-
 
 // GET /api/hs-search?q=가방&lang=ko   (API018 래핑)
 // =========================================================
@@ -1400,7 +1428,13 @@ app.get('/api/exchange-rate', exchangeRateLimiter, async (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, keyConfigured: !!UNIPASS_KEY, aiConfigured: !!ANTHROPIC_KEY });
+  res.json({
+    ok: true,
+    keyConfigured: !!UNIPASS_KEY,
+    aiConfigured: !!ANTHROPIC_KEY,
+    detailAiProvider: 'openai',
+    detailAiConfigured: !!OPENAI_KEY
+  });
 });
 
   // =========================================================
