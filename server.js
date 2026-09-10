@@ -54,7 +54,8 @@ const SUPABASE_SECRET_KEY = String(
 const SHARED_LABEL_STORAGE = (SUPABASE_URL && SUPABASE_SECRET_KEY) ? 'supabase' : 'local';
 
 const MAX_QUERY_LENGTH = 100; // 상품명 입력 길이 제한 (남용/이상 입력 방지)
-const analyzeProductLimiter = createRateLimiter({ windowMs: 60000, max: 10 }); // 분당 10회/IP
+const analyzeProductLimiter = createRateLimiter({ windowMs: 60000, max: 10 });
+const detailDraftLimiter = createRateLimiter({ windowMs: 60000, max: 5 }); // 분당 10회/IP
 // 무료 번역은 키가 필요 없어 더 자주 쓰이므로 한도를 넉넉히(분당 20회/IP) 둔다.
 const freeTranslateLimiter = createRateLimiter({ windowMs: 60000, max: 20 });
 // 댓글 작성/수정/삭제는 도배 방지를 위해 분당 15회/IP로 제한 (조회는 제한 없음)
@@ -69,6 +70,186 @@ if (!UNIPASS_KEY) {
 if (!ANTHROPIC_KEY) {
   console.warn('[안내] ANTHROPIC_API_KEY 미설정 - AI 상품명 분석(선택 기능)은 비활성화 상태입니다.');
 }
+
+
+// POST /api/detail-draft
+// 1688 PDF에서 추출한 텍스트를 바탕으로 쿠팡 상세페이지 "편집 가능한 초안"을 생성.
+// 원본 이미지 자체를 AI가 재디자인하는 단계가 아니라, 페이지 선별/한국어 문구/정보충돌을 구조화한다.
+app.post('/api/detail-draft', detailDraftLimiter, async (req, res) => {
+  if (!ANTHROPIC_KEY) {
+    return res.status(503).json({
+      ok: false,
+      error: 'ANTHROPIC_API_KEY가 설정되어 있지 않아 AI 초안 기능을 사용할 수 없습니다.'
+    });
+  }
+
+  const manual = req.body?.manual && typeof req.body.manual === 'object'
+    ? req.body.manual
+    : {};
+  const pages = Array.isArray(req.body?.pages) ? req.body.pages.slice(0, 40) : [];
+
+  if (!pages.length) {
+    return res.status(400).json({ ok: false, error: '분석할 PDF 페이지 텍스트가 없습니다.' });
+  }
+
+  const safeText = pages.map(p => ({
+    page: Number(p.page) || 0,
+    use: p.use !== false,
+    role: String(p.role || '').slice(0, 50),
+    text: String(p.text || '').replace(/\s+/g, ' ').trim().slice(0, 7000)
+  }));
+
+  const sourceChars = safeText.reduce((sum, p) => sum + p.text.length, 0);
+  if (sourceChars > 90000) {
+    return res.status(400).json({
+      ok: false,
+      error: '원본 텍스트가 너무 많습니다. PDF를 나누거나 사용할 페이지만 남겨 다시 시도해 주세요.'
+    });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+
+  try {
+    const prompt = [
+      '너는 한국 온라인 판매용 상세페이지 편집 초안을 만드는 상품정보 편집자다.',
+      '입력은 중국 1688/알리바바 상품 페이지에서 추출한 텍스트와 사용자가 직접 입력한 판매 정보다.',
+      '',
+      '목표:',
+      '1) 1688 가격, 리뷰, 판매자/점포 정보, 배송, 쿠폰, 추천상품, 플랫폼 약관/푸터, 주문 UI 등 판매 상세페이지에 불필요한 페이지는 제외 후보로 분류한다.',
+      '2) 제품 기능/사용방법/제품컷/사이즈/재질/색상/구성 정보 페이지는 사용 후보로 분류한다.',
+      '3) 중국어 문구를 자연스러운 한국어 판매 문구 초안으로 바꾸되, 과장/효능/인증/성능을 지어내지 않는다.',
+      '4) 같은 정보가 원본 안에서 서로 다르면 임의로 하나를 확정하지 말고 conflicts에 모두 제시한다.',
+      '5) 제품명과 옵션명/옵션값은 사용자가 최종 결정하므로 manual에 값이 있으면 그대로 존중한다.',
+      '6) 담배, 술, 의약품, 어린이제품 등 카테고리 제한 여부를 "판매 가능"이라고 단정하지 않는다.',
+      '7) 원문에 없는 KC, 특허, 인증, 방수등급, 식품용, 안전성, 효능 등은 절대 추가하지 않는다.',
+      '',
+      '반드시 JSON 하나만 출력하고 코드블록/설명문은 쓰지 마라.',
+      JSON.stringify({
+        pageDecisions:[{page:1,use:false,role:'제외',reason:'짧은 이유'}],
+        productFacts:{material:'',size:'',composition:'',colors:[]},
+        conflicts:[{field:'사이즈',values:['값1','값2'],message:'원본 정보가 서로 다름'}],
+        sections:[
+          {
+            type:'대표',
+            sourcePage:3,
+            use:true,
+            showImage:true,
+            title:'한국어 제목',
+            body:'사용자가 수정 가능한 한국어 설명',
+            original:'참고한 중국어 원문 일부'
+          }
+        ]
+      }, null, 2),
+      '',
+      '섹션 작성 규칙:',
+      '- 총 4~9개 정도로 압축한다.',
+      '- type은 대표/특징/사용방법/상품정보/디테일/옵션/주의사항 중 하나.',
+      '- sourcePage는 실제 참고 페이지 번호. 없으면 0.',
+      '- original은 참고한 원문 중 핵심 문구만 짧게.',
+      '- body는 쿠팡 상세페이지에서 바로 수정해 쓸 수 있는 짧고 명확한 한국어.',
+      '- 상품명 자체는 sections에서 새로 만들어내지 말고 manual.productName을 존중한다.',
+      '',
+      '사용자 직접 입력값:',
+      JSON.stringify(manual),
+      '',
+      '페이지별 원본 텍스트:',
+      JSON.stringify(safeText)
+    ].join('\n');
+
+    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4200,
+        temperature: 0.2,
+        messages: [{ role: 'user', content: prompt }]
+      }),
+      signal: controller.signal
+    });
+
+    const json = await aiRes.json();
+    if (!aiRes.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: json?.error?.message || `AI HTTP ${aiRes.status}`
+      });
+    }
+
+    const text = (json?.content || [])
+      .filter(x => x?.type === 'text')
+      .map(x => x.text || '')
+      .join('\n')
+      .trim();
+
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) {
+      return res.status(502).json({ ok: false, error: 'AI 응답에서 JSON 초안을 찾지 못했습니다.' });
+    }
+
+    const parsed = JSON.parse(match[0]);
+
+    const allowedTypes = new Set(['대표','특징','사용방법','상품정보','디테일','옵션','주의사항']);
+    const pageDecisions = Array.isArray(parsed.pageDecisions)
+      ? parsed.pageDecisions.slice(0, 40).map(x => ({
+          page: Number(x?.page) || 0,
+          use: x?.use !== false,
+          role: String(x?.role || '특징').slice(0, 30),
+          reason: String(x?.reason || '').slice(0, 300)
+        }))
+      : [];
+
+    const sections = Array.isArray(parsed.sections)
+      ? parsed.sections.slice(0, 12).map(x => ({
+          type: allowedTypes.has(String(x?.type)) ? String(x.type) : '특징',
+          sourcePage: Number(x?.sourcePage) || 0,
+          use: x?.use !== false,
+          showImage: x?.showImage !== false,
+          title: String(x?.title || '').slice(0, 200),
+          body: String(x?.body || '').slice(0, 1200),
+          original: String(x?.original || '').slice(0, 800)
+        }))
+      : [];
+
+    const conflicts = Array.isArray(parsed.conflicts)
+      ? parsed.conflicts.slice(0, 10).map(x => ({
+          field: String(x?.field || '').slice(0, 100),
+          values: Array.isArray(x?.values) ? x.values.slice(0, 6).map(v => String(v).slice(0, 200)) : [],
+          message: String(x?.message || '').slice(0, 400)
+        }))
+      : [];
+
+    const f = parsed.productFacts && typeof parsed.productFacts === 'object'
+      ? parsed.productFacts
+      : {};
+
+    res.json({
+      ok: true,
+      pageDecisions,
+      productFacts: {
+        material: String(f.material || '').slice(0, 300),
+        size: String(f.size || '').slice(0, 300),
+        composition: String(f.composition || '').slice(0, 300),
+        colors: Array.isArray(f.colors) ? f.colors.slice(0, 20).map(v => String(v).slice(0, 100)) : []
+      },
+      conflicts,
+      sections
+    });
+  } catch (err) {
+    const msg = err?.name === 'AbortError'
+      ? 'AI 분석 시간이 초과되었습니다. 사용할 페이지를 줄여 다시 시도해 주세요.'
+      : `상세페이지 AI 초안 생성 실패: ${err.message}`;
+    res.status(504).json({ ok: false, error: msg });
+  } finally {
+    clearTimeout(timeout);
+  }
+});
+
 
 // GET /api/hs-search?q=가방&lang=ko   (API018 래핑)
 // =========================================================
@@ -1310,6 +1491,10 @@ function renderSeoPage(req, res) {
 app.get('/hs-code', renderSeoPage);
 app.get('/coupang-margin', renderSeoPage);
 app.get('/logistics-cost', renderSeoPage);
+app.get('/detail-maker', (req, res) => {
+  res.sendFile(path.join(__dirname, 'coupang-detail-maker.html'));
+});
+
 app.get('/barcode-label', (req, res) => {
   res.sendFile(path.join(__dirname, 'barcode-label.html'));
 });
