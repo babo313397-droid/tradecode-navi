@@ -4,86 +4,184 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>쿠팡 입고 작업 | TradeCode Navi</title>
-<meta name="description" content="쿠팡 선적 발주 엑셀을 엑셀과 익숙한 화면으로 센터별 팔레트/택배 작업 관리">
+<meta name="description" content="쿠팡 선적 발주 엑셀을 센터별 팔레트/택배 작업으로 자동 분류하고 바코드 스캔으로 패킹 진행상황을 관리하는 도구">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
-  --navy:#0b2f4f;--navy2:#08253f;--gold:#d6a52b;--bg:#eef2f5;--line:#8b8b8b;
-  --grid:#7c7c7c;--head:#e8e8e8;--green:#d9ead3;--yellow:#fff2cc;--orange:#f4c7a1;
-  --blue:#dcebf7;--select:#d9eaf7;--text:#111;--muted:#667788;
+  --navy:#0b2f4f;--navy2:#08253f;--gold:#d6a52b;--bg:#f3f6fa;--card:#fff;
+  --line:#d8e1ea;--muted:#677789;--text:#152434;--good:#18864b;--bad:#c63c3c;
+  --warn:#b7791f;--blue:#0d66ad;--softblue:#edf6ff;--softgreen:#edf9f2;
 }
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:#111}
-button,input,select{font:inherit}button{cursor:pointer}
-.sidebar{position:fixed;left:0;top:0;bottom:0;width:258px;background:linear-gradient(180deg,var(--navy2),var(--navy));padding:22px 15px;overflow:auto;z-index:50}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:258px;background:linear-gradient(180deg,var(--navy2),var(--navy));padding:22px 15px;overflow:auto;z-index:20}
 .side-brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;font-size:17px;margin-bottom:18px}
 .logo-badge{width:38px;height:38px;border-radius:10px;background:var(--gold);color:#08253f;display:grid;place-items:center;font-weight:1000}
 .side-brand small{font-size:11px;font-weight:500;color:#c8d4df}
 .nav-section-label{font-size:10.5px;color:#8fa6ba;margin:14px 8px 7px;font-weight:900;letter-spacing:.08em}
 .nav-btn{display:block;width:100%;text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);color:#e8eef4;border-radius:10px;padding:12px;font-size:13px;font-weight:800;margin-bottom:7px;text-decoration:none}
-.nav-btn:hover{background:rgba(255,255,255,.12)}.nav-btn.active{background:var(--gold);color:#08253f;border-color:var(--gold)}
-.main{margin-left:258px;min-width:0;padding:14px}
-.toolbar{background:#fff;border:1px solid #cbd3da;border-radius:10px;padding:10px 12px;margin-bottom:8px;box-shadow:0 2px 7px rgba(0,0,0,.04)}
-.toolbar-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.title{font-size:19px;font-weight:1000;color:#0b3152;margin-right:auto}
-.sub{font-size:11px;color:#6c7b88}
-.btn{border:1px solid #cbd4dc;border-radius:7px;padding:7px 10px;background:#fff;font-size:11px;font-weight:900}
-.btn-primary{background:#0a3a64;color:#fff;border-color:#0a3a64}.btn-gold{background:#d8a827;color:#08253f;border-color:#d8a827}
-.btn-danger{background:#fff0f0;color:#a62626;border-color:#e7c5c5}.btn-soft{background:#f4f7f9}.btn-sm{padding:5px 7px;font-size:10px}
-.file-name{font-size:10.5px;color:#637586;font-weight:800}
-input[type=file]{display:none}
-.job-select{border:1px solid #c7d1da;border-radius:7px;padding:7px 9px;min-width:270px;background:#fff}
-.scanline{display:grid;grid-template-columns:160px minmax(280px,480px) auto 1fr;gap:7px;align-items:center;margin-top:8px}
-.scanlabel{font-size:11px;font-weight:1000;color:#29455d}
-.scan{height:38px;border:2px solid #1470b8;border-radius:6px;padding:0 10px;font-size:17px;font-weight:1000;outline:none}
-.scan:focus{box-shadow:0 0 0 3px rgba(20,112,184,.12)}
-.scanmsg{font-size:10.5px;padding:7px 9px;background:#f1f4f7;border-radius:6px;color:#5a6d7f;min-height:30px}
-.scanmsg.ok{background:#e4f4e8;color:#176c3e}.scanmsg.bad{background:#fde8e8;color:#a92727}.scanmsg.warn{background:#fff3d5;color:#815b00}
-.summaryline{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
-.kpi{font-size:10.5px;border:1px solid #d6dde3;background:#fafbfc;border-radius:6px;padding:5px 8px}.kpi b{font-size:12px;color:#123653}
+.nav-btn:hover{background:rgba(255,255,255,.12)}
+.nav-btn.active{background:var(--gold);color:#08253f;border-color:var(--gold)}
+.main{margin-left:258px;padding:22px;min-width:0}
+.page-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px}
+.page-head h1{margin:0 0 6px;font-size:27px;color:#062c4e}
+.page-head p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.55}
+.badge{display:inline-flex;border-radius:999px;padding:7px 10px;background:#eaf4ff;color:#145b9a;font-size:11px;font-weight:900}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(20,48,70,.04);margin-bottom:14px}
+.card h2{font-size:17px;margin:0 0 10px;color:#082d4d}
+.btn{border:1px solid transparent;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:900}
+.btn-primary{background:#0a3a64;color:#fff}
+.btn-gold{background:var(--gold);color:#08253f}
+.btn-secondary{background:#edf3f8;color:#193650;border-color:#d5e0e9}
+.btn-ghost{background:#fff;color:#30465a;border-color:#d2dce5}
+.btn-danger{background:#fff0f0;color:#a92323;border-color:#f0caca}
+.btn-good{background:#eaf8f0;color:#157342;border-color:#bfe0cb}
+.btn-sm{padding:6px 8px;font-size:11px}
+.button-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.sub{font-size:11.5px;color:var(--muted);line-height:1.5}
+.hidden{display:none!important}
 
-/* Excel-like sheet */
-.excel-shell{background:#fff;border:1px solid #9ca3a9;box-shadow:0 2px 8px rgba(0,0,0,.05);overflow:hidden}
-.sheet-tabs-top{display:flex;gap:1px;background:#e9edf0;border-bottom:1px solid #aeb5bb;overflow:auto;padding:5px 5px 0}
-.sheet-tab{white-space:nowrap;border:1px solid #adb5bb;border-bottom:none;background:#f4f4f4;padding:7px 13px;font-size:10.5px;font-weight:900;color:#333;border-radius:5px 5px 0 0}
-.sheet-tab.active{background:#fff;color:#0b5c9b;border-top:3px solid #217346;padding-top:5px}
-.sheet-tab.pallet::before{content:"▣ ";color:#217346}.sheet-tab.parcel::before{content:"▤ ";color:#c47b00}
-.sheet-actions{display:flex;gap:5px;margin-left:auto;padding:1px 5px 4px;align-items:center}
-.sheet-area{overflow:auto;max-height:calc(100vh - 265px);min-height:520px}
-.excel-table{border-collapse:collapse;table-layout:fixed;width:max-content;min-width:100%;font-size:11px;background:#fff}
-.excel-table th,.excel-table td{border:1px solid var(--grid);padding:5px 6px;vertical-align:middle;height:31px}
-.excel-table thead th{background:var(--head);font-weight:1000;text-align:center;position:sticky;top:0;z-index:5}
-.excel-table .title-row td{font-size:17px;font-weight:1000;text-align:center;background:#fff;height:37px}
-.excel-table .total-row td{background:#fff;font-weight:1000}
-.excel-table .total-yellow{background:#fff200!important}
-.excel-table .center-cell{background:var(--orange);text-align:center}
-.excel-table .done-row{background:#f8fff8}
-.excel-table .done-row td:first-child{box-shadow:inset 4px 0 #41a35d}
-.excel-table .draft-row{background:#fff8c9}
-.excel-table .draft-row td:first-child{box-shadow:inset 4px 0 #d6a500}
-.excel-table .remain-row{background:#fff}
-.excel-table .remain-row:hover{background:#edf7ff}
-.excel-table .selected-row{background:#dceefb!important}
-.excel-table .product-name{white-space:normal;line-height:1.35;font-weight:700}
-.excel-table .nowrap{white-space:nowrap}.excel-table .center{text-align:center}.excel-table .right{text-align:right}
-.excel-table input,.excel-table select{width:100%;border:1px solid #8aa4b8;border-radius:2px;padding:4px 5px;background:#fff;font-size:10.5px;height:26px}
-.excel-table input:focus,.excel-table select:focus{outline:2px solid #2b78c5}
-.rowno{width:40px;background:#f0f0f0!important;color:#666;text-align:center!important;font-weight:700}
-.c-a{width:95px}.c-b{width:320px}.c-c{width:145px}.c-d{width:90px}.c-e{width:95px}.c-f{width:105px}.c-g{width:90px}.c-h{width:105px}.c-k{width:85px}.c-p{width:105px}.c-q{width:110px}.c-r{width:155px}.c-action{width:86px}
-.status-badge{display:inline-flex;padding:3px 6px;border-radius:999px;font-size:9px;font-weight:1000;background:#eee;color:#555}
-.status-badge.done{background:#d9ead3;color:#1d6b36}.status-badge.work{background:#fff2cc;color:#806000}.status-badge.wait{background:#eee;color:#666}
-.worked-separator td{height:10px!important;padding:0!important;background:#ececec;border-top:2px solid #555;border-bottom:2px solid #555}
-.worked-separator .septext{font-size:9px;color:#666;font-weight:900;padding-left:8px!important}
-.sheet-bottom{display:flex;align-items:center;background:#eceff1;border-top:1px solid #aeb5bb;padding:4px 7px;gap:6px;overflow:auto}
-.sheet-bottom .hint{font-size:9.5px;color:#667480;margin-left:auto;white-space:nowrap}
-.empty{padding:45px;text-align:center;color:#6d7c88}
-.box-counter{display:flex;gap:5px;align-items:center}.box-counter input{width:70px}
-.quick{display:flex;gap:3px}.quick button{font-size:9px;padding:3px 5px;border:1px solid #aaa;background:#fff;border-radius:3px}
-.notice{font-size:10px;color:#687886;margin-top:6px}
-@media(max-width:850px){
- .sidebar{position:static;width:auto;display:flex;gap:5px;overflow:auto;padding:8px}.side-brand,.nav-section-label{display:none}
- .nav-btn{width:auto;white-space:nowrap;margin:0}.main{margin-left:0;padding:6px}.scanline{grid-template-columns:1fr}.job-select{min-width:0;width:100%}
+/* job header */
+.job-top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+.job-title{font-size:22px;font-weight:1000;color:#0a3458}
+.job-title small{display:block;font-size:11px;color:#738292;margin-top:4px;font-weight:700}
+.job-select{min-width:280px;border:1px solid #ccd8e2;border-radius:9px;padding:9px;background:#fff}
+.upload-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.file-name{font-size:11px;font-weight:800;color:#53687b}
+input[type=file]{display:none}
+
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+.kpi{border:1px solid #e0e7ed;border-radius:11px;padding:12px;background:#fbfcfd}
+.kpi .label{font-size:10.5px;color:#748392;font-weight:800}
+.kpi .value{font-size:22px;font-weight:1000;margin-top:4px;color:#0b3355}
+.kpi.good .value{color:#167544}
+.progress-track{height:8px;border-radius:999px;background:#e7edf2;overflow:hidden;margin-top:8px}
+.progress-bar{height:100%;background:#168552;width:0}
+
+/* scan */
+.scan-card{border:2px solid #91b7d8;background:#f7fbff}
+.scan-grid{display:grid;grid-template-columns:minmax(300px,1fr) auto;gap:10px}
+.scan-input{width:100%;height:52px;border:2px solid #1768aa;border-radius:10px;padding:0 16px;font-size:20px;font-weight:1000;letter-spacing:.02em;outline:none}
+.scan-input:focus{box-shadow:0 0 0 4px rgba(23,104,170,.12)}
+.scan-message{margin-top:8px;min-height:34px;padding:8px 10px;border-radius:8px;background:#edf3f7;color:#516678;font-size:12px;font-weight:900}
+.scan-message.ok{background:#e9f8ef;color:#167844}
+.scan-message.bad{background:#fff0f0;color:#b52f2f}
+.scan-message.warn{background:#fff7e7;color:#94600d}
+
+/* tabs + centers */
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{border:1px solid #d5dfe7;background:#fff;border-radius:999px;padding:8px 11px;font-size:11.5px;font-weight:900;color:#4c6072}
+.tab.active{background:#0b3a63;color:#fff;border-color:#0b3a63}
+.center-strip{display:flex;gap:8px;overflow:auto;padding:2px 0 6px;margin-top:10px}
+.center-btn{min-width:160px;border:1px solid #d8e1e9;background:#fff;border-radius:10px;padding:10px;text-align:left}
+.center-btn.active{border:2px solid #0c64a8;background:#f0f7fd;padding:9px}
+.center-btn strong{display:block;font-size:12px;color:#173650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.center-btn small{display:block;font-size:10px;color:#748493;margin-top:4px}
+.type-pill{display:inline-flex;border-radius:999px;padding:3px 6px;font-size:9.5px;font-weight:900;margin-top:5px}
+.type-pill.pallet{background:#e8f2ff;color:#0d5da0}
+.type-pill.parcel{background:#fff2dd;color:#8c5b00}
+
+/* work editor */
+.workspace{display:grid;grid-template-columns:minmax(430px,.8fr) minmax(520px,1.2fr);gap:14px;align-items:start}
+.editor-card{position:sticky;top:10px}
+.selected-empty{padding:34px 10px;text-align:center;color:#7b8996;font-size:12px}
+.product-head{border:1px solid #d9e3eb;border-radius:10px;padding:11px;background:#f8fafc;margin-bottom:10px}
+.product-head .name{font-weight:1000;color:#0b3457;line-height:1.45}
+.product-head .meta{font-size:10.5px;color:#6c7e8e;margin-top:5px}
+.product-head .counts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:9px}
+.mini-kpi{background:#fff;border:1px solid #e1e7ec;border-radius:8px;padding:8px;text-align:center}
+.mini-kpi b{display:block;font-size:16px;color:#0b3457}.mini-kpi span{font-size:9.5px;color:#748392}
+.entry-form{border:1px solid #d5e1ea;border-radius:10px;padding:10px;background:#fff}
+.entry-form-title{font-size:12px;font-weight:1000;margin-bottom:8px;color:#173b59}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.field{font-size:10.5px;font-weight:900;color:#4e6274}
+.field input,.field select{width:100%;margin-top:5px;border:1px solid #cad6df;border-radius:8px;padding:9px;background:#fff}
+.field.full{grid-column:1/-1}
+.mode-note{margin:8px 0;padding:8px 9px;border-radius:8px;background:#f3f7fa;color:#617486;font-size:10.5px;line-height:1.45}
+.entry-list{margin-top:10px}
+.entry-item{border:1px solid #e0e6eb;border-radius:9px;padding:9px;margin-bottom:6px;background:#fafcfd}
+.entry-item-head{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.entry-item-head strong{font-size:11.5px}
+.entry-item .detail{font-size:10.5px;color:#617383;line-height:1.5;margin-top:5px}
+
+/* product table */
+.table-tools{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap}
+.search{min-width:250px;border:1px solid #ccd8e2;border-radius:9px;padding:9px 10px}
+.table-wrap{overflow:auto;max-height:760px;border:1px solid #dce4ea;border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:11px}
+th{position:sticky;top:0;background:#edf2f6;color:#41586b;z-index:2}
+th,td{border-bottom:1px solid #e6ebef;padding:8px 7px;text-align:left;vertical-align:middle}
+tr.product-row{cursor:pointer;background:#fff}
+tr.product-row:hover{background:#f7fbfe}
+tr.product-row.selected{background:#eaf5ff}
+tr.product-row.touched:not(.selected){background:#fbfdff}
+tr.product-row.complete{background:#edf9f2}
+.name-cell{min-width:245px;max-width:390px;line-height:1.35}
+.num{text-align:center;white-space:nowrap}
+.status-pill{display:inline-flex;border-radius:999px;padding:4px 7px;font-size:9.5px;font-weight:900;background:#edf1f4;color:#617181}
+.status-pill.working{background:#e9f3ff;color:#0b63aa}
+.status-pill.done{background:#dff5e7;color:#167340}
+.empty{padding:35px 10px;text-align:center;color:#788895;font-size:12px}
+.flash{animation:flash .7s ease}
+@keyframes flash{0%{background:#fff1a8}100%{background:inherit}}
+.footer-note{font-size:10.5px;color:#748391;line-height:1.55;margin-top:8px}
+.boxno-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border:1px solid #d9e3eb;border-radius:10px;background:#f8fafc}
+.boxno-bar b{color:#0b3457}
+.boxno-input{width:110px;border:1px solid #cbd7e1;border-radius:8px;padding:8px 10px;font-weight:900}
+.center-type-select{border:1px solid #cbd7e1;border-radius:8px;padding:7px 9px;background:#fff;font-size:11px;font-weight:900}
+.quick-size{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.quick-size button{border:1px solid #ccd8e2;background:#fff;border-radius:999px;padding:5px 8px;font-size:10px;font-weight:900;color:#456176}
+
+@media(max-width:1180px){
+ .workspace{grid-template-columns:1fr}.editor-card{position:static}
+ .kpis{grid-template-columns:repeat(3,1fr)}
 }
+@media(max-width:820px){
+ .sidebar{position:static;width:auto;display:flex;gap:6px;overflow:auto;padding:10px}
+ .side-brand,.nav-section-label{display:none}.nav-btn{width:auto;white-space:nowrap;margin:0}
+ .main{margin-left:0;padding:10px}.job-top{grid-template-columns:1fr}.job-select{width:100%;min-width:0}
+ .kpis{grid-template-columns:repeat(2,1fr)}.scan-grid{grid-template-columns:1fr}
+ .form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}
+}
+
+.order-tab-btn{min-width:145px;border:2px solid #d6a52b;background:#fff9e8}
+.order-tab-btn.active{background:#d6a52b;color:#08253f}
+.workspace.order-view{grid-template-columns:1fr}
+.workspace.order-view .editor-card{display:none}
+.order-title-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.order-title-input{min-width:360px;flex:1;border:1px solid #cbd7e1;border-radius:9px;padding:9px 10px;font-weight:900}
+.order-input{width:100%;min-width:80px;border:1px solid #cad6df;border-radius:7px;padding:7px;background:#fff}
+.order-company{min-width:90px}
+.order-center{min-width:120px}
+.order-product{min-width:280px}
+.box-panel{border:2px solid #b7cfe2;background:#f7fbff;border-radius:11px;padding:11px;margin-bottom:10px}
+.box-panel.open{border-color:#0c66ad}
+.box-panel.closed{border-color:#a8d7bb;background:#f4fbf7}
+.box-head{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+.box-title{font-size:14px;font-weight:1000;color:#0a365b}
+.box-meta{font-size:10.5px;color:#66798b;margin-top:3px}
+.box-settings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:9px}
+.box-settings label{font-size:10px;font-weight:900;color:#516579}
+.box-settings input,.box-settings select{width:100%;margin-top:4px;border:1px solid #c7d5e0;border-radius:7px;padding:8px;background:#fff}
+.box-content{margin-top:10px;border-top:1px dashed #cfdbe5;padding-top:8px}
+.box-content-item{display:grid;grid-template-columns:1fr auto auto;gap:7px;align-items:center;border-bottom:1px solid #e6edf2;padding:6px 0}
+.box-content-item:last-child{border-bottom:0}
+.box-content-item .n{font-size:10.5px;font-weight:900;line-height:1.35}
+.box-content-item .q{font-size:11px;font-weight:1000;color:#0b5d9d}
+.mix-badge{display:inline-flex;border-radius:999px;background:#eaf4ff;color:#0b5f9e;padding:3px 7px;font-size:9px;font-weight:900}
+.closed-boxes{margin-top:10px}
+.closed-box-item{border:1px solid #dfe7ed;border-radius:9px;padding:8px;margin-bottom:6px;background:#fbfcfd}
+.closed-box-item strong{font-size:11px}
+.closed-box-item .detail{font-size:10px;color:#647687;line-height:1.5;margin-top:4px}
+.group-label{font-size:9px;font-weight:1000;color:#6c7d8d;margin-top:5px}
+@media(max-width:900px){
+  .box-settings{grid-template-columns:1fr 1fr}
+  .order-title-input{min-width:0;width:100%}
+}
+
 </style>
 </head>
 <body>
@@ -100,403 +198,971 @@ input[type=file]{display:none}
 </nav>
 
 <main class="main">
-  <section class="toolbar">
-    <div class="toolbar-top">
-      <div class="title" id="jobTitle">쿠팡 입고 작업</div>
-      <select id="jobSelect" class="job-select" onchange="loadJobById(this.value)"><option value="">저장된 입고건 없음</option></select>
-      <button class="btn btn-primary" onclick="$('sourceFile').click()">새 입고 엑셀</button>
+  <header class="page-head">
+    <div>
+      <h1>📦 쿠팡 입고 작업</h1>
+      <p>선적 발주 엑셀을 올리면 발주서와 센터별 작업장을 자동 생성합니다. 제품 바코드를 찍으면 작업 상품이 위로 올라오고, 한 박스에 여러 상품을 함께 담을 수 있습니다.</p>
+    </div>
+    <span class="badge">혼합박스 + 발주서 편집</span>
+  </header>
+
+  <section class="card">
+    <div class="job-top">
+      <div>
+        <div class="job-title" id="jobTitle">새 입고건을 만들어 주세요<small id="jobSubTitle">첫 번째 선적 엑셀을 업로드하면 날짜와 센터를 자동으로 읽습니다.</small></div>
+      </div>
+      <select id="jobSelect" class="job-select" onchange="loadJobById(this.value)">
+        <option value="">저장된 입고건 없음</option>
+      </select>
+    </div>
+    <div class="upload-row">
+      <button class="btn btn-primary" onclick="document.getElementById('sourceFile').click()">+ 새 입고건 엑셀 업로드</button>
       <input id="sourceFile" type="file" accept=".xlsx,.xls">
-      <button class="btn btn-soft" onclick="downloadWorkXlsx()">작업현황 엑셀</button>
-      <button class="btn btn-soft" onclick="downloadBackup()">백업</button>
+      <button class="btn btn-secondary" onclick="downloadWorkXlsx()">⬇ 작업현황 엑셀 다운로드</button>
+      <button class="btn btn-ghost" onclick="downloadBackup()">⬇ 작업 백업 JSON</button>
+      <button class="btn btn-danger" onclick="deleteCurrentJob()">현재 입고건 삭제</button>
       <span id="sourceFileName" class="file-name"></span>
     </div>
-
-    <div class="scanline">
-      <div class="scanlabel">제품 바코드 스캔</div>
-      <input id="scanInput" class="scan" autocomplete="off" placeholder="바코드를 찍고 Enter" onkeydown="handleScanKey(event)">
-      <button class="btn btn-gold" onclick="scanBarcode()">찾기</button>
-      <div id="scanMessage" class="scanmsg">바코드를 찍으면 해당 상품의 작업 입력행이 맨 위에 나타납니다.</div>
-    </div>
-
-    <div class="summaryline">
-      <span class="kpi">총 발주 <b id="kpiOrder">0</b></span>
-      <span class="kpi">작업 <b id="kpiPacked">0</b></span>
-      <span class="kpi">남음 <b id="kpiRemain">0</b></span>
-      <span class="kpi">박스 <b id="kpiBoxes">0</b></span>
-      <span class="kpi">진행률 <b id="kpiProgress">0%</b></span>
-      <span class="kpi box-counter">다음 박스번호 <input id="nextBoxNoInput" type="number" min="1" value="1"><button class="btn btn-sm" onclick="setNextBoxNo()">설정</button></span>
+    <div class="boxno-bar">
+      <b>다음 자동 박스번호</b>
+      <input id="nextBoxNoInput" class="boxno-input" type="number" min="1" value="1">
+      <button class="btn btn-secondary btn-sm" onclick="setNextBoxNo()">번호 설정</button>
+      <span class="sub">실제 엑셀의 박스번호(P열)처럼 자동 증가합니다. 팔레트에서 동일 구성 N박스면 번호 범위로 생성됩니다.</span>
     </div>
   </section>
 
-  <section class="excel-shell">
-    <div id="sheetTabsTop" class="sheet-tabs-top">
-      <button class="sheet-tab active">입고건 없음</button>
+  <section class="card">
+    <div class="kpis">
+      <div class="kpi"><div class="label">총 발주수량</div><div class="value" id="kpiOrder">0</div></div>
+      <div class="kpi good"><div class="label">현재 작업수량</div><div class="value" id="kpiPacked">0</div></div>
+      <div class="kpi"><div class="label">남은 수량</div><div class="value" id="kpiRemain">0</div></div>
+      <div class="kpi"><div class="label">실제 박스수</div><div class="value" id="kpiBoxes">0</div></div>
+      <div class="kpi"><div class="label">전체 진행률</div><div class="value" id="kpiProgress">0%</div><div class="progress-track"><div id="progressBar" class="progress-bar"></div></div></div>
+      <div class="kpi"><div class="label">다음 박스번호</div><div class="value" id="kpiNextBox">1</div></div>
     </div>
-    <div class="sheet-area">
-      <table class="excel-table">
-        <tbody id="excelBody"><tr><td class="empty">새 입고 엑셀을 업로드해 주세요.</td></tr></tbody>
-      </table>
+  </section>
+
+  <section class="card scan-card" id="scanCard">
+    <h2>바코드 스캔</h2>
+    <div class="scan-grid">
+      <input id="scanInput" class="scan-input" autocomplete="off" placeholder="제품 바코드를 찍고 Enter" onkeydown="handleScanKey(event)">
+      <button class="btn btn-gold" onclick="scanBarcode()">바코드 찾기</button>
     </div>
-    <div class="sheet-bottom">
-      <button class="btn btn-sm" onclick="addManualCenter('pallet')">＋ 팔레트 시트</button>
-      <button class="btn btn-sm" onclick="addManualCenter('parcel')">＋ 택배 시트</button>
-      <select id="centerTypeSelect" onchange="changeCurrentCenterType(this.value)" style="font-size:10px;padding:4px">
-        <option value="pallet">현재 시트: 팔레트/밀크런</option>
-        <option value="parcel">현재 시트: 택배</option>
-      </select>
-      <span class="hint">완료 작업행은 위쪽 · 미작업/남은수량은 아래쪽</span>
+    <div id="scanMessage" class="scan-message">센터 작업장을 선택한 뒤 제품 바코드를 찍으면 해당 상품이 맨 위로 올라옵니다.</div>
+  </section>
+
+  <section class="card">
+    <div class="tabs">
+      <button class="tab active" data-filter="all" onclick="setViewFilter('all',this)">전체</button>
+      <button class="tab" data-filter="pallet" onclick="setViewFilter('pallet',this)">팔레트</button>
+      <button class="tab" data-filter="milkrun" onclick="setViewFilter('milkrun',this)">밀크런</button>
+      <button class="tab" data-filter="parcel" onclick="setViewFilter('parcel',this)">택배</button>
+      <button class="tab" data-filter="incomplete" onclick="setViewFilter('incomplete',this)">미완료</button>
+      <button class="tab" data-filter="complete" onclick="setViewFilter('complete',this)">완료</button>
+    </div>
+    <div id="centerStrip" class="center-strip"></div>
+    <div class="button-row" style="margin-top:7px">
+      <button class="btn btn-secondary btn-sm" onclick="addManualCenter('pallet')">+ 팔레트 작업장 추가</button>
+      <button class="btn btn-secondary btn-sm" onclick="addManualCenter('milkrun')">+ 밀크런 작업장 추가</button>
+      <button class="btn btn-secondary btn-sm" onclick="addManualCenter('parcel')">+ 택배 작업장 추가</button>
+      <button class="btn btn-ghost btn-sm" onclick="addProductToCurrentCenter()">+ 현재 작업장에 상품 추가</button>
+    </div>
+  </section>
+
+  <section id="workspace" class="workspace">
+    <div class="card editor-card" style="margin:0">
+      <h2>현재 박스 / 작업 입력</h2>
+      <div id="workEditor" class="selected-empty">센터를 선택한 뒤 바코드를 찍어 주세요.</div>
+    </div>
+
+    <div class="card" style="margin:0">
+      <div class="table-tools">
+        <div>
+          <h2 style="margin:0" id="centerTitle">상품 목록</h2>
+          <div class="sub" id="centerSummary"></div>
+          <div id="centerModeWrap" style="margin-top:6px">
+            <select id="centerModeSelect" class="center-type-select" onchange="changeCurrentCenterMode(this.value)">
+              <option value="pallet">팔레트 작업</option>
+              <option value="milkrun">밀크런 작업</option>
+              <option value="parcel">택배 작업</option>
+            </select>
+          </div>
+        </div>
+        <input id="productSearch" class="search" placeholder="상품명 / 바코드 / 상품번호 검색" oninput="renderProductTable()">
+      </div>
+
+      <div id="orderToolbar" class="order-title-row hidden">
+        <input id="orderTitleInput" class="order-title-input" placeholder="입고 회차명" onchange="updateJobTitle(this.value)">
+        <button class="btn btn-secondary" onclick="addOrderRow()">+ 발주상품 추가</button>
+      </div>
+
+      <div class="table-wrap">
+        <table id="workTable">
+          <thead id="tableHead"></thead>
+          <tbody id="productBody"><tr><td class="empty">입고건을 먼저 업로드하세요.</td></tr></tbody>
+        </table>
+      </div>
+      <div class="footer-note">
+        발주서는 웹에서 직접 수정할 수 있습니다. 센터 작업에서는 <b>같은 현재 박스에 여러 상품을 연속으로 추가</b>할 수 있고,
+        박스 마감 후 다음 박스로 넘어갑니다. 팔레트/밀크런의 G열 개념은 박스수, 택배의 G열 개념은 센터별 박스 순번으로 구분합니다.
+      </div>
     </div>
   </section>
 </main>
 
 <datalist id="boxSizeList">
-  <option value="60*50*45"><option value="60*50*25"><option value="50*40*40"><option value="40*30*30">
+  <option value="60×50×45">
+  <option value="60×50×25">
+  <option value="50×40×40">
+  <option value="40×30×30">
 </datalist>
-
 <script>
 const $=id=>document.getElementById(id);
 const DB_NAME='tradecodeInboundWorkDB';
 const DB_VERSION=1;
 const STORE='jobs';
+const ORDER_VIEW='__ORDER__';
+
 let db=null;
 let currentJob=null;
-let currentCenterId='';
+let currentCenterId=ORDER_VIEW;
 let selectedItemId='';
-let draftItemId='';
+let viewFilter='all';
 let saveTimer=null;
 
-function uid(prefix='id'){try{return prefix+'-'+crypto.randomUUID()}catch(e){return prefix+'-'+Date.now()+'-'+Math.random().toString(16).slice(2)}}
+function uid(prefix='id'){
+  try{return prefix+'-'+crypto.randomUUID()}catch(e){return prefix+'-'+Date.now()+'-'+Math.random().toString(16).slice(2)}
+}
 function norm(v){return String(v??'').trim().replace(/\s+/g,' ')}
 function normBarcode(v){return String(v??'').trim().replace(/\s+/g,'').replace(/\.0$/,'').toUpperCase()}
 function num(v){const n=Number(v);return Number.isFinite(n)?n:0}
 function fmt(v){return Math.round(num(v)).toLocaleString()}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 
-function openDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB_NAME,DB_VERSION);req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(STORE)){const s=d.createObjectStore(STORE,{keyPath:'id'});s.createIndex('updatedAt','updatedAt')}};req.onsuccess=()=>{db=req.result;resolve(db)};req.onerror=()=>reject(req.error)})}
-function idbPut(job){if(!db)return Promise.resolve();return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(job);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}
-function idbGet(id){if(!db)return Promise.resolve(null);return new Promise((resolve,reject)=>{const req=db.transaction(STORE,'readonly').objectStore(STORE).get(id);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error)})}
-function idbDelete(id){if(!db)return Promise.resolve();return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}
-function idbAll(){if(!db)return Promise.resolve([]);return new Promise((resolve,reject)=>{const req=db.transaction(STORE,'readonly').objectStore(STORE).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)})}
-function scheduleSave(){clearTimeout(saveTimer);saveTimer=setTimeout(saveCurrentJob,250)}
-async function saveCurrentJob(){if(!currentJob)return;currentJob.updatedAt=Date.now();await idbPut(currentJob);refreshJobSelect(false)}
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open(DB_NAME,DB_VERSION);
+    req.onupgradeneeded=()=>{
+      const d=req.result;
+      if(!d.objectStoreNames.contains(STORE)){
+        const s=d.createObjectStore(STORE,{keyPath:'id'});
+        s.createIndex('updatedAt','updatedAt');
+      }
+    };
+    req.onsuccess=()=>{db=req.result;resolve(db)};
+    req.onerror=()=>reject(req.error);
+  });
+}
+function idbPut(job){
+  if(!db)return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).put(job);
+    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+  });
+}
+function idbGet(id){
+  if(!db)return Promise.resolve(null);
+  return new Promise((resolve,reject)=>{
+    const req=db.transaction(STORE,'readonly').objectStore(STORE).get(id);
+    req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);
+  });
+}
+function idbDelete(id){
+  if(!db)return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+  });
+}
+function idbAll(){
+  if(!db)return Promise.resolve([]);
+  return new Promise((resolve,reject)=>{
+    const req=db.transaction(STORE,'readonly').objectStore(STORE).getAll();
+    req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error);
+  });
+}
+function scheduleSave(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(saveCurrentJob,220);
+}
+async function saveCurrentJob(){
+  if(!currentJob)return;
+  currentJob.updatedAt=Date.now();
+  await idbPut(currentJob);
+  refreshJobSelect(false);
+}
 
+/* ---------- 원본 엑셀 파싱 ---------- */
 function parseHeaderTitle(text){
   const t=norm(text);
   const m=t.match(/(\d{1,2})월\s*(\d{1,2})일\s*선적(?:건)?\s*\(?\s*(\d{1,2})월\s*(\d{1,2})일\s*쿠팡\s*입고(?:건)?\s*\)?/);
   if(!m)return null;
-  return {shipMonth:+m[1],shipDay:+m[2],inboundMonth:+m[3],inboundDay:+m[4],title:`${+m[1]}월 ${+m[2]}일 선적 (${+m[3]}월 ${+m[4]}일 쿠팡 입고)`};
+  return {
+    shipMonth:+m[1],shipDay:+m[2],inboundMonth:+m[3],inboundDay:+m[4],
+    title:`${+m[1]}월 ${+m[2]}일 선적 (${+m[3]}월 ${+m[4]}일 쿠팡 입고)`
+  };
 }
-function companyFromHeader(text){const t=norm(text);const m=t.match(/^(.*?)\s*\d{1,2}월\s*\d{1,2}일\s*선적/);return norm(m?.[1]||'')}
-function centerDisplay(company,rawCenter){let c=norm(rawCenter);const comp=norm(company);if(/봄날애/.test(comp)&&!/봄날애/.test(c))c=`봄날애 ${c}`;if(/차통/.test(comp)&&!/차통/.test(c))c=`차통 ${c}`;return c}
-function guessCenterType(center){const c=norm(center).replace(/\s+/g,'');if(/팔레트|밀크런/i.test(c))return 'pallet';if(/인천14|인천47/i.test(c))return 'pallet';return 'parcel'}
-function classifyType(center){if(currentJob?.centerTypes?.[center])return currentJob.centerTypes[center];return guessCenterType(center)}
+function companyFromHeader(text){
+  const t=norm(text);
+  const m=t.match(/^(.*?)\s*\d{1,2}월\s*\d{1,2}일\s*선적/);
+  return norm(m?.[1]||'코리아원');
+}
+function normalizeCompany(v){
+  const t=norm(v);
+  if(/봄날애/.test(t))return '봄날애';
+  if(/차통/.test(t))return '차통';
+  return '코리아원';
+}
+function centerDisplay(company,rawCenter){
+  let c=norm(rawCenter);
+  const comp=normalizeCompany(company);
+  if(comp==='봄날애'&&!/봄날애/.test(c))c=`봄날애 ${c}`;
+  if(comp==='차통'&&!/차통/.test(c))c=`차통 ${c}`;
+  return c;
+}
+function guessMode(center){
+  const c=norm(center).replace(/\s+/g,'');
+  if(/밀크런/i.test(c))return 'milkrun';
+  if(/팔레트/i.test(c))return 'pallet';
+  if(/인천14/i.test(c))return 'pallet';
+  if(/인천47/i.test(c))return 'milkrun';
+  return 'parcel';
+}
+function modeType(mode){return mode==='parcel'?'parcel':'pallet'}
+function modeLabel(mode){return mode==='pallet'?'팔레트':mode==='milkrun'?'밀크런':'택배'}
 
 function parseSourceWorkbook(wb,fileName){
-  let rows=[],foundTitle=null,company='',originalOrder=0;
+  let rows=[],foundTitle=null,company='코리아원',originalOrder=0;
   wb.SheetNames.forEach(sheetName=>{
     const ws=wb.Sheets[sheetName];
     const data=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
     data.forEach(r=>{
-      const a=norm(r[0]);const titleInfo=parseHeaderTitle(a);
-      if(titleInfo){if(!foundTitle)foundTitle=titleInfo;company=companyFromHeader(a);return}
-      const productNumber=norm(r[0]),productName=norm(r[1]),barcode=normBarcode(r[2]),centerRaw=norm(r[3]),orderQty=num(String(r[4]).replace(/,/g,''));
+      const a=norm(r[0]);
+      const titleInfo=parseHeaderTitle(a);
+      if(titleInfo){
+        if(!foundTitle)foundTitle=titleInfo;
+        company=companyFromHeader(a);
+        return;
+      }
+      const productNumber=norm(r[0]);
+      const productName=norm(r[1]);
+      const barcode=normBarcode(r[2]);
+      const centerRaw=norm(r[3]);
+      const orderQty=num(String(r[4]).replace(/,/g,''));
       if(productNumber&&productName&&barcode&&centerRaw&&orderQty>0){
         originalOrder++;
-        const centerName=centerDisplay(company,centerRaw);
-        rows.push({id:uid('item'),originalOrder,company,productNumber,productName,barcode,centerRaw,centerName,orderQty,entries:[],touchedAt:0,scannedCount:0,manual:false});
+        rows.push({
+          id:uid('item'),originalOrder,
+          company:normalizeCompany(company),
+          productNumber,productName,barcode,centerRaw,
+          centerName:centerDisplay(company,centerRaw),
+          orderQty,touchedAt:0,scannedCount:0,manual:false
+        });
       }
-    })
+    });
   });
   if(!rows.length)throw new Error('상품번호 / 제품명 / 바코드 / 물류센터 / 발주수량 데이터를 찾지 못했습니다.');
-  const job={id:uid('job'),title:foundTitle?.title||norm(fileName).replace(/\.(xlsx|xls)$/i,''),shipMonth:foundTitle?.shipMonth||null,shipDay:foundTitle?.shipDay||null,inboundMonth:foundTitle?.inboundMonth||null,inboundDay:foundTitle?.inboundDay||null,sourceFileName:fileName,createdAt:Date.now(),updatedAt:Date.now(),items:rows,manualCenters:[],centerDefaults:{},centerTypes:{},nextBoxNo:1};
-  [...new Set(rows.map(x=>x.centerName))].forEach(name=>job.centerTypes[name]=guessCenterType(name));
+
+  const job={
+    id:uid('job'),
+    title:foundTitle?.title||norm(fileName).replace(/\.(xlsx|xls)$/i,''),
+    shipMonth:foundTitle?.shipMonth||null,shipDay:foundTitle?.shipDay||null,
+    inboundMonth:foundTitle?.inboundMonth||null,inboundDay:foundTitle?.inboundDay||null,
+    sourceFileName:fileName,createdAt:Date.now(),updatedAt:Date.now(),
+    items:rows,boxes:[],manualCenters:[],centerModes:{},centerDefaults:{},nextBoxNo:1
+  };
+  [...new Set(rows.map(x=>x.centerName))].forEach(name=>job.centerModes[name]=guessMode(name));
   return job;
 }
 
-function allCenterDefs(){
-  if(!currentJob)return[];
-  const map=new Map();
-  currentJob.items.forEach(item=>{if(!map.has(item.centerName))map.set(item.centerName,{id:'center-'+item.centerName,name:item.centerName,type:currentJob.centerTypes?.[item.centerName]||guessCenterType(item.centerName),manual:false})});
-  (currentJob.manualCenters||[]).forEach(c=>map.set(c.name,{...c,manual:true,type:currentJob.centerTypes?.[c.name]||c.type||guessCenterType(c.name)}));
-  return [...map.values()];
+/* v2 저장본을 v3로 안전하게 변환 */
+function ensureV3(job){
+  if(!job)return job;
+  job.items=Array.isArray(job.items)?job.items:[];
+  job.boxes=Array.isArray(job.boxes)?job.boxes:[];
+  job.manualCenters=Array.isArray(job.manualCenters)?job.manualCenters:[];
+  job.centerModes=job.centerModes||job.centerTypes||{};
+  job.centerDefaults=job.centerDefaults||{};
+  job.nextBoxNo=Math.max(1,Math.floor(num(job.nextBoxNo)||1));
+
+  job.items.forEach((item,i)=>{
+    item.id=item.id||uid('item');
+    item.originalOrder=item.originalOrder||i+1;
+    item.company=normalizeCompany(item.company||item.centerName);
+    item.centerRaw=norm(item.centerRaw||item.centerName);
+    item.centerName=norm(item.centerName||centerDisplay(item.company,item.centerRaw));
+    if(!job.centerModes[item.centerName])job.centerModes[item.centerName]=guessMode(item.centerName);
+  });
+
+  // 이전 entries가 있으면 각각 별도 박스로 변환. 기존 작업을 잃지 않는다.
+  if(!job.boxes.length){
+    job.items.forEach(item=>{
+      if(Array.isArray(item.entries)&&item.entries.length){
+        item.entries.forEach(e=>{
+          const mode=job.centerModes[item.centerName]||guessMode(item.centerName);
+          const boxCount=mode==='parcel'?1:Math.max(1,Math.floor(num(e.boxCount)||1));
+          job.boxes.push({
+            id:uid('box'),centerName:item.centerName,mode,
+            status:'closed',createdAt:e.createdAt||Date.now(),closedAt:e.createdAt||Date.now(),
+            boxNo:norm(e.boxNo),boxCount,boxSize:norm(e.boxSize),
+            palletNo:norm(e.palletNo),outBoxNo:norm(e.outBoxNo),trackingNo:norm(e.trackingNo),
+            contents:[{itemId:item.id,qtyPerBox:Math.max(0,Math.floor(num(e.qtyPerBox)))}]
+          });
+        });
+      }
+      delete item.entries;
+    });
+  }
+  return job;
+}
+
+/* ---------- 센터/정렬 ---------- */
+function companyForCenter(centerName){
+  const item=currentJob?.items.find(x=>x.centerName===centerName);
+  if(item)return normalizeCompany(item.company);
+  if(/봄날애/.test(centerName))return '봄날애';
+  if(/차통/.test(centerName))return '차통';
+  return '코리아원';
+}
+function centerGroupRank(c){
+  if(c.mode==='parcel')return 6;
+  const comp=companyForCenter(c.name);
+  const base=comp==='코리아원'?0:comp==='봄날애'?2:4;
+  return base+(c.mode==='milkrun'?1:0);
+}
+function centerSort(a,b){
+  const ra=centerGroupRank(a),rb=centerGroupRank(b);
+  if(ra!==rb)return ra-rb;
+  const ca=companyForCenter(a.name),cb=companyForCenter(b.name);
+  if(ca!==cb){
+    const m={'코리아원':0,'봄날애':1,'차통':2};
+    return (m[ca]??9)-(m[cb]??9);
+  }
+  return a.name.localeCompare(b.name,'ko',{numeric:true});
 }
 function centerIdFromName(name){return 'center-'+name}
+function allCenterDefs(){
+  if(!currentJob)return [];
+  const map=new Map();
+  currentJob.items.forEach(item=>{
+    if(!map.has(item.centerName)){
+      map.set(item.centerName,{
+        id:centerIdFromName(item.centerName),
+        name:item.centerName,
+        mode:currentJob.centerModes?.[item.centerName]||guessMode(item.centerName),
+        manual:false
+      });
+    }
+  });
+  currentJob.manualCenters.forEach(c=>{
+    map.set(c.name,{...c,mode:currentJob.centerModes?.[c.name]||c.mode||guessMode(c.name),manual:true});
+  });
+  return [...map.values()].sort(centerSort);
+}
 function selectedCenter(){return allCenterDefs().find(c=>c.id===currentCenterId)||null}
 function currentCenterName(){return selectedCenter()?.name||''}
-function itemsForCenter(centerName){return (currentJob?.items||[]).filter(x=>x.centerName===centerName)}
-function entryPacked(item,e){return classifyType(item.centerName)==='pallet'?num(e.qtyPerBox)*Math.max(1,num(e.boxCount)):num(e.qtyPerBox)}
-function itemPacked(item){return (item.entries||[]).reduce((s,e)=>s+entryPacked(item,e),0)}
+function itemsForCenter(name){return (currentJob?.items||[]).filter(x=>x.centerName===name)}
+function boxesForCenter(name){return (currentJob?.boxes||[]).filter(x=>x.centerName===name)}
+function currentOpenBox(name=currentCenterName()){
+  return boxesForCenter(name).find(b=>b.status==='open')||null;
+}
+function nextBoxSeq(centerName,boxId){
+  const boxes=boxesForCenter(centerName).slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  const idx=boxes.findIndex(x=>x.id===boxId);
+  return idx>=0?idx+1:0;
+}
+
+/* ---------- 수량 계산 ---------- */
+function boxContentTotalForItem(box,itemId){
+  const c=(box.contents||[]).find(x=>x.itemId===itemId);
+  if(!c)return 0;
+  return Math.max(0,num(c.qtyPerBox))*Math.max(1,num(box.boxCount)||1);
+}
+function itemPacked(item){
+  return (currentJob?.boxes||[]).reduce((s,b)=>s+boxContentTotalForItem(b,item.id),0);
+}
 function itemRemain(item){return Math.max(0,num(item.orderQty)-itemPacked(item))}
 function itemComplete(item){return num(item.orderQty)>0&&itemPacked(item)>=num(item.orderQty)}
-function centerStats(name){const items=itemsForCenter(name);const order=items.reduce((s,x)=>s+num(x.orderQty),0);const packed=items.reduce((s,x)=>s+itemPacked(x),0);const boxes=items.reduce((s,x)=>s+(x.entries||[]).reduce((a,e)=>a+(classifyType(x.centerName)==='pallet'?Math.max(1,num(e.boxCount)):1),0),0);return{order,packed,remain:Math.max(0,order-packed),boxes}}
-function jobStats(){if(!currentJob)return{order:0,packed:0,remain:0,boxes:0};const order=currentJob.items.reduce((s,x)=>s+num(x.orderQty),0);const packed=currentJob.items.reduce((s,x)=>s+itemPacked(x),0);const boxes=currentJob.items.reduce((s,x)=>s+(x.entries||[]).reduce((a,e)=>a+(classifyType(x.centerName)==='pallet'?Math.max(1,num(e.boxCount)):1),0),0);return{order,packed,remain:Math.max(0,order-packed),boxes}}
+function centerStats(centerName){
+  const items=itemsForCenter(centerName);
+  const order=items.reduce((s,x)=>s+num(x.orderQty),0);
+  const packed=items.reduce((s,x)=>s+itemPacked(x),0);
+  const boxes=boxesForCenter(centerName).reduce((s,b)=>s+Math.max(1,num(b.boxCount)||1),0);
+  return {order,packed,remain:Math.max(0,order-packed),boxes};
+}
+function jobStats(){
+  if(!currentJob)return {order:0,packed:0,remain:0,boxes:0};
+  const order=currentJob.items.reduce((s,x)=>s+num(x.orderQty),0);
+  const packed=currentJob.items.reduce((s,x)=>s+itemPacked(x),0);
+  const boxes=currentJob.boxes.reduce((s,b)=>s+Math.max(1,num(b.boxCount)||1),0);
+  return {order,packed,remain:Math.max(0,order-packed),boxes};
+}
 
-function setScanMessage(msg,type=''){const el=$('scanMessage');el.textContent=msg;el.className='scanmsg'+(type?' '+type:'')}
-function beep(ok=true){try{const ctx=new(window.AudioContext||window.webkitAudioContext)(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.frequency.value=ok?880:220;gain.gain.value=.04;osc.connect(gain);gain.connect(ctx.destination);osc.start();setTimeout(()=>{osc.stop();ctx.close()},ok?90:180)}catch(e){}}
-function focusScan(){setTimeout(()=>{$('scanInput')?.focus();$('scanInput')?.select()},30)}
-
-function renderAll(){renderHeader();renderKpis();renderSheetTabs();renderExcelSheet()}
-function renderHeader(){
-  if(!currentJob){$('jobTitle').textContent='쿠팡 입고 작업';$('sourceFileName').textContent='';return}
-  $('jobTitle').textContent=currentJob.title;
-  $('sourceFileName').textContent=`원본: ${currentJob.sourceFileName||''} · 자동저장`;
+/* ---------- 렌더링 ---------- */
+function renderAll(){
+  renderJobHeader();renderKpis();renderCenters();renderProductTable();renderEditor();
+}
+function renderJobHeader(){
+  if(!currentJob){
+    $('jobTitle').innerHTML='새 입고건을 만들어 주세요<small>첫 번째 선적 엑셀을 업로드하면 날짜와 센터를 자동으로 읽습니다.</small>';
+    $('sourceFileName').textContent='';
+    return;
+  }
+  const centers=allCenterDefs();
+  const p=centers.filter(x=>x.mode==='pallet').length;
+  const m=centers.filter(x=>x.mode==='milkrun').length;
+  const t=centers.filter(x=>x.mode==='parcel').length;
+  $('jobTitle').innerHTML=`${esc(currentJob.title)}<small>${esc(currentJob.sourceFileName||'')} · 팔레트 ${p} · 밀크런 ${m} · 택배 ${t} · 자동저장</small>`;
+  $('sourceFileName').textContent=currentJob.sourceFileName?`원본: ${currentJob.sourceFileName}`:'';
 }
 function renderKpis(){
-  const s=jobStats();$('kpiOrder').textContent=fmt(s.order);$('kpiPacked').textContent=fmt(s.packed);$('kpiRemain').textContent=fmt(s.remain);$('kpiBoxes').textContent=fmt(s.boxes);
-  $('kpiProgress').textContent=(s.order?Math.min(100,s.packed/s.order*100):0).toFixed(1)+'%';
-  const next=Math.max(1,Math.floor(num(currentJob?.nextBoxNo)||1));$('nextBoxNoInput').value=next;
+  const s=jobStats();
+  $('kpiOrder').textContent=fmt(s.order);$('kpiPacked').textContent=fmt(s.packed);
+  $('kpiRemain').textContent=fmt(s.remain);$('kpiBoxes').textContent=fmt(s.boxes);
+  const pct=s.order?Math.min(100,s.packed/s.order*100):0;
+  $('kpiProgress').textContent=`${pct.toFixed(1)}%`;$('progressBar').style.width=pct+'%';
+  $('kpiNextBox').textContent=fmt(currentJob?.nextBoxNo||1);
+  if($('nextBoxNoInput'))$('nextBoxNoInput').value=currentJob?.nextBoxNo||1;
 }
-function renderSheetTabs(){
-  const wrap=$('sheetTabsTop');
-  if(!currentJob){wrap.innerHTML='<button class="sheet-tab active">입고건 없음</button>';return}
-  const centers=allCenterDefs();
-  if(!centers.some(c=>c.id===currentCenterId))currentCenterId=centers[0]?.id||'';
-  wrap.innerHTML=centers.map(c=>`<button class="sheet-tab ${c.type} ${c.id===currentCenterId?'active':''}" onclick="selectCenter('${encodeURIComponent(c.id)}')">${esc(c.name)}</button>`).join('');
-  const c=selectedCenter();if(c&&$('centerTypeSelect'))$('centerTypeSelect').value=c.type;
+function centerVisible(c){
+  if(viewFilter==='all')return true;
+  if(['pallet','milkrun','parcel'].includes(viewFilter))return c.mode===viewFilter;
+  const s=centerStats(c.name);
+  if(viewFilter==='complete')return s.order>0&&s.packed>=s.order;
+  if(viewFilter==='incomplete')return s.order===0||s.packed<s.order;
+  return true;
 }
-function selectCenter(enc){currentCenterId=decodeURIComponent(enc);selectedItemId='';draftItemId='';renderAll();focusScan()}
-function setNextBoxNo(){if(!currentJob)return;currentJob.nextBoxNo=Math.max(1,Math.floor(num($('nextBoxNoInput').value)||1));scheduleSave();renderKpis()}
-function changeCurrentCenterType(type){const c=selectedCenter();if(!currentJob||!c)return;currentJob.centerTypes=currentJob.centerTypes||{};currentJob.centerTypes[c.name]=type==='pallet'?'pallet':'parcel';scheduleSave();renderAll()}
-function nextAutoBoxRange(cnt=1){const start=Math.max(1,Math.floor(num(currentJob?.nextBoxNo)||1)),n=Math.max(1,Math.floor(num(cnt)||1)),end=start+n-1;return{start,end,text:n===1?String(start):`${start}~${end}`}}
-function consumeAutoBoxNumbers(cnt=1){currentJob.nextBoxNo=Math.max(1,Math.floor(num(currentJob?.nextBoxNo)||1))+Math.max(1,Math.floor(num(cnt)||1))}
-function parcelBoxSequence(centerName,entryId){const arr=[];(currentJob?.items||[]).filter(x=>x.centerName===centerName).forEach(item=>(item.entries||[]).forEach(e=>arr.push({id:e.id,createdAt:e.createdAt||0})));arr.sort((a,b)=>a.createdAt-b.createdAt);const i=arr.findIndex(x=>x.id===entryId);return i>=0?i+1:0}
-
-function completedRowsForCenter(name){
-  const out=[];
-  itemsForCenter(name).forEach(item=>(item.entries||[]).forEach(e=>out.push({item,e,createdAt:e.createdAt||0})));
-  out.sort((a,b)=>a.createdAt-b.createdAt);
-  return out;
+function groupText(c){
+  if(c.mode==='parcel')return `${companyForCenter(c.name)} 택배`;
+  return `${companyForCenter(c.name)} ${modeLabel(c.mode)}`;
 }
-function residualRowsForCenter(name){
-  return itemsForCenter(name).filter(x=>itemRemain(x)>0).slice().sort((a,b)=>a.originalOrder-b.originalOrder);
-}
-function totalCell(c){
-  const s=centerStats(c.name);return s.order?s.packed+'/'+s.order:'0';
-}
-function sizeDisplay(e){return esc(e?.boxSize||'')}
-function rowNo(i){return i+4}
-
-function renderExcelSheet(){
-  const body=$('excelBody');
-  const c=selectedCenter();
-  if(!currentJob||!c){body.innerHTML='<tr><td class="empty">새 입고 엑셀을 업로드해 주세요.</td></tr>';return}
-  const type=c.type,completed=completedRowsForCenter(c.name),residual=residualRowsForCenter(c.name),stats=centerStats(c.name);
-  let rowIndex=0;
-
-  let html=`
-    <tr class="title-row">
-      <td class="rowno">1</td>
-      <td colspan="${type==='pallet'?12:13}">${esc(c.name)}</td>
-    </tr>
-    <tr>
-      <th class="rowno">2</th>
-      <th class="c-a">상품번호</th>
-      <th class="c-b">제품명</th>
-      <th class="c-c">바코드</th>
-      <th class="c-d">물류센터</th>
-      <th class="c-e">출고총수량</th>
-      <th class="c-f">박스당<br>제품수량</th>
-      <th class="c-g">박스총수량</th>
-      <th class="c-h">사이즈</th>
-      ${type==='pallet'?'<th class="c-k">Palette</th>':''}
-      <th class="c-p">박스번호</th>
-      <th class="c-q">출고<br>박스번호</th>
-      ${type==='parcel'?'<th class="c-r">송장번호</th>':''}
-      <th class="c-action">작업</th>
-    </tr>
-    <tr class="total-row">
-      <td class="rowno">3</td>
-      <td></td><td></td><td></td><td></td>
-      <td class="center"><b>${fmt(stats.order)}</b></td>
-      <td></td>
-      <td class="center"><b>${fmt(stats.boxes)}</b></td>
-      <td></td>
-      ${type==='pallet'?'<td class="total-yellow center"><b>'+fmt(completed.filter(x=>x.e.palletNo).length)+'</b></td>':''}
-      <td></td><td></td>${type==='parcel'?'<td></td>':''}
-      <td class="center"><b>${stats.order?Math.min(100,stats.packed/stats.order*100).toFixed(0):0}%</b></td>
-    </tr>`;
-
-  if(draftItemId){
-    const item=currentJob.items.find(x=>x.id===draftItemId);
-    if(item&&item.centerName===c.name){
-      const defaults=currentJob.centerDefaults?.[c.name]||{};
-      const remain=itemRemain(item);
-      const auto=nextAutoBoxRange(1);
-      html+=`
-      <tr class="draft-row selected-row" id="draftRow">
-        <td class="rowno">▶</td>
-        <td class="center">${esc(item.productNumber)}</td>
-        <td class="product-name">${esc(item.productName)}</td>
-        <td class="nowrap">${esc(item.barcode)}</td>
-        <td class="center-cell">${esc(item.centerName)}</td>
-        <td class="center"><b>${fmt(remain)}</b></td>
-        <td><input id="draftQty" type="number" min="1" value="${remain>0?Math.min(remain,num(defaults.qtyPerBox)||remain):''}" onkeydown="draftKey(event)"></td>
-        <td><input id="draftBoxCount" type="number" min="1" value="1" ${type==='parcel'?'disabled':''} onkeydown="draftKey(event)"></td>
-        <td><input id="draftSize" list="boxSizeList" value="${esc(defaults.boxSize||'60*50*45')}" onkeydown="draftKey(event)"></td>
-        ${type==='pallet'?`<td><input id="draftPallet" value="${esc(defaults.palletNo||'')}" placeholder="1" onkeydown="draftKey(event)"></td>`:''}
-        <td><input id="draftBoxNo" value="${esc(auto.text)}" onkeydown="draftKey(event)"></td>
-        <td><input id="draftOutBox" value="" onkeydown="draftKey(event)"></td>
-        ${type==='parcel'?'<td><input id="draftTracking" value="" onkeydown="draftKey(event)"></td>':''}
-        <td class="center"><button class="btn btn-primary btn-sm" onclick="saveDraftRow()">저장</button></td>
-      </tr>`;
-    }
+function renderCenters(){
+  const strip=$('centerStrip');
+  if(!currentJob){
+    strip.innerHTML='<div class="sub">입고건을 업로드하면 발주서와 센터가 생성됩니다.</div>';return;
   }
-
-  completed.forEach(({item,e})=>{
-    const qty=entryPacked(item,e);
-    const boxTotal=type==='pallet'?Math.max(1,num(e.boxCount)):parcelBoxSequence(item.centerName,e.id);
-    html+=`
-      <tr class="done-row">
-        <td class="rowno">${rowNo(rowIndex++)}</td>
-        <td class="center">${esc(item.productNumber)}</td>
-        <td class="product-name">${esc(item.productName)}</td>
-        <td class="nowrap">${esc(item.barcode)}</td>
-        <td class="center-cell">${esc(item.centerName)}</td>
-        <td class="center"><b>${fmt(qty)}</b></td>
-        <td class="center">${fmt(e.qtyPerBox)}</td>
-        <td class="center">${fmt(boxTotal)}</td>
-        <td class="center"><b>${sizeDisplay(e)}</b></td>
-        ${type==='pallet'?`<td class="center">${esc(e.palletNo||'')}</td>`:''}
-        <td class="center">${esc(e.boxNo||'')}</td>
-        <td class="center">${esc(e.outBoxNo||'')}</td>
-        ${type==='parcel'?`<td>${esc(e.trackingNo||'')}</td>`:''}
-        <td class="center"><span class="status-badge done">완료</span> <button class="btn btn-danger btn-sm" onclick="deleteEntryById('${item.id}','${e.id}')">×</button></td>
-      </tr>`;
-  });
-
-  if(completed.length&&residual.length){
-    html+=`<tr class="worked-separator"><td class="rowno"></td><td class="septext" colspan="${type==='pallet'?12:13}">↓ 미작업 / 남은 수량</td></tr>`;
-  }
-
-  residual.forEach(item=>{
-    html+=`
-      <tr class="remain-row ${item.id===selectedItemId?'selected-row':''}" onclick="selectResidual('${item.id}')">
-        <td class="rowno">${rowNo(rowIndex++)}</td>
-        <td class="center">${esc(item.productNumber)}</td>
-        <td class="product-name">${esc(item.productName)}</td>
-        <td class="nowrap">${esc(item.barcode)}</td>
-        <td class="center-cell">${esc(item.centerName)}</td>
-        <td class="center"><b>${fmt(itemRemain(item))}</b></td>
-        <td></td><td></td><td></td>
-        ${type==='pallet'?'<td></td>':''}
-        <td></td><td></td>${type==='parcel'?'<td></td>':''}
-        <td class="center"><span class="status-badge wait">대기</span></td>
-      </tr>`;
-  });
-
-  if(!completed.length&&!residual.length&&!draftItemId){
-    html+=`<tr><td colspan="${type==='pallet'?13:14}" class="empty">이 시트에 작업할 상품이 없습니다.</td></tr>`;
-  }
-  body.innerHTML=html;
-  setTimeout(()=>{$('draftQty')?.focus();$('draftQty')?.select()},20);
+  const centers=allCenterDefs().filter(centerVisible);
+  let html=`<button class="center-btn order-tab-btn ${currentCenterId===ORDER_VIEW?'active':''}" onclick="selectOrderView()">
+    <strong>📋 발주서</strong><small>원본 발주 데이터 확인·수정</small><div class="group-label">맨 앞 고정</div>
+  </button>`;
+  html+=centers.map(c=>{
+    const s=centerStats(c.name);
+    const pct=s.order?Math.min(100,s.packed/s.order*100):0;
+    return `<button class="center-btn ${c.id===currentCenterId?'active':''}" onclick="selectCenter('${encodeURIComponent(c.id)}')">
+      <strong>${esc(c.name)}</strong>
+      <small>${fmt(s.packed)} / ${fmt(s.order)} · 박스 ${fmt(s.boxes)} · ${pct.toFixed(0)}%</small>
+      <span class="type-pill ${c.mode==='parcel'?'parcel':'pallet'}">${modeLabel(c.mode)}</span>
+      <div class="group-label">${esc(groupText(c))}</div>
+    </button>`;
+  }).join('');
+  strip.innerHTML=html;
 }
-
-function selectResidual(id){selectedItemId=id;draftItemId=id;const item=currentJob.items.find(x=>x.id===id);if(item)item.touchedAt=Date.now();scheduleSave();renderExcelSheet()}
-function draftKey(e){if(e.key==='Enter'){e.preventDefault();saveDraftRow()}}
-
-function saveDraftRow(){
-  const item=currentJob?.items.find(x=>x.id===draftItemId);const c=selectedCenter();if(!item||!c)return;
-  const type=c.type;
-  const qtyPerBox=Math.max(0,Math.floor(num($('draftQty')?.value)));
-  const boxCount=type==='pallet'?Math.max(1,Math.floor(num($('draftBoxCount')?.value)||1)):1;
-  const boxSize=norm($('draftSize')?.value);
-  const palletNo=type==='pallet'?norm($('draftPallet')?.value):'';
-  let boxNo=norm($('draftBoxNo')?.value);
-  const outBoxNo=norm($('draftOutBox')?.value);
-  const trackingNo=type==='parcel'?norm($('draftTracking')?.value):'';
-  if(qtyPerBox<=0){alert('박스당 제품수량을 입력해 주세요.');return}
-  if(!boxSize){alert('사이즈를 입력해 주세요.');return}
-  const addQty=qtyPerBox*boxCount;
-  if(itemPacked(item)+addQty>item.orderQty&&!confirm(`발주수량보다 ${fmt(itemPacked(item)+addQty-item.orderQty)}개 많습니다. 그대로 저장할까요?`))return;
-
-  let autoUsed=false;
-  if(!boxNo){boxNo=nextAutoBoxRange(type==='pallet'?boxCount:1).text;autoUsed=true}
-  else{
-    const auto=nextAutoBoxRange(type==='pallet'?boxCount:1);
-    if(boxNo===auto.text)autoUsed=true;
+function setViewFilter(filter,btn){
+  viewFilter=filter;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  btn?.classList.add('active');
+  if(currentCenterId!==ORDER_VIEW){
+    const visible=allCenterDefs().filter(centerVisible);
+    if(!visible.some(c=>c.id===currentCenterId))currentCenterId=visible[0]?.id||ORDER_VIEW;
   }
-
-  item.entries=item.entries||[];
-  item.entries.push({id:uid('entry'),createdAt:Date.now(),boxSize,qtyPerBox,boxCount,palletNo,boxNo,outBoxNo,trackingNo});
-  if(autoUsed)consumeAutoBoxNumbers(type==='pallet'?boxCount:1);
-  item.touchedAt=Date.now();
-
-  currentJob.centerDefaults=currentJob.centerDefaults||{};
-  currentJob.centerDefaults[c.name]={boxSize,qtyPerBox,palletNo};
-  draftItemId='';selectedItemId='';
+  renderAll();
+}
+function selectOrderView(){currentCenterId=ORDER_VIEW;selectedItemId='';renderAll()}
+function selectCenter(encodedId){currentCenterId=decodeURIComponent(encodedId);selectedItemId='';renderAll();focusScan()}
+function setNextBoxNo(){
+  if(!currentJob)return;
+  currentJob.nextBoxNo=Math.max(1,Math.floor(num($('nextBoxNoInput')?.value)||1));
+  scheduleSave();renderKpis();
+}
+function changeCurrentCenterMode(mode){
+  const c=selectedCenter();if(!currentJob||!c)return;
+  if(!['pallet','milkrun','parcel'].includes(mode))return;
+  currentJob.centerModes[c.name]=mode;
+  currentJob.boxes.filter(b=>b.centerName===c.name&&b.status==='open').forEach(b=>b.mode=mode);
   scheduleSave();renderAll();
-  setScanMessage(`✓ ${item.productName} · ${fmt(addQty)}개 작업 저장 완료`,'ok');beep(true);focusScan();
-}
-function deleteEntryById(itemId,entryId){
-  const item=currentJob?.items.find(x=>x.id===itemId);if(!item)return;
-  const i=(item.entries||[]).findIndex(e=>e.id===entryId);if(i<0)return;
-  if(!confirm('이 작업행을 삭제할까요?'))return;
-  item.entries.splice(i,1);item.touchedAt=Date.now();scheduleSave();renderAll();
 }
 
+/* ---------- 발주서 편집 ---------- */
+function updateJobTitle(v){
+  if(!currentJob)return;
+  currentJob.title=norm(v)||currentJob.title;scheduleSave();renderJobHeader();
+}
+function addOrderRow(){
+  if(!currentJob)return;
+  const id=uid('item');
+  currentJob.items.push({
+    id,originalOrder:Math.max(0,...currentJob.items.map(x=>num(x.originalOrder)))+1,
+    company:'코리아원',productNumber:'',productName:'',barcode:'',centerRaw:'',centerName:'',orderQty:0,
+    touchedAt:0,scannedCount:0,manual:true
+  });
+  scheduleSave();renderProductTable();
+  setTimeout(()=>document.querySelector(`[data-order-id="${id}"][data-key="productNumber"]`)?.focus(),30);
+}
+function updateOrderItem(id,key,value){
+  const item=currentJob?.items.find(x=>x.id===id);if(!item)return;
+  if(['company','centerRaw'].includes(key)&&itemPacked(item)>0){
+    alert('이미 작업수량이 있는 상품은 회사/물류센터를 변경할 수 없습니다. 먼저 해당 박스 작업을 삭제해 주세요.');
+    renderProductTable();return;
+  }
+  if(key==='orderQty')item.orderQty=Math.max(0,Math.floor(num(value)));
+  else if(key==='barcode')item.barcode=normBarcode(value);
+  else if(key==='company')item.company=normalizeCompany(value);
+  else item[key]=norm(value);
+
+  if(key==='company'||key==='centerRaw'){
+    item.centerName=centerDisplay(item.company,item.centerRaw);
+    if(item.centerName&&!currentJob.centerModes[item.centerName])currentJob.centerModes[item.centerName]=guessMode(item.centerName);
+  }
+  scheduleSave();renderKpis();renderCenters();
+}
+function deleteOrderItem(id){
+  const item=currentJob?.items.find(x=>x.id===id);if(!item)return;
+  if(itemPacked(item)>0){alert('작업수량이 있는 상품은 삭제할 수 없습니다. 먼저 박스 작업을 삭제해 주세요.');return}
+  if(!confirm('이 발주상품을 삭제할까요?'))return;
+  currentJob.items=currentJob.items.filter(x=>x.id!==id);scheduleSave();renderAll();
+}
+function orderRowsSorted(){
+  const companyRank={'코리아원':0,'봄날애':1,'차통':2};
+  return currentJob.items.slice().sort((a,b)=>{
+    const ca=companyRank[normalizeCompany(a.company)]??9,cb=companyRank[normalizeCompany(b.company)]??9;
+    if(ca!==cb)return ca-cb;
+    return num(a.originalOrder)-num(b.originalOrder);
+  });
+}
+function renderOrderSheet(){
+  $('workspace').classList.add('order-view');
+  $('scanCard').classList.add('hidden');
+  $('centerModeWrap').classList.add('hidden');
+  $('orderToolbar').classList.remove('hidden');
+  $('orderTitleInput').value=currentJob.title||'';
+  $('centerTitle').textContent='📋 발주서';
+  $('centerSummary').textContent='원본 엑셀의 발주서 역할 · 상품번호/제품명/바코드/물류센터/발주수량 직접 수정 가능';
+  $('tableHead').innerHTML=`<tr>
+    <th>회사</th><th>상품번호</th><th>제품명</th><th>바코드</th><th>물류센터</th>
+    <th class="num">발주수량</th><th class="num">작업수량</th><th class="num">남음</th><th class="num">삭제</th>
+  </tr>`;
+  const q=norm($('productSearch')?.value).toLowerCase();
+  let rows=orderRowsSorted();
+  if(q)rows=rows.filter(x=>[x.company,x.productNumber,x.productName,x.barcode,x.centerRaw].some(v=>String(v||'').toLowerCase().includes(q)));
+  $('productBody').innerHTML=rows.length?rows.map(item=>`
+    <tr>
+      <td><select class="order-input order-company" data-order-id="${item.id}" data-key="company" onchange="updateOrderItem('${item.id}','company',this.value)">
+        ${['코리아원','봄날애','차통'].map(v=>`<option ${normalizeCompany(item.company)===v?'selected':''}>${v}</option>`).join('')}
+      </select></td>
+      <td><input class="order-input" data-order-id="${item.id}" data-key="productNumber" value="${esc(item.productNumber)}" onchange="updateOrderItem('${item.id}','productNumber',this.value)"></td>
+      <td><input class="order-input order-product" value="${esc(item.productName)}" onchange="updateOrderItem('${item.id}','productName',this.value)"></td>
+      <td><input class="order-input" value="${esc(item.barcode)}" onchange="updateOrderItem('${item.id}','barcode',this.value)"></td>
+      <td><input class="order-input order-center" value="${esc(item.centerRaw)}" onchange="updateOrderItem('${item.id}','centerRaw',this.value)"></td>
+      <td><input class="order-input" type="number" min="0" value="${item.orderQty}" onchange="updateOrderItem('${item.id}','orderQty',this.value)"></td>
+      <td class="num"><b>${fmt(itemPacked(item))}</b></td>
+      <td class="num">${fmt(itemRemain(item))}</td>
+      <td class="num"><button class="btn btn-danger btn-sm" onclick="deleteOrderItem('${item.id}')">삭제</button></td>
+    </tr>`).join(''):'<tr><td colspan="9" class="empty">발주상품이 없습니다.</td></tr>';
+}
+
+/* ---------- 센터 상품 표 ---------- */
+function sortedCurrentItems(){
+  let arr=itemsForCenter(currentCenterName());
+  const q=norm($('productSearch')?.value).toLowerCase();
+  if(q)arr=arr.filter(x=>[x.productName,x.barcode,x.productNumber].some(v=>String(v||'').toLowerCase().includes(q)));
+  return arr.slice().sort((a,b)=>{
+    const at=num(a.touchedAt),bt=num(b.touchedAt);
+    if(bt!==at)return bt-at;
+    const ad=itemComplete(a)?1:0,bd=itemComplete(b)?1:0;
+    if(bd!==ad)return bd-ad;
+    return num(a.originalOrder)-num(b.originalOrder);
+  });
+}
+function renderProductTable(){
+  if(!currentJob){
+    $('tableHead').innerHTML='<tr><th>상품</th></tr>';
+    $('productBody').innerHTML='<tr><td class="empty">입고건을 먼저 업로드하세요.</td></tr>';return;
+  }
+  if(currentCenterId===ORDER_VIEW){renderOrderSheet();return}
+
+  $('workspace').classList.remove('order-view');
+  $('scanCard').classList.remove('hidden');
+  $('centerModeWrap').classList.remove('hidden');
+  $('orderToolbar').classList.add('hidden');
+
+  const c=selectedCenter();
+  if(!c){selectOrderView();return}
+  const s=centerStats(c.name);
+  $('centerTitle').textContent=c.name;
+  $('centerSummary').textContent=`${companyForCenter(c.name)} ${modeLabel(c.mode)} · 발주 ${fmt(s.order)} · 작업 ${fmt(s.packed)} · 남음 ${fmt(s.remain)} · 실제박스 ${fmt(s.boxes)}`;
+  $('centerModeSelect').value=c.mode;
+  $('tableHead').innerHTML=`<tr><th class="num">상태</th><th>상품번호</th><th>제품명</th><th>바코드</th><th class="num">발주</th><th class="num">작업</th><th class="num">남음</th></tr>`;
+
+  const arr=sortedCurrentItems();
+  $('productBody').innerHTML=arr.length?arr.map(x=>{
+    const packed=itemPacked(x),remain=itemRemain(x),done=itemComplete(x),working=!done&&x.touchedAt>0;
+    return `<tr id="row-${x.id}" class="product-row ${x.id===selectedItemId?'selected':''} ${x.touchedAt?'touched':''} ${done?'complete':''}" onclick="selectItem('${x.id}')">
+      <td class="num"><span class="status-pill ${done?'done':working?'working':''}">${done?'완료':working?'작업중':'대기'}</span></td>
+      <td>${esc(x.productNumber)}</td><td class="name-cell">${esc(x.productName)}</td><td>${esc(x.barcode)}</td>
+      <td class="num"><b>${fmt(x.orderQty)}</b></td><td class="num"><b>${fmt(packed)}</b></td><td class="num">${fmt(remain)}</td>
+    </tr>`;
+  }).join(''):'<tr><td colspan="7" class="empty">이 작업장에 상품이 없습니다.</td></tr>';
+}
+function selectItem(id){
+  selectedItemId=id;
+  const item=currentJob.items.find(x=>x.id===id);
+  if(item){item.touchedAt=Date.now();scheduleSave()}
+  renderProductTable();renderEditor();
+}
+function selectedItem(){return currentJob?.items.find(x=>x.id===selectedItemId)||null}
+
+/* ---------- 혼합 박스 ---------- */
+function provisionalBoxNo(boxCount){
+  const start=Math.max(1,Math.floor(num(currentJob?.nextBoxNo)||1));
+  const cnt=Math.max(1,Math.floor(num(boxCount)||1));
+  return cnt===1?String(start):`${start}~${start+cnt-1}`;
+}
+function createOpenBox(){
+  const c=selectedCenter();if(!currentJob||!c)return null;
+  let existing=currentOpenBox(c.name);if(existing)return existing;
+  const d=currentJob.centerDefaults?.[c.name]||{};
+  const box={
+    id:uid('box'),centerName:c.name,mode:c.mode,status:'open',createdAt:Date.now(),
+    boxNo:'',boxCount:1,boxSize:d.boxSize||'',palletNo:d.palletNo||'',
+    outBoxNo:'',trackingNo:'',contents:[]
+  };
+  currentJob.boxes.push(box);scheduleSave();return box;
+}
+function boxPackedTotal(box){
+  return (box.contents||[]).reduce((s,c)=>s+num(c.qtyPerBox)*Math.max(1,num(box.boxCount)||1),0);
+}
+function openBoxContentHtml(box){
+  if(!box?.contents?.length)return '<div class="sub">아직 담긴 상품이 없습니다. 첫 상품을 추가한 뒤 다음 상품 바코드를 찍으면 같은 박스에 계속 담을 수 있습니다.</div>';
+  return box.contents.map(c=>{
+    const item=currentJob.items.find(x=>x.id===c.itemId);
+    return `<div class="box-content-item">
+      <div class="n">${esc(item?.productName||'상품')}</div>
+      <div class="q">${fmt(c.qtyPerBox)}개/박스</div>
+      <button class="btn btn-danger btn-sm" onclick="removeContentFromOpenBox('${c.itemId}')">삭제</button>
+    </div>`;
+  }).join('');
+}
+function closedBoxesHtml(centerName){
+  const boxes=boxesForCenter(centerName).filter(b=>b.status==='closed').sort((a,b)=>(b.closedAt||0)-(a.closedAt||0)).slice(0,8);
+  if(!boxes.length)return '<div class="sub">마감된 박스가 아직 없습니다.</div>';
+  return boxes.map(b=>{
+    const names=(b.contents||[]).map(c=>currentJob.items.find(x=>x.id===c.itemId)?.productName).filter(Boolean);
+    return `<div class="closed-box-item">
+      <strong>박스 ${esc(b.boxNo||'-')} · ${fmt(b.boxCount)}박스 ${names.length>1?'<span class="mix-badge">혼합 '+names.length+'종</span>':''}</strong>
+      <div class="detail">${esc(b.boxSize||'-')} · 작업 ${fmt(boxPackedTotal(b))}개 · ${esc(names.slice(0,3).join(' / '))}${names.length>3?' 외':''}</div>
+      <div class="button-row" style="margin-top:5px"><button class="btn btn-danger btn-sm" onclick="deleteClosedBox('${b.id}')">박스 삭제</button></div>
+    </div>`;
+  }).join('');
+}
+function renderEditor(){
+  const box=$('workEditor');
+  if(!currentJob||currentCenterId===ORDER_VIEW){box.className='selected-empty';box.innerHTML='센터 작업장을 선택하세요.';return}
+  const c=selectedCenter();if(!c)return;
+  let open=currentOpenBox(c.name);
+  const item=selectedItem();
+  const d=currentJob.centerDefaults?.[c.name]||{};
+  const mode=c.mode;
+
+  box.className='';
+  box.innerHTML=`
+    <div class="box-panel ${open?'open':''}">
+      <div class="box-head">
+        <div>
+          <div class="box-title">${open?'📦 현재 포장중 박스':'📦 현재 열린 박스 없음'}</div>
+          <div class="box-meta">${open?`예정 박스번호 ${esc(open.boxNo||provisionalBoxNo(open.boxCount))} · ${modeLabel(mode)}`:'상품을 담으면 새 박스가 자동으로 시작됩니다.'}</div>
+        </div>
+        <div class="button-row">
+          ${open?`<button class="btn btn-good btn-sm" onclick="closeCurrentBox()">✓ 현재 박스 마감</button>
+          <button class="btn btn-danger btn-sm" onclick="cancelOpenBox()">박스 취소</button>`:
+          `<button class="btn btn-secondary btn-sm" onclick="startNewBox()">+ 새 박스 시작</button>`}
+        </div>
+      </div>
+
+      <div class="box-settings">
+        <label>박스 사이즈<input id="boxSize" list="boxSizeList" value="${esc(open?.boxSize||d.boxSize||'')}" placeholder="60×50×45" onchange="updateOpenBoxSetting('boxSize',this.value)"></label>
+        ${mode!=='parcel'?`<label>동일 구성 박스수<input id="boxCount" type="number" min="1" value="${Math.max(1,num(open?.boxCount)||1)}" onchange="updateOpenBoxSetting('boxCount',this.value)"></label>`:'<input id="boxCount" type="hidden" value="1">'}
+        ${mode!=='parcel'?`<label>팔레트 번호<input id="palletNo" value="${esc(open?.palletNo||d.palletNo||'')}" onchange="updateOpenBoxSetting('palletNo',this.value)"></label>`:''}
+        <label>박스번호<input id="boxNo" value="${esc(open?.boxNo||'')}" placeholder="${open?'비우면 마감 시 자동':'새 박스 시작 후 입력'}" onchange="updateOpenBoxSetting('boxNo',this.value)"></label>
+        <label>출고 박스번호<input id="outBoxNo" value="${esc(open?.outBoxNo||'')}" onchange="updateOpenBoxSetting('outBoxNo',this.value)"></label>
+        ${mode==='parcel'?`<label>송장번호<input id="trackingNo" value="${esc(open?.trackingNo||'')}" onchange="updateOpenBoxSetting('trackingNo',this.value)"></label>`:''}
+      </div>
+      <div class="quick-size">
+        <button type="button" onclick="setOpenBoxSize('60×50×45')">60×50×45</button>
+        <button type="button" onclick="setOpenBoxSize('60×50×25')">60×50×25</button>
+      </div>
+
+      <div class="box-content"><b style="font-size:11px">현재 박스 내용</b>${openBoxContentHtml(open)}</div>
+    </div>
+
+    ${item?`
+    <div class="product-head">
+      <div class="name">${esc(item.productName)}</div>
+      <div class="meta">상품번호 ${esc(item.productNumber)} · 바코드 ${esc(item.barcode)}</div>
+      <div class="counts">
+        <div class="mini-kpi"><b>${fmt(item.orderQty)}</b><span>발주수량</span></div>
+        <div class="mini-kpi"><b>${fmt(itemPacked(item))}</b><span>현재 작업</span></div>
+        <div class="mini-kpi"><b>${fmt(itemRemain(item))}</b><span>남은수량</span></div>
+      </div>
+    </div>
+    <div class="entry-form">
+      <div class="entry-form-title">이 상품을 현재 박스에 담기</div>
+      <div class="mode-note">입력 수량은 <b>박스 1개당 이 상품의 수량</b>입니다. 동일 구성 박스수가 3이면 상품수량 × 3으로 작업수량이 계산됩니다.</div>
+      <label class="field">박스 1개당 제품수량
+        <input id="qtyPerBox" type="number" min="1" step="1" value="${itemRemain(item)>0?Math.min(itemRemain(item),1):1}">
+      </label>
+      <div class="button-row" style="margin-top:9px">
+        <button class="btn btn-primary" onclick="addSelectedItemToOpenBox()">현재 박스에 추가</button>
+        <button class="btn btn-secondary" onclick="focusScan()">다음 상품 바코드 스캔</button>
+      </div>
+    </div>`:
+    `<div class="selected-empty">제품 바코드를 찍거나 오른쪽 상품을 클릭하면 여기에 수량 입력창이 나타납니다.</div>`}
+
+    <div class="closed-boxes"><b style="font-size:11px">최근 마감 박스</b>${closedBoxesHtml(c.name)}</div>
+  `;
+}
+function startNewBox(){
+  if(currentOpenBox())return;
+  createOpenBox();renderEditor();
+}
+function updateOpenBoxSetting(key,value){
+  let b=currentOpenBox();
+  if(!b)b=createOpenBox();
+  if(!b)return;
+  if(key==='boxCount'){
+    const n=Math.max(1,Math.floor(num(value)||1));
+    if(b.mode==='parcel')b.boxCount=1;else b.boxCount=n;
+  }else b[key]=norm(value);
+  const c=selectedCenter();
+  currentJob.centerDefaults[c.name]={
+    ...(currentJob.centerDefaults[c.name]||{}),
+    boxSize:b.boxSize,palletNo:b.palletNo
+  };
+  scheduleSave();renderKpis();
+}
+function setOpenBoxSize(v){
+  let b=currentOpenBox();if(!b)b=createOpenBox();
+  b.boxSize=v;
+  currentJob.centerDefaults[b.centerName]={...(currentJob.centerDefaults[b.centerName]||{}),boxSize:v,palletNo:b.palletNo||''};
+  scheduleSave();renderEditor();
+}
+function addSelectedItemToOpenBox(){
+  const item=selectedItem();if(!item)return;
+  let b=currentOpenBox(item.centerName);if(!b)b=createOpenBox();
+  if(!b)return;
+  const size=norm($('boxSize')?.value||b.boxSize);
+  const qty=Math.max(1,Math.floor(num($('qtyPerBox')?.value)||0));
+  const boxCount=b.mode==='parcel'?1:Math.max(1,Math.floor(num($('boxCount')?.value)||b.boxCount||1));
+  if(!size){alert('박스 사이즈를 입력해 주세요.');return}
+
+  b.boxSize=size;b.boxCount=boxCount;
+  if($('palletNo'))b.palletNo=norm($('palletNo').value);
+  if($('boxNo'))b.boxNo=norm($('boxNo').value);
+  if($('outBoxNo'))b.outBoxNo=norm($('outBoxNo').value);
+  if($('trackingNo'))b.trackingNo=norm($('trackingNo').value);
+
+  const add=qty*boxCount;
+  if(itemPacked(item)+add>item.orderQty){
+    if(!confirm(`발주수량 ${fmt(item.orderQty)}보다 작업수량이 ${fmt(itemPacked(item)+add)}로 많아집니다. 그대로 담을까요?`))return;
+  }
+  b.contents=b.contents||[];
+  const existing=b.contents.find(x=>x.itemId===item.id);
+  if(existing)existing.qtyPerBox+=qty;
+  else b.contents.push({itemId:item.id,qtyPerBox:qty});
+  item.touchedAt=Date.now();
+  currentJob.centerDefaults[b.centerName]={...(currentJob.centerDefaults[b.centerName]||{}),boxSize:b.boxSize,palletNo:b.palletNo||''};
+  scheduleSave();renderAll();
+  setScanMessage(`✓ 현재 박스에 ${item.productName} ${fmt(qty)}개/박스 추가 · 혼합 ${b.contents.length}종`,'ok');
+  focusScan();
+}
+function removeContentFromOpenBox(itemId){
+  const b=currentOpenBox();if(!b)return;
+  b.contents=(b.contents||[]).filter(x=>x.itemId!==itemId);
+  scheduleSave();renderAll();
+}
+function allocateBoxNo(box){
+  if(norm(box.boxNo))return;
+  const start=Math.max(1,Math.floor(num(currentJob.nextBoxNo)||1));
+  const cnt=Math.max(1,Math.floor(num(box.boxCount)||1));
+  box.boxNo=cnt===1?String(start):`${start}~${start+cnt-1}`;
+  currentJob.nextBoxNo=start+cnt;
+}
+function closeCurrentBox(){
+  const b=currentOpenBox();if(!b)return;
+  if(!b.contents?.length){alert('현재 박스에 상품이 없습니다.');return}
+  if(!norm(b.boxSize)){alert('박스 사이즈를 입력해 주세요.');return}
+  allocateBoxNo(b);
+  b.status='closed';b.closedAt=Date.now();
+  scheduleSave();renderAll();
+  setScanMessage(`✓ 박스 ${b.boxNo} 마감 완료 · ${b.contents.length}종 · 작업 ${fmt(boxPackedTotal(b))}개`,'ok');
+  focusScan();
+}
+function cancelOpenBox(){
+  const b=currentOpenBox();if(!b)return;
+  if(b.contents?.length&&!confirm('현재 박스에 담은 상품 기록도 함께 취소됩니다. 계속할까요?'))return;
+  currentJob.boxes=currentJob.boxes.filter(x=>x.id!==b.id);
+  scheduleSave();renderAll();
+}
+function deleteClosedBox(id){
+  const b=currentJob.boxes.find(x=>x.id===id);if(!b)return;
+  if(!confirm(`박스 ${b.boxNo||''} 작업 기록을 삭제할까요?`))return;
+  currentJob.boxes=currentJob.boxes.filter(x=>x.id!==id);
+  scheduleSave();renderAll();
+}
+
+/* ---------- 스캔 ---------- */
 function handleScanKey(e){if(e.key==='Enter'){e.preventDefault();scanBarcode()}}
+function setScanMessage(msg,type=''){const el=$('scanMessage');el.textContent=msg;el.className='scan-message'+(type?' '+type:'')}
+function beep(ok=true){
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)(),osc=ctx.createOscillator(),gain=ctx.createGain();
+    osc.frequency.value=ok?880:220;gain.gain.value=.04;osc.connect(gain);gain.connect(ctx.destination);osc.start();
+    setTimeout(()=>{osc.stop();ctx.close()},ok?90:180);
+  }catch(e){}
+}
+function focusScan(){setTimeout(()=>{$('scanInput')?.focus();$('scanInput')?.select()},40)}
 function scanBarcode(){
-  if(!currentJob){setScanMessage('먼저 입고 엑셀을 업로드해 주세요.','warn');return}
+  if(!currentJob){setScanMessage('먼저 입고건을 업로드해 주세요.','warn');return}
+  if(currentCenterId===ORDER_VIEW){setScanMessage('발주서가 선택되어 있습니다. 먼저 센터 작업장을 선택해 주세요.','warn');return}
   const bc=normBarcode($('scanInput').value);if(!bc){focusScan();return}
-  const matches=currentJob.items.filter(x=>normBarcode(x.barcode)===bc);
-  if(!matches.length){setScanMessage(`바코드 ${bc} : 발주 데이터에 없습니다.`,'bad');beep(false);focusScan();return}
-  const cur=currentCenterName();
-  const item=matches.find(x=>x.centerName===cur&&!itemComplete(x))||matches.find(x=>!itemComplete(x))||matches[0];
-  currentCenterId=centerIdFromName(item.centerName);selectedItemId=item.id;draftItemId=item.id;item.touchedAt=Date.now();item.scannedCount=num(item.scannedCount)+1;
-  $('scanInput').value='';scheduleSave();renderAll();
-  setScanMessage(`✓ ${item.centerName} · ${item.productName} → 맨 위 작업행으로 이동`,'ok');beep(true);
+  const c=currentCenterName();
+  let item=currentJob.items.find(x=>x.centerName===c&&normBarcode(x.barcode)===bc&&!itemComplete(x))
+    ||currentJob.items.find(x=>x.centerName===c&&normBarcode(x.barcode)===bc);
+  if(!item){
+    setScanMessage(`${c} 작업장에서 바코드 ${bc} 상품을 찾지 못했습니다.`,'bad');beep(false);focusScan();return;
+  }
+  selectedItemId=item.id;item.touchedAt=Date.now();item.scannedCount=num(item.scannedCount)+1;
+  $('scanInput').value='';scheduleSave();renderProductTable();renderEditor();
+  setScanMessage(`✓ ${item.productName} 선택 · 현재 박스에 담을 수량을 입력하세요.`,'ok');beep(true);
+  setTimeout(()=>{$('row-'+item.id)?.scrollIntoView({block:'nearest'});$('qtyPerBox')?.focus();$('qtyPerBox')?.select()},40);
 }
 
+/* ---------- 수동 작업장 / 상품 ---------- */
+function addManualCenter(mode){
+  if(!currentJob)return alert('먼저 입고건을 업로드해 주세요.');
+  const name=norm(prompt(`추가할 ${modeLabel(mode)} 작업장 이름을 입력하세요.`));if(!name)return;
+  if(allCenterDefs().some(c=>c.name===name))return alert('이미 같은 작업장이 있습니다.');
+  currentJob.manualCenters.push({id:centerIdFromName(name),name,mode,manual:true});
+  currentJob.centerModes[name]=mode;currentCenterId=centerIdFromName(name);selectedItemId='';
+  scheduleSave();renderAll();
+}
+function addProductToCurrentCenter(){
+  if(!currentJob||currentCenterId===ORDER_VIEW)return alert('센터 작업장을 먼저 선택해 주세요.');
+  const q=normBarcode(prompt('추가할 상품의 바코드 또는 상품번호를 입력/스캔하세요.'));if(!q)return;
+  const source=currentJob.items.find(x=>normBarcode(x.barcode)===q||normBarcode(x.productNumber)===q);
+  if(!source)return alert('발주서에서 상품을 찾지 못했습니다.');
+  const qty=Math.max(0,Math.floor(num(prompt('이 작업장에 배정할 발주수량을 입력하세요.',source.orderQty))));if(qty<=0)return;
+  const c=selectedCenter();
+  currentJob.items.push({
+    ...source,id:uid('item'),originalOrder:Math.max(0,...currentJob.items.map(x=>num(x.originalOrder)))+1,
+    centerName:c.name,centerRaw:c.name,company:companyForCenter(c.name),orderQty:qty,touchedAt:Date.now(),manual:true
+  });
+  scheduleSave();renderAll();
+}
+
+/* ---------- 파일/회차 ---------- */
 async function handleSourceFile(file){
   if(!file)return;
   try{
-    const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:'array'});const newJob=parseSourceWorkbook(wb,file.name);
-    const jobs=await idbAll();const existing=jobs.find(j=>j.title===newJob.title);
-    if(existing&&confirm(`"${newJob.title}" 작업이 이미 있습니다.\n기존 작업을 이어서 불러올까요?`))currentJob=existing;
-    else{currentJob=newJob;await idbPut(currentJob)}
-    currentJob.centerTypes=currentJob.centerTypes||{};[...new Set(currentJob.items.map(x=>x.centerName))].forEach(n=>{if(!currentJob.centerTypes[n])currentJob.centerTypes[n]=guessCenterType(n)});
-    currentJob.nextBoxNo=Math.max(1,Math.floor(num(currentJob.nextBoxNo)||1));
-    currentCenterId=allCenterDefs()[0]?.id||'';selectedItemId='';draftItemId='';
-    await refreshJobSelect();renderAll();focusScan();setScanMessage(`✓ ${currentJob.title} · ${currentJob.items.length}개 상품 불러오기 완료`,'ok')
+    const buf=await file.arrayBuffer(),wb=XLSX.read(buf,{type:'array'});
+    const newJob=parseSourceWorkbook(wb,file.name);
+    const jobs=await idbAll(),existing=jobs.find(j=>j.title===newJob.title);
+    if(existing&&confirm(`"${newJob.title}" 작업이 이미 있습니다.\n기존 작업을 이어서 불러올까요?`))currentJob=ensureV3(existing);
+    else{currentJob=ensureV3(newJob);await idbPut(currentJob)}
+    currentCenterId=ORDER_VIEW;selectedItemId='';
+    await refreshJobSelect();renderAll();
+    setScanMessage(`✓ ${currentJob.title} · ${fmt(currentJob.items.length)}개 발주상품을 불러왔습니다.`,'ok');
   }catch(err){console.error(err);setScanMessage(err.message||'엑셀 파일을 읽지 못했습니다.','bad')}
 }
 async function refreshJobSelect(selectCurrent=true){
-  const jobs=(await idbAll()).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));const sel=$('jobSelect');const old=currentJob?.id||sel.value;
-  sel.innerHTML=jobs.length?jobs.map(j=>`<option value="${esc(j.id)}">${esc(j.title)}</option>`).join(''):'<option value="">저장된 입고건 없음</option>';
-  if(old&&jobs.some(j=>j.id===old))sel.value=old;if(selectCurrent&&currentJob)sel.value=currentJob.id;
+  const jobs=(await idbAll()).map(ensureV3).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const sel=$('jobSelect'),old=currentJob?.id||sel.value;
+  sel.innerHTML=jobs.length?jobs.map(j=>`<option value="${esc(j.id)}">${esc(j.title)} · ${new Date(j.updatedAt||j.createdAt).toLocaleDateString()}</option>`).join(''):'<option value="">저장된 입고건 없음</option>';
+  if(old&&jobs.some(j=>j.id===old))sel.value=old;
+  if(selectCurrent&&currentJob)sel.value=currentJob.id;
 }
 async function loadJobById(id){
-  if(!id)return;const job=await idbGet(id);if(!job)return;currentJob=job;currentJob.centerTypes=currentJob.centerTypes||{};[...new Set((currentJob.items||[]).map(x=>x.centerName))].forEach(n=>{if(!currentJob.centerTypes[n])currentJob.centerTypes[n]=guessCenterType(n)});currentJob.nextBoxNo=Math.max(1,Math.floor(num(currentJob.nextBoxNo)||1));currentCenterId=allCenterDefs()[0]?.id||'';selectedItemId='';draftItemId='';renderAll();focusScan()
+  if(!id)return;
+  const job=await idbGet(id);if(!job)return;
+  currentJob=ensureV3(job);currentCenterId=ORDER_VIEW;selectedItemId='';renderAll();
+}
+async function deleteCurrentJob(){
+  if(!currentJob)return;
+  if(!confirm(`"${currentJob.title}" 작업을 삭제할까요?`))return;
+  await idbDelete(currentJob.id);currentJob=null;currentCenterId=ORDER_VIEW;selectedItemId='';
+  await refreshJobSelect();const jobs=await idbAll();
+  if(jobs.length)await loadJobById(jobs.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0].id);else renderAll();
 }
 
-function addManualCenter(type){
-  if(!currentJob){alert('먼저 입고건을 업로드해 주세요.');return}
-  const name=norm(prompt(type==='pallet'?'추가할 팔레트/밀크런 시트 이름':'추가할 택배 시트 이름'));if(!name)return;
-  if(allCenterDefs().some(c=>c.name===name)){alert('이미 같은 시트가 있습니다.');return}
-  const c={id:centerIdFromName(name),name,type,manual:true};currentJob.manualCenters=currentJob.manualCenters||[];currentJob.manualCenters.push(c);currentJob.centerTypes=currentJob.centerTypes||{};currentJob.centerTypes[name]=type;currentCenterId=c.id;scheduleSave();renderAll()
-}
-
+/* ---------- 엑셀 출력: 발주서가 맨 앞 ---------- */
 function downloadWorkXlsx(){
-  if(!currentJob){alert('먼저 입고건을 불러와 주세요.');return}
-  const wb=XLSX.utils.book_new();const s=jobStats();
-  const summary=[[currentJob.title],['원본파일',currentJob.sourceFileName||''],['다음 자동 박스번호',currentJob.nextBoxNo||1],[],['구분','작업방식','발주수량','작업수량','남은수량','박스수','진행률'],['전체','',s.order,s.packed,s.remain,s.boxes,s.order?s.packed/s.order:0]];
-  allCenterDefs().forEach(c=>{const st=centerStats(c.name);summary.push([c.name,c.type==='pallet'?'팔레트/밀크런':'택배',st.order,st.packed,st.remain,st.boxes,st.order?st.packed/st.order:0])});
-  const sumWs=XLSX.utils.aoa_to_sheet(summary);XLSX.utils.book_append_sheet(wb,sumWs,'작업현황');
+  if(!currentJob)return alert('먼저 입고건을 불러와 주세요.');
+  const wb=XLSX.utils.book_new();
+
+  const orderRows=[
+    [currentJob.title],
+    [],
+    ['회사','상품번호','제품명','바코드','물류센터','order 총수량','현재작업수량','남은수량']
+  ];
+  orderRowsSorted().forEach(item=>orderRows.push([
+    normalizeCompany(item.company),item.productNumber,item.productName,item.barcode,item.centerRaw,
+    item.orderQty,itemPacked(item),itemRemain(item)
+  ]));
+  const orderWs=XLSX.utils.aoa_to_sheet(orderRows);
+  orderWs['!cols']=[{wch:12},{wch:12},{wch:45},{wch:18},{wch:18},{wch:14},{wch:14},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,orderWs,'발주서');
 
   allCenterDefs().forEach((c,ci)=>{
-    const rows=[['상품번호','제품명','바코드','물류센터','출고총수량','박스당 제품수량','박스총수량','사이즈','Palette','박스번호','출고박스번호','송장번호']];
-    const completed=completedRowsForCenter(c.name);
-    completed.forEach(({item,e})=>rows.push([item.productNumber,item.productName,item.barcode,item.centerName,entryPacked(item,e),e.qtyPerBox,c.type==='pallet'?e.boxCount:parcelBoxSequence(c.name,e.id),e.boxSize,e.palletNo||'',e.boxNo||'',e.outBoxNo||'',e.trackingNo||'']));
-    residualRowsForCenter(c.name).forEach(item=>rows.push([item.productNumber,item.productName,item.barcode,item.centerName,itemRemain(item),'','','','','','','']));
-    const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=[{wch:12},{wch:42},{wch:18},{wch:15},{wch:12},{wch:14},{wch:12},{wch:14},{wch:10},{wch:14},{wch:14},{wch:20}];
-    let name=c.name.replace(/[\\/?*[\]:]/g,' ').slice(0,28)||`센터${ci+1}`;if(wb.SheetNames.includes(name))name=(name.slice(0,25)+'-'+(ci+1));XLSX.utils.book_append_sheet(wb,ws,name)
+    const isParcel=c.mode==='parcel';
+    const rows=[['상품번호','제품명','바코드','물류센터','출고총수량','박스당 제품수량','박스총수량','사이즈','Palette','박스번호','출고박스번호',...(isParcel?['송장번호']:[])]];
+    const boxes=boxesForCenter(c.name).slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+
+    boxes.forEach(b=>{
+      const seq=nextBoxSeq(c.name,b.id);
+      (b.contents||[]).forEach(cont=>{
+        const item=currentJob.items.find(x=>x.id===cont.itemId);if(!item)return;
+        rows.push([
+          item.productNumber,item.productName,item.barcode,item.centerRaw,
+          num(cont.qtyPerBox)*Math.max(1,num(b.boxCount)||1),
+          num(cont.qtyPerBox),
+          isParcel?seq:Math.max(1,num(b.boxCount)||1),
+          b.boxSize||'',b.palletNo||'',b.boxNo||'',b.outBoxNo||'',
+          ...(isParcel?[b.trackingNo||'']:[]
+        )]);
+      });
+    });
+
+    // 미작업 상품도 아래쪽에 남겨 둠
+    itemsForCenter(c.name).filter(x=>itemRemain(x)>0).forEach(item=>{
+      rows.push([item.productNumber,item.productName,item.barcode,item.centerRaw,itemRemain(item),'','','','','','',...(isParcel?['']:[])]);
+    });
+
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:12},{wch:42},{wch:18},{wch:18},{wch:14},{wch:14},{wch:12},{wch:14},{wch:10},{wch:17},{wch:17},{wch:22}];
+    let name=c.name.replace(/[\\/?*[\]:]/g,' ').slice(0,28)||`센터${ci+1}`;
+    if(wb.SheetNames.includes(name))name=name.slice(0,25)+'-'+(ci+1);
+    XLSX.utils.book_append_sheet(wb,ws,name);
   });
-  XLSX.writeFile(wb,`${currentJob.title.replace(/[\\/:*?"<>|]/g,'_')}_작업현황.xlsx`)
+
+  XLSX.writeFile(wb,`${currentJob.title.replace(/[\\/:*?"<>|]/g,'_')}_작업현황.xlsx`);
 }
-function downloadBackup(){if(!currentJob)return;const blob=new Blob([JSON.stringify(currentJob,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${currentJob.title}_작업백업.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+function downloadBackup(){
+  if(!currentJob)return alert('먼저 입고건을 불러와 주세요.');
+  const blob=new Blob([JSON.stringify(currentJob,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${currentJob.title}_작업백업.json`;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
 
 $('sourceFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)handleSourceFile(f);e.target.value=''});
-(async function init(){try{await openDB();await refreshJobSelect();const jobs=(await idbAll()).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));if(jobs.length)await loadJobById(jobs[0].id);else renderAll()}catch(err){console.error(err);renderAll();setScanMessage('브라우저 저장소를 열지 못했습니다.','bad')}setTimeout(focusScan,100)})();
+
+(async function init(){
+  try{
+    await openDB();await refreshJobSelect();
+    const jobs=(await idbAll()).map(ensureV3).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+    if(jobs.length){currentJob=jobs[0];currentCenterId=ORDER_VIEW;renderAll()}else renderAll();
+  }catch(err){console.error(err);renderAll();setScanMessage('브라우저 저장소를 열지 못했습니다.','bad')}
+})();
 </script>
 </body>
 </html>
