@@ -58,7 +58,8 @@ input[type=file]{display:none}
 .sheet-tabs-top{display:flex;gap:1px;background:#e9edf0;border-bottom:1px solid #aeb5bb;overflow:auto;padding:5px 5px 0}
 .sheet-tab{white-space:nowrap;border:1px solid #adb5bb;border-bottom:none;background:#f4f4f4;padding:7px 13px;font-size:10.5px;font-weight:900;color:#333;border-radius:5px 5px 0 0}
 .sheet-tab.active{background:#fff;color:#0b5c9b;border-top:3px solid #217346;padding-top:5px}
-.sheet-tab.pallet::before{content:"▣ ";color:#217346}.sheet-tab.parcel::before{content:"▤ ";color:#c47b00}
+.sheet-tab.pallet::before{content:"▣ ";color:#217346}.sheet-tab.milkrun::before{content:"◆ ";color:#2b78c5}.sheet-tab.parcel::before{content:"▤ ";color:#c47b00}
+.sheet-tab.group-start{margin-left:7px}
 .sheet-actions{display:flex;gap:5px;margin-left:auto;padding:1px 5px 4px;align-items:center}
 .sheet-area{overflow:auto;max-height:calc(100vh - 265px);min-height:520px}
 .excel-table{border-collapse:collapse;table-layout:fixed;width:max-content;min-width:100%;font-size:11px;background:#fff}
@@ -159,7 +160,15 @@ input[type=file]{display:none}
 
   <section class="excel-shell">
     <div id="sheetTabsTop" class="sheet-tabs-top">
-      <button class="sheet-tab active">입고건 없음</button>
+      <button class="sheet-tab pallet active">코리아원 발주 팔레트</button>
+      <button class="sheet-tab milkrun">밀크런</button>
+      <button class="sheet-tab pallet group-start">봄날애 팔레트</button>
+      <button class="sheet-tab milkrun">밀크런</button>
+      <button class="sheet-tab pallet group-start">차통익스프레스 팔레트</button>
+      <button class="sheet-tab milkrun">밀크런</button>
+      <button class="sheet-tab parcel group-start">코리아원 택배</button>
+      <button class="sheet-tab parcel">봄날애 택배</button>
+      <button class="sheet-tab parcel">차통 택배</button>
     </div>
     <div class="sheet-area">
       <table class="excel-table">
@@ -167,13 +176,7 @@ input[type=file]{display:none}
       </table>
     </div>
     <div class="sheet-bottom">
-      <button class="btn btn-sm" onclick="addManualCenter('pallet')">＋ 팔레트 시트</button>
-      <button class="btn btn-sm" onclick="addManualCenter('parcel')">＋ 택배 시트</button>
-      <select id="centerTypeSelect" onchange="changeCurrentCenterType(this.value)" style="font-size:10px;padding:4px">
-        <option value="pallet">현재 시트: 팔레트/밀크런</option>
-        <option value="parcel">현재 시트: 택배</option>
-      </select>
-      <span class="hint">원본 엑셀 형식 유지 · 발주서 + 센터별 시트 · 바코드 작업행 맨 위 · 완료행 위쪽 / 미작업 아래쪽</span>
+      <span class="hint">고정 작업 탭 · 코리아원 → 봄날애 → 차통익스프레스 · 팔레트/밀크런/택배 자동 분류 · 바코드 작업행 맨 위 · 완료행 위쪽 / 미작업 아래쪽</span>
     </div>
   </section>
 </main>
@@ -190,6 +193,7 @@ const STORE='jobs';
 let db=null;
 let currentJob=null;
 let currentCenterId='';
+let currentWorkTabId='korea-pallet';
 let selectedItemId='';
 let draftItemId='';
 let saveTimer=null;
@@ -242,6 +246,57 @@ function parseSourceWorkbook(wb,fileName){
   return job;
 }
 
+const WORK_TABS=[
+  {id:'korea-pallet',label:'코리아원 발주 팔레트',company:'korea',mode:'pallet',css:'pallet'},
+  {id:'korea-milkrun',label:'밀크런',company:'korea',mode:'milkrun',css:'milkrun'},
+  {id:'bomnal-pallet',label:'봄날애 팔레트',company:'bomnal',mode:'pallet',css:'pallet',groupStart:true},
+  {id:'bomnal-milkrun',label:'밀크런',company:'bomnal',mode:'milkrun',css:'milkrun'},
+  {id:'chatong-pallet',label:'차통익스프레스 팔레트',company:'chatong',mode:'pallet',css:'pallet',groupStart:true},
+  {id:'chatong-milkrun',label:'밀크런',company:'chatong',mode:'milkrun',css:'milkrun'},
+  {id:'korea-parcel',label:'코리아원 택배',company:'korea',mode:'parcel',css:'parcel',groupStart:true},
+  {id:'bomnal-parcel',label:'봄날애 택배',company:'bomnal',mode:'parcel',css:'parcel'},
+  {id:'chatong-parcel',label:'차통 택배',company:'chatong',mode:'parcel',css:'parcel'}
+];
+function companyKeyForItem(item){
+  const t=norm(`${item?.company||''} ${item?.productName||''}`);
+  if(/봄날애/.test(t))return 'bomnal';
+  if(/차통/.test(t))return 'chatong';
+  return 'korea';
+}
+function workModeForItem(item){
+  const c=norm(item?.centerRaw||item?.centerName||'').replace(/\s+/g,'');
+  if(/밀크런/i.test(c)||/인천47/i.test(c))return 'milkrun';
+  if(/팔레트/i.test(c)||/인천14/i.test(c))return 'pallet';
+  return 'parcel';
+}
+function workTabIdForItem(item){
+  return `${companyKeyForItem(item)}-${workModeForItem(item)}`;
+}
+function activeWorkTab(){return WORK_TABS.find(t=>t.id===currentWorkTabId)||WORK_TABS[0]}
+function itemsForWorkTab(tabId=currentWorkTabId){return (currentJob?.items||[]).filter(x=>workTabIdForItem(x)===tabId)}
+function workTabStats(tabId=currentWorkTabId){
+  const items=itemsForWorkTab(tabId);
+  const order=items.reduce((s,x)=>s+num(x.orderQty),0);
+  const packed=items.reduce((s,x)=>s+itemPacked(x),0);
+  const boxes=items.reduce((s,x)=>s+(x.entries||[]).reduce((a,e)=>a+(workModeForItem(x)==='parcel'?1:Math.max(1,num(e.boxCount))),0),0);
+  return {order,packed,remain:Math.max(0,order-packed),boxes};
+}
+function completedRowsForWorkTab(tabId=currentWorkTabId){
+  const out=[];
+  itemsForWorkTab(tabId).forEach(item=>(item.entries||[]).forEach(e=>out.push({item,e,createdAt:e.createdAt||0})));
+  out.sort((a,b)=>b.createdAt-a.createdAt);
+  return out;
+}
+function residualRowsForWorkTab(tabId=currentWorkTabId){
+  return itemsForWorkTab(tabId).filter(x=>itemRemain(x)>0).slice().sort((a,b)=>(a.originalOrder||0)-(b.originalOrder||0));
+}
+function parcelBoxSequenceForWorkTab(tabId,entryId){
+  const arr=[];
+  itemsForWorkTab(tabId).forEach(item=>(item.entries||[]).forEach(e=>arr.push({id:e.id,createdAt:e.createdAt||0})));
+  arr.sort((a,b)=>a.createdAt-b.createdAt);
+  const i=arr.findIndex(x=>x.id===entryId);return i>=0?i+1:0;
+}
+
 function allCenterDefs(){
   if(!currentJob)return[];
   const map=new Map();
@@ -283,23 +338,27 @@ function renderKpis(){
 }
 function renderSheetTabs(){
   const wrap=$('sheetTabsTop');
-  if(!currentJob){wrap.innerHTML='<button class="sheet-tab active">입고건 없음</button>';return}
-  const centers=allCenterDefs();
-
-  if(!currentCenterId)currentCenterId='__order__';
-  if(currentCenterId!=='__order__'&&!centers.some(c=>c.id===currentCenterId))currentCenterId='__order__';
-
-  const orderTab=`<button class="sheet-tab ${currentCenterId==='__order__'?'active':''} order-sheet-tab" onclick="selectCenter('${encodeURIComponent('__order__')}')">▦ 발주서</button>`;
-  const centerTabs=centers.map(c=>`<button class="sheet-tab ${c.type} ${c.id===currentCenterId?'active':''}" onclick="selectCenter('${encodeURIComponent(c.id)}')">${esc(c.name)}</button>`).join('');
-  wrap.innerHTML=orderTab+centerTabs;
-
-  const c=selectedCenter();
-  if($('centerTypeSelect')){
-    $('centerTypeSelect').disabled=!c;
-    if(c)$('centerTypeSelect').value=c.type;
-  }
+  if(!WORK_TABS.some(t=>t.id===currentWorkTabId))currentWorkTabId='korea-pallet';
+  wrap.innerHTML=WORK_TABS.map(t=>{
+    const count=itemsForWorkTab(t.id).length;
+    const cls=`sheet-tab ${t.css} ${t.groupStart?'group-start ':''}${t.id===currentWorkTabId?'active':''}`;
+    const title=t.label==='밀크런'?(t.company==='korea'?'코리아원 밀크런':t.company==='bomnal'?'봄날애 밀크런':'차통익스프레스 밀크런'):t.label;
+    return `<button class="${cls}" title="${esc(title)}" onclick="selectWorkTab('${t.id}')">${esc(t.label)}${currentJob&&count?` <span style="opacity:.6">(${count})</span>`:''}</button>`;
+  }).join('');
 }
-function selectCenter(enc){currentCenterId=decodeURIComponent(enc);selectedItemId='';draftItemId='';renderAll();focusScan()}
+function selectWorkTab(id){
+  currentWorkTabId=WORK_TABS.some(t=>t.id===id)?id:'korea-pallet';
+  currentCenterId='';selectedItemId='';draftItemId='';renderAll();focusScan();
+}
+function selectCenter(enc){
+  const id=decodeURIComponent(enc);
+  const c=allCenterDefs().find(x=>x.id===id);
+  if(c){
+    const item=(currentJob?.items||[]).find(x=>x.centerName===c.name);
+    if(item)currentWorkTabId=workTabIdForItem(item);
+  }
+  currentCenterId=id;selectedItemId='';draftItemId='';renderAll();focusScan();
+}
 function setNextBoxNo(){if(!currentJob)return;currentJob.nextBoxNo=Math.max(1,Math.floor(num($('nextBoxNoInput').value)||1));scheduleSave();renderKpis()}
 function changeCurrentCenterType(type){const c=selectedCenter();if(!currentJob||!c)return;currentJob.centerTypes=currentJob.centerTypes||{};currentJob.centerTypes[c.name]=type==='pallet'?'pallet':'parcel';scheduleSave();renderAll()}
 function nextAutoBoxRange(cnt=1){const start=Math.max(1,Math.floor(num(currentJob?.nextBoxNo)||1)),n=Math.max(1,Math.floor(num(cnt)||1)),end=start+n-1;return{start,end,text:n===1?String(start):`${start}~${end}`}}
@@ -381,15 +440,16 @@ function renderOrderSheet(){
 
 function renderExcelSheet(){
   const body=$('excelBody');
-  if(currentCenterId==='__order__'){renderOrderSheet();return}
-  const c=selectedCenter();
-  if(!currentJob||!c){body.innerHTML='<tr><td class="empty">새 입고 엑셀을 업로드해 주세요.</td></tr>';return}
-  const type=c.type,completed=completedRowsForCenter(c.name),residual=residualRowsForCenter(c.name),stats=centerStats(c.name);
-  let rowIndex=0;
+  const tab=activeWorkTab();
+  if(!currentJob){body.innerHTML=`<tr><td class="empty">선적 리스트 엑셀을 업로드하면 <b>${esc(tab.label)}</b> 탭에 해당 품목이 자동 분류됩니다.</td></tr>`;return}
 
+  const type=tab.mode==='parcel'?'parcel':'pallet';
+  const completed=completedRowsForWorkTab(tab.id),residual=residualRowsForWorkTab(tab.id),stats=workTabStats(tab.id);
+  let rowIndex=0;
   const letters=type==='pallet'
     ?['A','B','C','D','E','F','G','H','K','P','Q','']
     :['A','B','C','D','E','F','G','H','P','Q','R',''];
+  const fullTitle=tab.label==='밀크런'?(tab.company==='korea'?'코리아원 밀크런':tab.company==='bomnal'?'봄날애 밀크런':'차통익스프레스 밀크런'):tab.label;
 
   let html=`
     <tr class="letters-row">
@@ -398,7 +458,7 @@ function renderExcelSheet(){
     </tr>
     <tr class="title-row">
       <td class="rowno">1</td>
-      <td colspan="${type==='pallet'?12:13}">${esc(c.name)}</td>
+      <td colspan="${type==='pallet'?12:13}">${esc(fullTitle)}</td>
     </tr>
     <tr>
       <th class="rowno">2</th>
@@ -430,8 +490,8 @@ function renderExcelSheet(){
 
   if(draftItemId){
     const item=currentJob.items.find(x=>x.id===draftItemId);
-    if(item&&item.centerName===c.name){
-      const defaults=currentJob.centerDefaults?.[c.name]||{};
+    if(item&&workTabIdForItem(item)===tab.id){
+      const defaults=currentJob.centerDefaults?.[item.centerName]||{};
       const remain=itemRemain(item);
       const auto=nextAutoBoxRange(1);
       html+=`
@@ -456,7 +516,7 @@ function renderExcelSheet(){
 
   completed.forEach(({item,e},doneIndex)=>{
     const qty=entryPacked(item,e);
-    const boxTotal=type==='pallet'?Math.max(1,num(e.boxCount)):parcelBoxSequence(item.centerName,e.id);
+    const boxTotal=type==='pallet'?Math.max(1,num(e.boxCount)):parcelBoxSequenceForWorkTab(tab.id,e.id);
     html+=`
       <tr class="done-row ${doneIndex===0?'recent-done':''}">
         <td class="rowno">${rowNo(rowIndex++)}</td>
@@ -497,18 +557,19 @@ function renderExcelSheet(){
   });
 
   if(!completed.length&&!residual.length&&!draftItemId){
-    html+=`<tr><td colspan="${type==='pallet'?13:14}" class="empty">이 시트에 작업할 상품이 없습니다.</td></tr>`;
+    html+=`<tr><td colspan="${type==='pallet'?13:14}" class="empty">${esc(fullTitle)}에 해당하는 상품이 없습니다.</td></tr>`;
   }
   body.innerHTML=html;
   setTimeout(()=>{$('draftQty')?.focus();$('draftQty')?.select()},20);
 }
 
-function selectResidual(id){selectedItemId=id;draftItemId=id;const item=currentJob.items.find(x=>x.id===id);if(item)item.touchedAt=Date.now();scheduleSave();renderExcelSheet()}
+function selectResidual(id){selectedItemId=id;draftItemId=id;const item=currentJob.items.find(x=>x.id===id);if(item){item.touchedAt=Date.now();currentWorkTabId=workTabIdForItem(item)}scheduleSave();renderExcelSheet()}
 function draftKey(e){if(e.key==='Enter'){e.preventDefault();saveDraftRow()}}
 
 function saveDraftRow(){
-  const item=currentJob?.items.find(x=>x.id===draftItemId);const c=selectedCenter();if(!item||!c)return;
-  const type=c.type;
+  const item=currentJob?.items.find(x=>x.id===draftItemId);if(!item)return;
+  const tab=activeWorkTab();
+  const type=tab.mode==='parcel'?'parcel':'pallet';
   const qtyPerBox=Math.max(0,Math.floor(num($('draftQty')?.value)));
   const boxCount=type==='pallet'?Math.max(1,Math.floor(num($('draftBoxCount')?.value)||1)):1;
   const boxSize=norm($('draftSize')?.value);
@@ -534,7 +595,7 @@ function saveDraftRow(){
   item.touchedAt=Date.now();
 
   currentJob.centerDefaults=currentJob.centerDefaults||{};
-  currentJob.centerDefaults[c.name]={boxSize,qtyPerBox,palletNo};
+  currentJob.centerDefaults[item.centerName]={boxSize,qtyPerBox,palletNo};
   draftItemId='';selectedItemId='';
   scheduleSave();renderAll();
   setScanMessage(`✓ ${item.productName} · ${fmt(addQty)}개 작업 저장 완료`,'ok');beep(true);focusScan();
@@ -552,11 +613,11 @@ function scanBarcode(){
   const bc=normBarcode($('scanInput').value);if(!bc){focusScan();return}
   const matches=currentJob.items.filter(x=>normBarcode(x.barcode)===bc);
   if(!matches.length){setScanMessage(`바코드 ${bc} : 발주 데이터에 없습니다.`,'bad');beep(false);focusScan();return}
-  const cur=currentCenterName();
-  const item=matches.find(x=>x.centerName===cur&&!itemComplete(x))||matches.find(x=>!itemComplete(x))||matches[0];
-  currentCenterId=centerIdFromName(item.centerName);selectedItemId=item.id;draftItemId=item.id;item.touchedAt=Date.now();item.scannedCount=num(item.scannedCount)+1;
+  const item=matches.find(x=>workTabIdForItem(x)===currentWorkTabId&&!itemComplete(x))||matches.find(x=>!itemComplete(x))||matches[0];
+  currentWorkTabId=workTabIdForItem(item);currentCenterId=centerIdFromName(item.centerName);selectedItemId=item.id;draftItemId=item.id;item.touchedAt=Date.now();item.scannedCount=num(item.scannedCount)+1;
   $('scanInput').value='';scheduleSave();renderAll();
-  setScanMessage(`✓ ${item.centerName} 시트로 이동 · ${item.productName} → 맨 위 작업행`,'ok');beep(true);
+  const tab=activeWorkTab();const tabName=tab.label==='밀크런'?(tab.company==='korea'?'코리아원 밀크런':tab.company==='bomnal'?'봄날애 밀크런':'차통익스프레스 밀크런'):tab.label;
+  setScanMessage(`✓ ${tabName} · ${item.centerName} · ${item.productName} → 맨 위 작업행`,'ok');beep(true);
 }
 
 async function handleSourceFile(file){
@@ -570,7 +631,7 @@ async function handleSourceFile(file){
     else{currentJob=newJob;await idbPut(currentJob)}
     currentJob.centerTypes=currentJob.centerTypes||{};[...new Set(currentJob.items.map(x=>x.centerName))].forEach(n=>{if(!currentJob.centerTypes[n])currentJob.centerTypes[n]=guessCenterType(n)});
     currentJob.nextBoxNo=Math.max(1,Math.floor(num(currentJob.nextBoxNo)||1));
-    currentCenterId='__order__';selectedItemId='';draftItemId='';
+    currentWorkTabId='korea-pallet';currentCenterId='';selectedItemId='';draftItemId='';
     await refreshJobSelect();renderAll();focusScan();setScanMessage(`✓ ${currentJob.title} · ${currentJob.items.length}개 상품 불러오기 완료`,'ok')
   }catch(err){
     console.error(err);
@@ -584,7 +645,7 @@ async function refreshJobSelect(selectCurrent=true){
   if(old&&jobs.some(j=>j.id===old))sel.value=old;if(selectCurrent&&currentJob)sel.value=currentJob.id;
 }
 async function loadJobById(id){
-  if(!id)return;const job=await idbGet(id);if(!job)return;currentJob=job;currentJob.centerTypes=currentJob.centerTypes||{};[...new Set((currentJob.items||[]).map(x=>x.centerName))].forEach(n=>{if(!currentJob.centerTypes[n])currentJob.centerTypes[n]=guessCenterType(n)});currentJob.nextBoxNo=Math.max(1,Math.floor(num(currentJob.nextBoxNo)||1));currentCenterId='__order__';selectedItemId='';draftItemId='';renderAll();focusScan()
+  if(!id)return;const job=await idbGet(id);if(!job)return;currentJob=job;currentJob.centerTypes=currentJob.centerTypes||{};[...new Set((currentJob.items||[]).map(x=>x.centerName))].forEach(n=>{if(!currentJob.centerTypes[n])currentJob.centerTypes[n]=guessCenterType(n)});currentJob.nextBoxNo=Math.max(1,Math.floor(num(currentJob.nextBoxNo)||1));currentWorkTabId='korea-pallet';currentCenterId='';selectedItemId='';draftItemId='';renderAll();focusScan()
 }
 
 function addManualCenter(type){
