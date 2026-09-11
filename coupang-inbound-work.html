@@ -65,6 +65,33 @@ button,input,select{font:inherit}button{cursor:pointer}
 .row-completed-mark td.cell{background-clip:padding-box}
 @media(max-width:1100px){.pallet-inline{overflow-x:auto}.pallet-inline-top{padding-bottom:2px}.inline-scan{min-width:290px}}
 
+
+/* v9: large mixed-box work + durable autosave. Excel sheet UI stays unchanged. */
+.inline-box-items{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:5px!important;
+  align-items:start!important;
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  max-height:250px!important;
+  min-height:38px!important;
+  padding:5px 2px 4px!important;
+  scrollbar-width:thin;
+}
+.inline-item{
+  min-width:0!important;
+  width:100%!important;
+  height:34px!important;
+  grid-template-columns:96px minmax(0,1fr) 58px 72px 24px!important;
+}
+.inline-item .i-name{min-width:0!important}
+.pallet-inline{min-width:0!important}
+.pallet-inline-top{position:relative;z-index:2}
+.inline-box-items{position:relative;z-index:1}
+@media(max-width:1250px){.inline-box-items{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:820px){.inline-box-items{grid-template-columns:1fr!important}}
+
 </style>
 </head>
 <body>
@@ -182,10 +209,10 @@ function visibleWorkSheets(){return visibleWorksheets().filter(ws=>ws.name!=='�
 function makeTabButton(ws){const b=document.createElement('button');b.className='sheet-tab'+(ws.name===activeSheet?' active':'');b.textContent=ws.name;b.onclick=()=>switchSheet(ws.name);return b}
 function makeAddTab(kind){const b=document.createElement('button');b.className='sheet-tab-add';b.textContent=kind==='pallet'?'＋ 팔레트 작업':'＋ 택배 작업';b.title=kind==='pallet'?'예비 팔레트 작업 시트를 추가합니다.':'예비 택배 작업 시트를 추가합니다.';b.onclick=()=>addExtraWork(kind);return b}
 function renderTabs(){const host=$('sheetTabs');host.innerHTML='';const left=document.createElement('button');left.className='sheet-nav-arrow';left.textContent='◀';left.onclick=()=>host.scrollBy({left:-320,behavior:'smooth'});host.appendChild(left);const sheets=visibleWorksheets();let palletAddDone=false;for(const ws of sheets){if(!palletAddDone&&ws.name==='안성 5'){host.appendChild(makeAddTab('pallet'));palletAddDone=true}host.appendChild(makeTabButton(ws))}if(!palletAddDone){host.appendChild(makeAddTab('pallet'))}host.appendChild(makeAddTab('parcel'));const right=document.createElement('button');right.className='sheet-nav-arrow';right.textContent='▶';right.onclick=()=>host.scrollBy({left:320,behavior:'smooth'});host.appendChild(right)}
-function switchSheet(name){if(!workbook.getWorksheet(name))return;activeSheet=name;selectedCell='';selectedRow=0;hideRowMenu();renderTabs();renderSheet()}
+function switchSheet(name){if(!workbook.getWorksheet(name))return;activeSheet=name;selectedCell='';selectedRow=0;hideRowMenu();renderTabs();renderSheet();schedulePersistentState(120)}
 function isEditableCell(ws,r,c,cell){if(!ws||ws.name==='발주서'||r<4)return false;if(cell&&cell.value&&typeof cell.value==='object'&&cell.value.formula)return false;return c<=19}
 function coerceValue(text,cell,c){const t=String(text??'').trim();if(t==='')return null;if([1,3].includes(c))return t;const old=cell.value;if(typeof old==='number'&&/^-?\d+(\.\d+)?$/.test(t))return Number(t);if([5,6,7,11,12,13,14,15].includes(c)&&/^-?\d+(\.\d+)?$/.test(t))return Number(t);return t}
-function beginCellEdit(td,cell,ws,r,c){if(td.classList.contains('editing'))return;const original=displayText(cell);td.classList.add('editing');td.contentEditable='true';td.spellcheck=false;td.focus();const range=document.createRange();range.selectNodeContents(td);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);let done=false;const finish=(commit)=>{if(done)return;done=true;td.removeEventListener('blur',onBlur);td.removeEventListener('keydown',onKey);td.contentEditable='false';td.classList.remove('editing');if(commit){cell.value=coerceValue(td.innerText,cell,c);if(sheetKind(ws)==='pallet')palletStates.delete(ws.name);recalcAll();renderSheet(true)}else{td.textContent=original}};const onBlur=()=>finish(true);const onKey=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}else if(e.key==='Tab'){e.preventDefault();finish(true)}};td.addEventListener('blur',onBlur);td.addEventListener('keydown',onKey)}
+function beginCellEdit(td,cell,ws,r,c){if(td.classList.contains('editing'))return;const original=displayText(cell);td.classList.add('editing');td.contentEditable='true';td.spellcheck=false;td.focus();const range=document.createRange();range.selectNodeContents(td);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);let done=false;const finish=(commit)=>{if(done)return;done=true;td.removeEventListener('blur',onBlur);td.removeEventListener('keydown',onKey);td.contentEditable='false';td.classList.remove('editing');if(commit){cell.value=coerceValue(td.innerText,cell,c);if(sheetKind(ws)==='pallet')palletStates.delete(ws.name);recalcAll();renderSheet(true);schedulePersistentState(120);scheduleWorkbookSnapshot()}else{td.textContent=original}};const onBlur=()=>finish(true);const onKey=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}else if(e.key==='Tab'){e.preventDefault();finish(true)}};td.addEventListener('blur',onBlur);td.addEventListener('keydown',onKey)}
 function showRowMenu(e,rowNo){selectedRow=rowNo;document.querySelectorAll('.row-number.row-active').forEach(x=>x.classList.remove('row-active'));e.currentTarget.classList.add('row-active');const ws=currentWorkSheet(),group=ws&&sheetKind(ws)==='pallet'?findCompletedGroupByRow(ws,rowNo):null;['rowEditBox','rowCancelBox','rowBoxHr'].forEach(id=>$(id).style.display=group?'block':'none');['rowDup','rowBlank','rowDelete'].forEach(id=>$(id).style.display=group?'none':'block');const m=$('rowMenu');m.style.left=Math.min(e.clientX,window.innerWidth-190)+'px';m.style.top=Math.min(e.clientY,window.innerHeight-160)+'px';m.classList.add('show')}
 function hideRowMenu(){const m=$('rowMenu');if(m)m.classList.remove('show')}
 function renderSheet(keepScroll=false){const vp=$('sheetViewport'),oldTop=vp.scrollTop,oldLeft=vp.scrollLeft;const ws=workbook?.getWorksheet(activeSheet);if(!ws){$('sheetHost').innerHTML='<div class="sheet-empty">시트를 찾지 못했습니다.</div>';return}$('activeSheetName').textContent=ws.name;const isPallet=sheetKind(ws)==='pallet';$('scanReady').style.display=isPallet?'inline':'none';updateInlinePalletPanel(isPallet,ws);let pstate=null,dividerBefore=0,completedRows=0;if(isPallet){pstate=ensurePalletState(ws);completedRows=pstate.completed.reduce((a,g)=>a+g.items.length,0);dividerBefore=generationStartRow(ws)+completedRows}const {maxR,maxC}=getExtent(ws);$('sheetInfo').textContent=`${maxR.toLocaleString()}행 · ${maxC}열`;const merges=buildMergeMap(ws),table=document.createElement('table');table.className='sheet-table';const cg=document.createElement('colgroup');const rh=document.createElement('col');rh.className='row-head';cg.appendChild(rh);for(let c=1;c<=maxC;c++){const col=document.createElement('col');const model=ws.getColumn(c);col.style.width=pxFromExcelWidth(model.width)+'px';if(model.hidden)col.style.display='none';cg.appendChild(col)}table.appendChild(cg);const thead=document.createElement('thead'),hr=document.createElement('tr'),corner=document.createElement('th');corner.className='corner';hr.appendChild(corner);for(let c=1;c<=maxC;c++){const th=document.createElement('th');th.className='col-letter';th.textContent=excelCol(c);if(ws.getColumn(c).hidden)th.style.display='none';hr.appendChild(th)}thead.appendChild(hr);table.appendChild(thead);const tbody=document.createElement('tbody'),visibleColCount=Array.from({length:maxC},(_,i)=>i+1).filter(c=>!ws.getColumn(c).hidden).length;for(let r=1;r<=maxR;r++){if(isPallet&&pstate&&pstate.completed.length&&r===dividerBefore){const dtr=document.createElement('tr');dtr.className='work-divider-row';const dh=document.createElement('th');dh.className='row-number work-divider-num';dh.textContent='↕';dtr.appendChild(dh);const dc=document.createElement('td');dc.className='work-divider-cell';dc.colSpan=Math.max(1,visibleColCount);dc.textContent=`작업 상태  |  ▲ 완료 ${pstate.completed.length}박스 · ${completedQty(pstate).toLocaleString()}개  |  ▼ 미완료 ${pstate.incomplete.length}품목 · ${incompleteQty(pstate).toLocaleString()}개`;dtr.appendChild(dc);tbody.appendChild(dtr)}const row=ws.getRow(r);if(row.hidden)continue;const tr=document.createElement('tr');tr.style.height=pxFromPoints(row.height)+'px';if(isPallet&&r>=generationStartRow(ws)&&r<dividerBefore&&pstate?.completed.length)tr.classList.add('row-completed-mark');const rn=document.createElement('th');rn.className='row-number'+(ws.name!=='발주서'&&r>=4?' data-row':'');rn.textContent=r;if(ws.name!=='발주서'&&r>=4){rn.oncontextmenu=e=>{e.preventDefault();showRowMenu(e,r)};if(isPallet&&findCompletedGroupByRow(ws,r)){rn.title='완료 박스입니다. 우클릭하면 수정/취소할 수 있습니다.'}}tr.appendChild(rn);for(let c=1;c<=maxC;c++){if(ws.getColumn(c).hidden)continue;const key=`${r}:${c}`;if(merges.covered.has(key))continue;const cell=row.getCell(c),td=document.createElement('td');td.className='cell';td.dataset.addr=cell.address;const mg=merges.starts.get(key);if(mg){if(mg.rowspan>1)td.rowSpan=mg.rowspan;if(mg.colspan>1)td.colSpan=mg.colspan}td.style.cssText+=';'+cellCss(cell);td.textContent=displayText(cell);const target=internalLinkTarget(cell);if(target){td.classList.add('link-cell');td.title=`${target} 시트로 이동`;td.onclick=()=>switchSheet(target)}else{td.onclick=()=>{document.querySelector('.cell.selected')?.classList.remove('selected');td.classList.add('selected');selectedCell=cell.address;selectedRow=r};if(isEditableCell(ws,r,c,cell)){td.classList.add('editable');td.ondblclick=()=>beginCellEdit(td,cell,ws,r,c)}}tr.appendChild(td)}tbody.appendChild(tr)}table.appendChild(tbody);$('sheetHost').innerHTML='';$('sheetHost').appendChild(table);if(keepScroll){vp.scrollTop=oldTop;vp.scrollLeft=oldLeft}else{vp.scrollTop=0;vp.scrollLeft=0}}
@@ -247,12 +274,12 @@ function recalcDashboard(wb=workbook){if(!wb)return;const old=workbook;if(wb!==w
 function recalcAll(wb=workbook){if(!wb)return;const old=workbook;if(wb!==workbook)workbook=wb;visibleWorkSheets().forEach(recalcWorkSheet);recalcDashboard(wb);if(wb!==old)workbook=old}
 async function loadSourceFile(file,mode='source'){if(!file)return;palletStates.clear();boxDraft=null;showLoading(true,mode==='source'?'첫 번째 선적 엑셀을 변환하는 중…':'현재 작업 엑셀을 여는 중…');setStatus('엑셀 파일을 읽는 중…','busy');try{const buf=await file.arrayBuffer();let wb;if(mode==='work'){wb=new ExcelJS.Workbook();await wb.xlsx.load(buf);workbook=wb;prepareWorkbookForWeb(wb);recalcAll(wb)}else{const parsed=await extractRawRows(buf);if(parsed.readyWorkbook){wb=parsed.readyWorkbook;workbook=wb;prepareWorkbookForWeb(wb);recalcAll(wb)}else{wb=await generateFromRaw(parsed.sections||[])}}workbook=wb;currentFileName=file.name;activeSheet=workbook.getWorksheet('발주서')?'발주서':visibleWorksheets()[0]?.name||'';$('fileName').textContent=file.name;renderTabs();renderSheet();setStatus(`✓ ${file.name} 불러오기 완료 · 팔레트 탭의 작업바에서 바로 바코드를 스캔하세요`,'ok')}catch(err){console.error(err);setStatus('엑셀을 읽지 못했습니다: '+(err.message||err),'bad');alert('엑셀 파일을 읽지 못했습니다.\n'+(err.message||err))}finally{showLoading(false)}}
 async function downloadCurrentWorkbook(){if(!workbook)return;setStatus('현재 작업 엑셀을 생성하는 중…','busy');try{recalcAll();const out=await workbook.xlsx.writeBuffer();const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(currentFileName.replace(/\.(xlsx|xlsm|xls)$/i,'')||'쿠팡입고작업')+'_현재작업.xlsx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);setStatus('✓ 현재 작업 상태를 엑셀로 저장했습니다.','ok')}catch(err){console.error(err);setStatus('엑셀 저장 실패','bad')}}
-function addExtraWork(kind){if(!workbook)return;const base=kind==='pallet'?'추가 팔레트':'추가 택배';const defaultName=uniqueSheetName(workbook,base);const entered=prompt(kind==='pallet'?'추가할 팔레트 작업명(센터명)을 입력하세요.':'추가할 택배 작업명(센터명)을 입력하세요.',defaultName);if(entered===null)return;const name=safeSheetName(entered);if(!name)return;const ws=cloneTemplateSheet(workbook,kind,name);palletStates.delete(ws.name);activeSheet=ws.name;recalcAll();renderTabs();renderSheet();setStatus(`✓ ${ws.name} 작업 시트를 추가했습니다.`,'ok')}
+function addExtraWork(kind){if(!workbook)return;const base=kind==='pallet'?'추가 팔레트':'추가 택배';const defaultName=uniqueSheetName(workbook,base);const entered=prompt(kind==='pallet'?'추가할 팔레트 작업명(센터명)을 입력하세요.':'추가할 택배 작업명(센터명)을 입력하세요.',defaultName);if(entered===null)return;const name=safeSheetName(entered);if(!name)return;const ws=cloneTemplateSheet(workbook,kind,name);palletStates.delete(ws.name);activeSheet=ws.name;recalcAll();renderTabs();renderSheet();setStatus(`✓ ${ws.name} 작업 시트를 추가했습니다.`,'ok');schedulePersistentState(100);scheduleWorkbookSnapshot()}
 function currentWorkSheet(){const ws=workbook?.getWorksheet(activeSheet);return ws&&ws.name!=='발주서'?ws:null}
 function copyRowStyleAndBase(src,dst,copyBase=true){dst.height=src.height;for(let c=1;c<=19;c++){const s=src.getCell(c),d=dst.getCell(c);d.style=cloneObj(s.style);if(s.numFmt)d.numFmt=s.numFmt;d.value=copyBase&&c<=5?cloneObj(s.value):null}}
-function duplicateSelectedRow(){const ws=currentWorkSheet();if(!ws||selectedRow<4)return hideRowMenu();if(sheetKind(ws)==='pallet')palletStates.delete(ws.name);const src=ws.getRow(selectedRow);ws.spliceRows(selectedRow+1,0,[]);const dst=ws.getRow(selectedRow+1);copyRowStyleAndBase(src,dst,true);hideRowMenu();recalcAll();renderSheet(true);setStatus('✓ 선택 상품을 아래 행에 복제했습니다. E열 수량을 나누고 작업값을 입력하세요.','ok')}
-function insertBlankRow(){const ws=currentWorkSheet();if(!ws||selectedRow<4)return hideRowMenu();if(sheetKind(ws)==='pallet')palletStates.delete(ws.name);const src=ws.getRow(selectedRow);ws.spliceRows(selectedRow+1,0,[]);const dst=ws.getRow(selectedRow+1);copyRowStyleAndBase(src,dst,false);hideRowMenu();recalcAll();renderSheet(true);setStatus('✓ 빈 작업 행을 추가했습니다.','ok')}
-function deleteSelectedRow(){const ws=currentWorkSheet();if(!ws||selectedRow<4)return hideRowMenu();if(sheetKind(ws)==='pallet')palletStates.delete(ws.name);if(!confirm(`${selectedRow}행을 삭제할까요?`))return;ws.spliceRows(selectedRow,1);selectedRow=0;hideRowMenu();recalcAll();renderSheet(true);setStatus('✓ 선택 행을 삭제했습니다.','ok')}
+function duplicateSelectedRow(){const ws=currentWorkSheet();if(!ws||selectedRow<4)return hideRowMenu();if(sheetKind(ws)==='pallet')palletStates.delete(ws.name);const src=ws.getRow(selectedRow);ws.spliceRows(selectedRow+1,0,[]);const dst=ws.getRow(selectedRow+1);copyRowStyleAndBase(src,dst,true);hideRowMenu();recalcAll();renderSheet(true);setStatus('✓ 선택 상품을 아래 행에 복제했습니다. E열 수량을 나누고 작업값을 입력하세요.','ok');schedulePersistentState(100);scheduleWorkbookSnapshot()}
+function insertBlankRow(){const ws=currentWorkSheet();if(!ws||selectedRow<4)return hideRowMenu();if(sheetKind(ws)==='pallet')palletStates.delete(ws.name);const src=ws.getRow(selectedRow);ws.spliceRows(selectedRow+1,0,[]);const dst=ws.getRow(selectedRow+1);copyRowStyleAndBase(src,dst,false);hideRowMenu();recalcAll();renderSheet(true);setStatus('✓ 빈 작업 행을 추가했습니다.','ok');schedulePersistentState(100);scheduleWorkbookSnapshot()}
+function deleteSelectedRow(){const ws=currentWorkSheet();if(!ws||selectedRow<4)return hideRowMenu();if(sheetKind(ws)==='pallet')palletStates.delete(ws.name);if(!confirm(`${selectedRow}행을 삭제할까요?`))return;ws.spliceRows(selectedRow,1);selectedRow=0;hideRowMenu();recalcAll();renderSheet(true);setStatus('✓ 선택 행을 삭제했습니다.','ok');schedulePersistentState(100);scheduleWorkbookSnapshot()}
 function isExcelFile(file){return !!file&&/\.(xlsx|xlsm|xls)$/i.test(file.name||'')}
 function installDrop(){const shell=document.querySelector('.excel-shell');let depth=0;const enter=e=>{if(![...(e.dataTransfer?.types||[])].includes('Files'))return;e.preventDefault();depth++;shell.classList.add('dragover');if(e.dataTransfer)e.dataTransfer.dropEffect='copy'},over=e=>{if(![...(e.dataTransfer?.types||[])].includes('Files'))return;e.preventDefault();shell.classList.add('dragover');if(e.dataTransfer)e.dataTransfer.dropEffect='copy'},leave=e=>{if(![...(e.dataTransfer?.types||[])].includes('Files'))return;e.preventDefault();depth=Math.max(0,depth-1);if(!depth)shell.classList.remove('dragover')},drop=e=>{e.preventDefault();depth=0;shell.classList.remove('dragover');const f=[...(e.dataTransfer?.files||[])].find(isExcelFile);if(f)loadSourceFile(f,'source');else setStatus('엑셀(.xlsx/.xlsm/.xls) 파일을 놓아주세요.','bad')};window.addEventListener('dragenter',enter);window.addEventListener('dragover',over);window.addEventListener('dragleave',leave);window.addEventListener('drop',drop)}
 
@@ -337,7 +364,7 @@ function addDraftBarcodeInline(barcode){
   const exists=boxDraft.items.find(i=>norm(i.barcode)===barcode);
   if(exists){setStatus('이미 이 박스에 추가된 상품입니다. 아래 수량칸을 수정하세요.','busy');renderInlineDraft();return}
   boxDraft.items.push({sourceId:src.id,productNumber:cloneObj(src.productNumber),productName:src.productName,barcode:src.barcode,center:src.center,centerFill:cloneObj(src.centerFill),centerFont:cloneObj(src.centerFont),order:src.order,availableQty:Number(src.remainingQty||src.totalQty||0),perBoxQty:Number(oldItem?.perBoxQty ?? src.remainingQty ?? src.totalQty ?? 1)});
-  renderInlineDraft();setStatus(`✓ ${barcode} 추가 · 같은 박스 상품은 계속 스캔하세요.`,'ok')
+  renderInlineDraft();schedulePersistentState(120);setStatus(`✓ ${barcode} 추가 · 같은 박스 상품은 계속 스캔하세요.`,'ok')
 }
 function validateInlineDraft(){
   pullInlineDraft();if(!boxDraft?.items.length)return '바코드를 한 개 이상 스캔해 주세요.';
@@ -492,13 +519,13 @@ function commitInlineBoxDraft(){
   if(editing){old=state.completed.find(g=>g.id===boxDraft.groupId);if(old){state.completed=state.completed.filter(g=>g.id!==old.id);for(const oi of old.items)consolidateIncomplete(state,{...oi,remainingQty:Number(oi.totalQty||0)})}}
   const items=[];for(const di of boxDraft.items){const total=Number(di.perBoxQty)*boxDraft.boxCount;let need=total;for(let x=0;x<state.incomplete.length&&need>0;x++){const src=state.incomplete[x];if(itemIdentity(src)!==itemIdentity(di))continue;const take=Math.min(need,Number(src.remainingQty||0));src.remainingQty-=take;need-=take}if(need>0){if(old){for(const oi of old.items)consolidateIncomplete(state,{...oi,remainingQty:Number(oi.totalQty||0)});state.completed.push(old)}alert(`${di.barcode} 남은 수량이 부족합니다.`);return}state.incomplete=state.incomplete.filter(i=>Number(i.remainingQty)>0);items.push({...di,totalQty:total,perBoxQty:Number(di.perBoxQty)})}
   let boxNo=boxDraft.boxNo;if(!boxNo){const start=nextAutoBoxNo(state);boxNo=makeBoxNoLabel(start,boxDraft.boxCount)}const seq=editing?(boxDraft.originalSeq||old?.seq||state.nextSeq++):state.nextSeq++;
-  const group={id:editing?boxDraft.groupId:`box-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,seq,items,boxCount:Number(boxDraft.boxCount),size:boxDraft.size,weight:Number(boxDraft.weight),boxNo:String(boxNo)};state.completed.push(group);markPalletDirty(ws,state);activeSheet=ws.name;
+  const group={id:editing?boxDraft.groupId:`box-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,seq,items,boxCount:Number(boxDraft.boxCount),size:boxDraft.size,weight:Number(boxDraft.weight),boxNo:String(boxNo)};state.completed.push(group);markPalletDirty(ws,state);activeSheet=ws.name;schedulePersistentState(40);
   const order=state.completed.sort((a,b)=>a.seq-b.seq).findIndex(g=>g.id===group.id)+1;boxDraft=newDraft(ws);renderSheet(true);renderInlineDraft();focusInlineScan();setStatus(`✓ ${group.boxNo} 완료 · ${group.size} · ${group.weight}kg · 완료순서 ${order}번째로 위쪽에 정리했습니다.`,'ok');
   // 팝업은 DOM 미리보기만 즉시 표시. PNG 변환은 '이미지 복사'를 누를 때만 수행한다.
   setTimeout(()=>showCompletionCapture(ws,group),0);const refresh=()=>{try{recalcDashboard(workbook)}catch(e){console.warn(e)}};if('requestIdleCallback' in window)requestIdleCallback(refresh,{timeout:1800});else setTimeout(refresh,300)
 }
-function cancelGroup(ws,group){const state=ensurePalletState(ws);state.completed=state.completed.filter(g=>g.id!==group.id);for(const it of group.items)consolidateIncomplete(state,{...it,remainingQty:Number(it.totalQty||0)});markPalletDirty(ws,state);renderSheet(true);setStatus(`✓ ${group.boxNo||'완료 박스'} 작업을 취소하고 미완료 목록으로 복원했습니다.`,'ok')}
-function cancelInlineEditedBox(){if(!boxDraft||boxDraft.mode!=='edit')return;const ws=workbook.getWorksheet(boxDraft.sheetName),state=ensurePalletState(ws),group=state.completed.find(g=>g.id===boxDraft.groupId);if(!group)return;if(!confirm(`${group.boxNo||'선택 박스'} 작업을 취소하고 미완료로 되돌릴까요?`))return;state.completed=state.completed.filter(g=>g.id!==group.id);for(const it of group.items)consolidateIncomplete(state,{...it,remainingQty:Number(it.totalQty||0)});markPalletDirty(ws,state);boxDraft=newDraft(ws);renderSheet(true);renderInlineDraft();focusInlineScan();setStatus(`✓ ${group.boxNo||'완료 박스'} 작업을 취소했습니다.`,'ok')}
+function cancelGroup(ws,group){const state=ensurePalletState(ws);state.completed=state.completed.filter(g=>g.id!==group.id);for(const it of group.items)consolidateIncomplete(state,{...it,remainingQty:Number(it.totalQty||0)});markPalletDirty(ws,state);schedulePersistentState(40);renderSheet(true);setStatus(`✓ ${group.boxNo||'완료 박스'} 작업을 취소하고 미완료 목록으로 복원했습니다.`,'ok')}
+function cancelInlineEditedBox(){if(!boxDraft||boxDraft.mode!=='edit')return;const ws=workbook.getWorksheet(boxDraft.sheetName),state=ensurePalletState(ws),group=state.completed.find(g=>g.id===boxDraft.groupId);if(!group)return;if(!confirm(`${group.boxNo||'선택 박스'} 작업을 취소하고 미완료로 되돌릴까요?`))return;state.completed=state.completed.filter(g=>g.id!==group.id);for(const it of group.items)consolidateIncomplete(state,{...it,remainingQty:Number(it.totalQty||0)});markPalletDirty(ws,state);boxDraft=newDraft(ws);schedulePersistentState(40);renderSheet(true);renderInlineDraft();focusInlineScan();setStatus(`✓ ${group.boxNo||'완료 박스'} 작업을 취소했습니다.`,'ok')}
 
 function buildGroupCaptureTable(group){
   const live=document.querySelector('#sheetHost .sheet-table');if(!live)return null;const start=Number(group?.rows?.start||0),end=Number(group?.rows?.end||0);if(!start||!end)return null;
@@ -548,6 +575,130 @@ $('sourceFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)l
   $('fileName').textContent='첫 번째 선적 엑셀을 선택하거나 화면에 끌어놓으세요';
   setStatus('✓ 준비 완료 · 파일을 올리면 엑셀 UI로 바로 변환합니다.','ok');showLoading(false);
 })();
+
+
+
+// ===== v9 durable autosave / recovery =====
+const PERSIST_DB_NAME='CoupangInboundWorkDB';
+const PERSIST_DB_VERSION=1;
+const PERSIST_STORE='kv';
+let persistDbPromise=null,persistStateTimer=null,persistSnapshotTimer=null,persistRestoring=false,persistSnapshotBusy=false;
+
+function openPersistDb(){
+  if(persistDbPromise)return persistDbPromise;
+  persistDbPromise=new Promise((resolve,reject)=>{
+    try{
+      const req=indexedDB.open(PERSIST_DB_NAME,PERSIST_DB_VERSION);
+      req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(PERSIST_STORE))db.createObjectStore(PERSIST_STORE)};
+      req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('IndexedDB open failed'));
+    }catch(e){reject(e)}
+  });
+  return persistDbPromise;
+}
+async function persistPut(key,value){const db=await openPersistDb();return new Promise((resolve,reject)=>{const tx=db.transaction(PERSIST_STORE,'readwrite');tx.objectStore(PERSIST_STORE).put(value,key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error||new Error('IndexedDB write failed'));tx.onabort=()=>reject(tx.error||new Error('IndexedDB write aborted'))})}
+async function persistGet(key){const db=await openPersistDb();return new Promise((resolve,reject)=>{const tx=db.transaction(PERSIST_STORE,'readonly'),req=tx.objectStore(PERSIST_STORE).get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('IndexedDB read failed'))})}
+async function persistDelete(key){const db=await openPersistDb();return new Promise((resolve,reject)=>{const tx=db.transaction(PERSIST_STORE,'readwrite');tx.objectStore(PERSIST_STORE).delete(key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error||new Error('IndexedDB delete failed'))})}
+
+function cleanPalletStateForSave(state){
+  if(!state)return null;
+  return {
+    completed:(state.completed||[]).map(g=>({
+      id:g.id,seq:g.seq,boxCount:g.boxCount,size:g.size,weight:g.weight,boxNo:g.boxNo,
+      items:(g.items||[]).map(i=>{const x={...i};delete x._visualRow;return x})
+    })),
+    incomplete:(state.incomplete||[]).map(i=>{const x={...i};delete x._visualRow;return x}),
+    nextSeq:state.nextSeq||1,templateRow:state.templateRow||0,nextItemId:state.nextItemId||1
+  };
+}
+function serializableDraft(){
+  if(!boxDraft)return null;
+  try{return JSON.parse(JSON.stringify(boxDraft))}catch(e){return null}
+}
+function persistentStatePayload(){
+  return {
+    version:9,savedAt:Date.now(),activeSheet:activeSheet||'',fileName:currentFileName||'',
+    palletStates:[...palletStates.entries()].map(([name,state])=>[name,cleanPalletStateForSave(state)]),
+    boxDraft:serializableDraft()
+  };
+}
+async function savePersistentState(){
+  if(persistRestoring||!workbook)return;
+  try{await persistPut('state',persistentStatePayload())}catch(e){console.warn('autosave state failed',e)}
+}
+function schedulePersistentState(delay=250){
+  if(persistRestoring||!workbook)return;
+  clearTimeout(persistStateTimer);persistStateTimer=setTimeout(()=>{persistStateTimer=null;savePersistentState()},Math.max(0,delay));
+}
+async function saveSourceForRecovery(file,mode){
+  if(!file)return;
+  try{
+    const blob=file.slice(0,file.size,file.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    await persistPut('source',{name:file.name||'쿠팡입고작업.xlsx',type:file.type||'',mode:mode||'source',blob,savedAt:Date.now()});
+    await persistDelete('workbookSnapshot');
+  }catch(e){console.warn('autosave source failed',e)}
+}
+async function saveWorkbookSnapshotNow(){
+  if(persistRestoring||persistSnapshotBusy||!workbook)return;
+  persistSnapshotBusy=true;
+  try{
+    // Rare manual sheet/cell edits only. Pallet box work itself is saved as a lightweight state and does not pay this cost.
+    const out=await workbook.xlsx.writeBuffer();
+    const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    await persistPut('workbookSnapshot',{blob,savedAt:Date.now()});
+  }catch(e){console.warn('autosave workbook snapshot failed',e)}finally{persistSnapshotBusy=false}
+}
+function scheduleWorkbookSnapshot(delay=1800){
+  if(persistRestoring||!workbook)return;
+  clearTimeout(persistSnapshotTimer);
+  const run=()=>{persistSnapshotTimer=null;saveWorkbookSnapshotNow()};
+  persistSnapshotTimer=setTimeout(()=>{if('requestIdleCallback' in window)requestIdleCallback(run,{timeout:2500});else run()},delay);
+}
+function applyRecoveredState(saved){
+  if(!saved||!workbook)return;
+  palletStates.clear();dirtyPalletSheets.clear();
+  for(const pair of saved.palletStates||[]){
+    const name=pair?.[0],raw=pair?.[1],ws=name&&workbook.getWorksheet(name);if(!ws||sheetKind(ws)!=='pallet'||!raw)continue;
+    const state={completed:raw.completed||[],incomplete:raw.incomplete||[],nextSeq:raw.nextSeq||1,templateRow:raw.templateRow||generationStartRow(ws),nextItemId:raw.nextItemId||1};
+    assignVisualRows(ws,state);palletStates.set(name,state);dirtyPalletSheets.add(name);recalcWorkSheet(ws);
+  }
+  activeSheet=(saved.activeSheet&&workbook.getWorksheet(saved.activeSheet))?saved.activeSheet:(workbook.getWorksheet('발주서')?'발주서':visibleWorksheets()[0]?.name||'');
+  boxDraft=saved.boxDraft&&saved.boxDraft.sheetName&&workbook.getWorksheet(saved.boxDraft.sheetName)?saved.boxDraft:null;
+  renderTabs();renderSheet();if(boxDraft)renderInlineDraft();
+  $('fileName').textContent=(saved.fileName||currentFileName||'이전 작업')+' · 자동복구';
+}
+
+// Preserve the v8 loader, then wrap it so every newly loaded file becomes the durable recovery base.
+const loadSourceFileV8=loadSourceFile;
+loadSourceFile=async function(file,mode='source'){
+  const before=workbook;
+  await loadSourceFileV8(file,mode);
+  if(!persistRestoring&&workbook&&workbook!==before){
+    await saveSourceForRecovery(file,mode);
+    await savePersistentState();
+  }
+};
+
+async function restorePersistentSession(){
+  try{
+    const source=await persistGet('source'),saved=await persistGet('state'),snapshot=await persistGet('workbookSnapshot');
+    if(!source?.blob&&!snapshot?.blob)return;
+    persistRestoring=true;showLoading(true,'이전에 작업하던 쿠팡 입고 시트를 자동 복구하는 중…');setStatus('이전 작업을 자동 복구하는 중…','busy');
+    const blob=snapshot?.blob||source.blob,name=source?.name||saved?.fileName||'쿠팡입고작업.xlsx',mode=snapshot?.blob?'work':(source?.mode||'source');
+    const file=new File([blob],name,{type:source?.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',lastModified:Date.now()});
+    await loadSourceFileV8(file,mode);
+    if(saved)applyRecoveredState(saved);
+    currentFileName=name;$('fileName').textContent=name+' · 자동저장 복구됨';
+    setStatus(`✓ 이전 작업 자동 복구 완료${saved?.savedAt?' · '+new Date(saved.savedAt).toLocaleString():''}`,'ok');
+  }catch(e){console.warn('autosave restore failed',e);setStatus('자동 복구 데이터가 있지만 불러오지 못했습니다. 새 파일을 불러오면 다시 저장됩니다.','bad')}
+  finally{persistRestoring=false;showLoading(false)}
+}
+
+// Save unfinished mixed-box drafts too (barcode list, quantities, size/weight/box no).
+inlineEl('palletInline')?.addEventListener('input',()=>schedulePersistentState(350));
+inlineEl('palletInline')?.addEventListener('change',()=>schedulePersistentState(180));
+window.addEventListener('pagehide',()=>{try{savePersistentState()}catch(e){}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')try{savePersistentState()}catch(e){}});
+setTimeout(restorePersistentSession,30);
 
 </script>
 </body>
