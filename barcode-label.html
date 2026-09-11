@@ -215,6 +215,8 @@
       <div class="grid2"><div class="field"><label for="age">사용연령</label><input id="age" value="14세 이상"></div><div class="field"><label for="country">제조국</label><input id="country" value="제조국"></div></div>
       <div class="field"><label for="barcodeValue">바코드 번호 (영문 + 숫자 가능)</label><input id="barcodeValue" value="123456789" maxlength="40"></div>
 
+      <div id="workingStateStatus" class="help" style="margin:-2px 0 10px;color:#157347;font-weight:800;">✓ 이 PC에서 마지막 작업 상태를 자동 저장합니다.</div>
+
       <div class="section-label">글자 / 바코드 크기</div>
       <div class="field"><label>제품명 글자 크기</label><div class="range-wrap"><input id="titleFont" type="range" min="5" max="28" step="0.5" value="18"><input id="titleFontNumber" type="number" min="5" max="28" step="0.5" value="18"></div></div>
       <div class="field"><label>본문 글자 크기</label><div class="range-wrap"><input id="bodyFont" type="range" min="4" max="22" step="0.5" value="14"><input id="bodyFontNumber" type="number" min="4" max="22" step="0.5" value="14"></div></div>
@@ -342,6 +344,12 @@
   const MM_TO_PX = 96 / 25.4;
   let previewMode = 'fit';
   const el = id => document.getElementById(id);
+
+  // 마지막 작업 상태 자동저장
+  const LABEL_WORKING_STATE_KEY='tradecodeBarcodeLabelWorkingStateV2';
+  let workingStateEnabled=false;
+  let workingStateSaveTimer=null;
+
   const formIds=['productNumber','labelWidth','labelHeight','productName','optionText','material','importer','address','phone','warning','age','country','barcodeValue','titleFont','titleFontNumber','bodyFont','bodyFontNumber','barcodeHeight','barcodeHeightNumber','barcodeTextFont','barcodeTextFontNumber','madeInFont','madeInFontNumber'];
   formIds.forEach(id=>el(id).addEventListener('input',()=>{syncPairs(id);updateLabel()}));
   window.addEventListener('resize',applyPreviewScale);
@@ -373,6 +381,7 @@
     }
     applyPreviewScale();
     requestAnimationFrame(checkOverflow);
+    scheduleWorkingStateSave();
   }
 
   function renderBarcode(barcodeVal,heightMm){
@@ -1528,54 +1537,31 @@
       return;
     }
 
-    // 자동 불러오기는 무조건 "맨 마지막 저장 작업"을 기준으로 한다.
-    // 기존 상품의 과거 라벨 크기/폰트/수입원 등이 자동으로 덮어쓰지 않도록 한다.
+    // 먼저 공용 라벨을 최신 상태로 갱신하고 저장 라벨이 있으면 전체값 복원
     await fetchSharedLabels(true);
     const saved=findSavedLabel(bc,'');
-    const item=await lookupProductCatalog(bc);
-
-    rememberCurrentState();
-
-    const productNumber =
-      item?.productNumber ||
-      saved?.productNumber ||
-      '';
-
-    const productName =
-      item?.productName ||
-      saved?.productName ||
-      '';
-
-    applyIdentifiersOnLastWork({
-      productNumber,
-      barcode:bc,
-      productName
-    });
-
     if(saved){
-      showAutoMatchCard({
-        source:'shared',
-        ...saved,
-        productNumber:productNumber||saved.productNumber,
-        productName:productName||saved.productName,
-        barcode:bc
-      });
-      setAutoImportStatus(
-        `✓ ${bc} · 마지막 저장 작업의 라벨 설정을 유지하고 상품정보만 불러왔습니다. 예전 상품별 설정 전체가 필요하면 [공용 라벨 불러오기]를 사용하세요.`,
-        'ok'
-      );
-    }else if(item){
-      showAutoMatchCard({source:'catalog',...item,barcode:bc});
-      setAutoImportStatus(
-        `✓ 바코드 ${bc} · 마지막 저장 작업 설정을 유지하고 상품번호/상품명만 자동 입력했습니다.`,
-        'ok'
-      );
+      rememberCurrentState();
+      applyLabelConfig(saved);
+      showAutoMatchCard({source:'shared',...saved});
+      setAutoImportStatus(`✓ ${bc} · 공용 라벨 보관함에서 전체 설정을 자동 불러왔습니다.`,'ok');
+      return;
+    }
+
+    // 저장 라벨이 없으면 상품 기준목록에서 상품번호/상품명만 매칭
+    const item=await lookupProductCatalog(bc);
+    rememberCurrentState();
+    el('barcodeValue').value=bc;
+    if(item){
+      if(item.productNumber)el('productNumber').value=item.productNumber;
+      if(item.productName)el('productName').value=item.productName;
+      updateLabel();
+      showAutoMatchCard({source:'catalog',...item});
+      setAutoImportStatus(`✓ 바코드 ${bc}를 기준목록에서 찾았습니다. 상품번호와 상품명을 자동 입력했습니다.`,'ok');
     }else{
+      updateLabel();
       showAutoMatchCard({source:'image',barcode:bc});
-      setAutoImportStatus(
-        `바코드 ${bc}는 인식했습니다. 마지막 저장 작업 설정은 그대로 유지됩니다. 상품 기준목록에서 상품정보는 찾지 못했습니다.`,
-        'warn'
-      );
+      setAutoImportStatus(`바코드 ${bc}는 인식했지만 상품 기준목록에서 찾지 못했습니다. 기준 엑셀을 업데이트해 주세요.`,'warn');
     }
   }
 
@@ -1698,6 +1684,67 @@
     });
   }
 
+  function getWorkingState(){
+    try{
+      const raw=localStorage.getItem(LABEL_WORKING_STATE_KEY);
+      if(!raw) return null;
+      const parsed=JSON.parse(raw);
+      return parsed && typeof parsed==='object' ? parsed : null;
+    }catch(e){
+      console.warn('마지막 작업 상태 읽기 실패:',e);
+      return null;
+    }
+  }
+
+  function saveWorkingState(){
+    if(!workingStateEnabled) return;
+    try{
+      const state=captureFormState();
+      state.__savedAt=new Date().toISOString();
+      localStorage.setItem(LABEL_WORKING_STATE_KEY,JSON.stringify(state));
+
+      const status=el('workingStateStatus');
+      if(status){
+        status.textContent='✓ 마지막 작업 자동 저장됨';
+        status.style.color='#157347';
+      }
+    }catch(e){
+      console.warn('마지막 작업 상태 저장 실패:',e);
+    }
+  }
+
+  function scheduleWorkingStateSave(){
+    if(!workingStateEnabled) return;
+    clearTimeout(workingStateSaveTimer);
+    workingStateSaveTimer=setTimeout(saveWorkingState,120);
+  }
+
+  function applyWorkingState(){
+    const state=getWorkingState();
+    if(!state) return false;
+
+    let applied=false;
+    formIds.forEach(id=>{
+      if(state[id]!==undefined && el(id)){
+        el(id).value=state[id];
+        applied=true;
+      }
+    });
+
+    // range/숫자 입력값 동기화
+    ['titleFont','bodyFont','barcodeHeight','barcodeTextFont','madeInFont'].forEach(id=>{
+      const num=el(id+'Number');
+      if(el(id)&&num) el(id).value=num.value;
+    });
+
+    const status=el('workingStateStatus');
+    if(status){
+      status.textContent='✓ 이전 화면의 마지막 작업 상태를 복원했습니다.';
+      status.style.color='#157347';
+    }
+    return applied;
+  }
+
   function getUserDefaults(){
     try{
       const raw=localStorage.getItem(LABEL_DEFAULTS_KEY);
@@ -1751,24 +1798,6 @@
     });
     updateLabel();
     return true;
-  }
-
-
-  // 자동 불러오기/발주서 이동 시에는 항상 "맨 마지막으로 저장한 작업"을 기준으로 시작한다.
-  // 상품별 예전 저장값(라벨 크기/글자 크기 등)이 자동으로 덮어쓰는 것을 막는다.
-  // 과거 상품의 전체 설정을 불러오고 싶을 때만 [공용 라벨 불러오기] 버튼을 사용한다.
-  function applyLastSavedWorkBase(){
-    return applyUserDefaults();
-  }
-
-  function applyIdentifiersOnLastWork({productNumber='',barcode='',productName=''}={}){
-    applyLastSavedWorkBase();
-
-    if(productNumber && el('productNumber')) el('productNumber').value=productNumber;
-    if(barcode && el('barcodeValue')) el('barcodeValue').value=barcode;
-    if(productName && el('productName')) el('productName').value=productName;
-
-    updateLabel();
   }
 
   function currentLabelConfig(){
@@ -1863,9 +1892,10 @@
       if(!res.ok||!data.ok) throw new Error(data.error||'공용 라벨 저장 실패');
 
       saveUserDefaults(cfg);
+      saveWorkingState();
       await fetchSharedLabels(true);
       renderSavedLibrary();
-      setSaveStatus(`✓ 공용 저장 완료 · 이 작업이 새 기본값으로 저장됨 · ${cfg.labelWidth}×${cfg.labelHeight}mm · 공용 보관함 ${getLabelLibrary().length}개`);
+      setSaveStatus(`✓ 공용 저장 완료 · ${cfg.labelWidth}×${cfg.labelHeight}mm · 공용 보관함 ${getLabelLibrary().length}개`);
       await completeCurrentBatchItemAndAdvance(cfg);
     }catch(err){
       console.error(err);
@@ -1984,28 +2014,30 @@
   }
 
   function applyUrlPrefill(){
-    // 페이지 시작값은 항상 "맨 마지막으로 저장한 작업"이다.
-    applyLastSavedWorkBase();
-
+    // 일반 진입에서는 이미 복원된 마지막 작업 상태를 그대로 유지합니다.
+    // 발주서 등에서 상품정보가 URL로 넘어온 경우에만 해당 상품을 우선 적용합니다.
     const q=new URLSearchParams(location.search);
     const productNumber=q.get('productNumber')||'';
     const barcode=q.get('barcode')||'';
     const productName=q.get('productName')||'';
 
-    if(productNumber||barcode||productName){
-      // 발주서에서 넘어온 상품 식별정보만 마지막 작업 위에 덮어쓴다.
-      // 상품별 과거 저장 라벨의 크기/폰트/문구는 자동 적용하지 않는다.
-      applyIdentifiersOnLastWork({
-        productNumber,
-        barcode,
-        productName
-      });
-      setSaveStatus(
-        '✓ 마지막 저장 작업의 라벨 설정 + 현재 상품정보를 불러왔습니다. 과거 상품별 전체 설정이 필요하면 [공용 라벨 불러오기]를 눌러주세요.'
-      );
+    if(productNumber||barcode){
+      const saved=findSavedLabel(barcode,productNumber);
+      if(saved){
+        applyLabelConfig(saved);
+        setSaveStatus('✓ 이 상품의 기존 저장 라벨을 자동으로 불러왔습니다.');
+      }else{
+        // 발주서에서 넘어온 3개 값은 사용자 기본값보다 우선한다.
+        if(productNumber) el('productNumber').value=productNumber;
+        if(barcode) el('barcodeValue').value=barcode;
+        if(productName) el('productName').value=productName;
+        updateLabel();
+        setSaveStatus('발주서 상품정보 + 마지막 저장 설정을 불러왔습니다. 완성 후 [라벨 저장]을 눌러주세요.');
+      }
     }else{
       updateLabel();
     }
+    saveWorkingState();
   }
 
   // ---------------------------------------------------------
@@ -2039,6 +2071,7 @@
     });
     updateLabel();
     updateUndoButton();
+    saveWorkingState();
   }
 
   function statesEqual(a,b){
@@ -2097,7 +2130,7 @@
   });
 
   function resetForm(){
-    if(!confirm('맨 마지막으로 저장한 라벨 작업 설정으로 되돌릴까요?')) return;
+    if(!confirm('마지막으로 저장한 기본 설정으로 되돌릴까요?')) return;
     rememberCurrentState();
 
     // 기본 예시값
@@ -2122,14 +2155,25 @@
     if(q.get('barcode')) el('barcodeValue').value=q.get('barcode');
     if(q.get('productName')) el('productName').value=q.get('productName');
     updateLabel();
+    saveWorkingState();
   }
 
   async function initializeSharedLabelPage(){
+    // 마지막 작업 상태가 있으면 그것을 최우선으로 복원합니다.
+    // 첫 실행처럼 작업 상태가 전혀 없을 때만 기존 사용자 기본값을 사용합니다.
+    const restoredLastWork=applyWorkingState();
+    if(!restoredLastWork) applyUserDefaults();
+
+    workingStateEnabled=true;
     updateLabel();
     updateUndoButton();
+
     loadCachedSharedLabels();
     await fetchSharedLabels(true);
+
+    // URL로 특정 상품을 넘겨받은 경우에는 그 상품 정보가 마지막 작업보다 우선합니다.
     applyUrlPrefill();
+
     renderSavedLibrary();
     initBarcodeImageDrop();
     loadProductCatalogStatus();
@@ -2143,6 +2187,13 @@
       }
     }catch(e){}
   }
+
+  // 다른 메뉴 이동 / 새로고침 / 탭 닫기 직전에도 마지막 입력을 즉시 저장합니다.
+  window.addEventListener('pagehide',saveWorkingState);
+  window.addEventListener('beforeunload',saveWorkingState);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='hidden') saveWorkingState();
+  });
 
   initializeSharedLabelPage();
 </script>
