@@ -695,6 +695,166 @@ async function restorePersistentSession(){
   finally{persistRestoring=false;showLoading(false)}
 }
 
+
+// ===== v11 automatic pallet mapping =====
+// Physical rule: pallet 110 x 110 x 15 cm, inbound total height <= 170 cm.
+// Therefore usable carton stack height is 155 cm. A slight overhang is allowed
+// on only one horizontal axis (two opposite faces), never on both axes.
+const AUTO_PALLET_BASE_CM=110;
+const AUTO_PALLET_OVERHANG_CM=120;
+const AUTO_PALLET_USABLE_HEIGHT_CM=155;
+
+function parsePalletBoxSize(raw){
+  const s=norm(raw).replace(/[×xX]/g,'*').replace(/\s+/g,'');
+  const m=s.match(/^(\d+(?:\.\d+)?)\*(\d+(?:\.\d+)?)\*(\d+(?:\.\d+)?)$/);
+  if(!m)return null;
+  const w=Number(m[1]),d=Number(m[2]),h=Number(m[3]);
+  if(!(w>0&&d>0&&h>0))return null;
+  return {w,d,h,label:`${w}*${d}*${h}`};
+}
+function bestPalletLayerSlots(w,d){
+  const EPS=.0001;let best=0;
+  const orientations=[[w,d],[d,w]];
+  for(const [a,b] of orientations){
+    const maxX=Math.max(1,Math.floor((AUTO_PALLET_OVERHANG_CM+EPS)/a));
+    const maxY=Math.max(1,Math.floor((AUTO_PALLET_OVERHANG_CM+EPS)/b));
+    for(let nx=1;nx<=maxX;nx++)for(let ny=1;ny<=maxY;ny++){
+      const x=nx*a,y=ny*b;
+      // Only one axis may exceed 110 cm. This models the user's two-face overhang rule.
+      const ok=(x<=AUTO_PALLET_BASE_CM+EPS&&y<=AUTO_PALLET_OVERHANG_CM+EPS)||(x<=AUTO_PALLET_OVERHANG_CM+EPS&&y<=AUTO_PALLET_BASE_CM+EPS);
+      if(ok)best=Math.max(best,nx*ny);
+    }
+  }
+  return best;
+}
+function palletBoxProfile(size){
+  const d=parsePalletBoxSize(size);if(!d)return {ok:false,reason:'박스 사이즈는 가로*세로*높이(cm) 형식으로 입력해 주세요.'};
+  if(d.h>AUTO_PALLET_USABLE_HEIGHT_CM)return {ok:false,reason:`박스 높이 ${d.h}cm는 팔레트 적재 가능 높이 155cm를 초과합니다.`};
+  const slots=bestPalletLayerSlots(d.w,d.d);
+  if(slots<1)return {ok:false,reason:`${d.w}*${d.d}cm 박스는 110*110cm 팔레트의 허용 적재면(한 축만 약간 초과)에 안전하게 배치할 수 없습니다.`};
+  const a=Math.min(d.w,d.d),b=Math.max(d.w,d.d);
+  return {ok:true,w:d.w,d:d.d,h:d.h,slots,key:`${a.toFixed(3)}x${b.toFixed(3)}`,label:d.label};
+}
+function newMappedPallet(no,profile){return {no,key:profile.key,slots:profile.slots,stacks:Array(profile.slots).fill(0),segments:[],totalBoxes:0,totalQty:0,totalWeight:0,firstRow:0,lastRow:0}}
+function placeOneMappedBox(pallet,profile){
+  if(!pallet||pallet.key!==profile.key||pallet.stacks.length!==profile.slots)return false;
+  let pick=-1,best=-1;
+  // Best-fit stack: use the tallest stack that can still accept this box.
+  for(let i=0;i<pallet.stacks.length;i++){
+    const cur=pallet.stacks[i];if(cur+profile.h<=AUTO_PALLET_USABLE_HEIGHT_CM+.0001&&cur>best){best=cur;pick=i}
+  }
+  if(pick<0)return false;pallet.stacks[pick]+=profile.h;return true;
+}
+function splitMappedBoxNo(label,totalCount,offset,count){
+  label=norm(label);totalCount=Math.max(1,Number(totalCount)||1);offset=Math.max(0,Number(offset)||0);count=Math.max(1,Number(count)||1);
+  const pure=label.match(/^\s*(\d+)\s*(?:[~\-]\s*(\d+))?\s*$/);
+  if(pure){const start=Number(pure[1]);const a=start+offset,b=a+count-1;return count===1?String(a):`${a}~${b}`}
+  if(totalCount===1||count===totalCount)return label;
+  return `${label} (${offset+1}~${offset+count})`;
+}
+function palletPlanSignature(state){
+  return (state.completed||[]).slice().sort((a,b)=>a.seq-b.seq).map(g=>[
+    g.id,g.seq,g.boxCount,g.size,g.weight,g.boxNo,(g.items||[]).map(i=>`${itemIdentity(i)}:${Number(i.perBoxQty||0)}`).join(',')
+  ].join('~')).join('|');
+}
+function buildAutoPalletPlan(ws,state){
+  const isPalletSheet=sheetKind(ws)==='pallet';
+  if(!isPalletSheet)return {sig:'parcel',pallets:[],segments:(state.completed||[]).slice().sort((a,b)=>a.seq-b.seq).map(g=>({group:g,palletNo:null,boxCount:Math.max(1,Number(g.boxCount)||1),boxOffset:0,size:g.size,boxNo:g.boxNo,items:(g.items||[]).map(i=>({...i,totalQty:Number(i.totalQty||0)})),totalPerBox:(g.items||[]).reduce((a,i)=>a+Number(i.perBoxQty||0),0)}))};
+  const sig=palletPlanSignature(state);if(state._autoPalletPlan?.sig===sig)return state._autoPalletPlan;
+  const pallets=[],segments=[];let current=null;
+  const groups=(state.completed||[]).slice().sort((a,b)=>a.seq-b.seq);
+  for(const group of groups){
+    const profile=palletBoxProfile(group.size);const totalBoxes=Math.max(1,Number(group.boxCount)||1);let remain=totalBoxes,offset=0;
+    const perQty=(group.items||[]).reduce((a,i)=>a+Number(i.perBoxQty||0),0);
+    // Existing legacy work with an invalid size is kept visible, one box per pallet, instead of hanging the mapper.
+    const safeProfile=profile.ok?profile:{ok:true,w:0,d:0,h:AUTO_PALLET_USABLE_HEIGHT_CM,slots:1,key:`legacy:${norm(group.size)||'unknown'}`,label:group.size||''};
+    while(remain>0){
+      if(!current||current.key!==safeProfile.key){current=newMappedPallet(pallets.length+1,safeProfile);pallets.push(current)}
+      let take=0;
+      while(remain>0&&placeOneMappedBox(current,safeProfile)){take++;remain--}
+      if(take===0){current=newMappedPallet(pallets.length+1,safeProfile);pallets.push(current);if(!placeOneMappedBox(current,safeProfile)){// absolute safety fallback
+          current.stacks[0]=AUTO_PALLET_USABLE_HEIGHT_CM;take=1;remain--;
+        }else{take=1;remain--}}
+      const segItems=(group.items||[]).map(i=>({...i,totalQty:Number(i.perBoxQty||0)*take}));
+      const seg={group,pallet:current,palletNo:current.no,boxCount:take,boxOffset:offset,size:group.size,boxNo:splitMappedBoxNo(group.boxNo,totalBoxes,offset,take),items:segItems,totalPerBox:perQty};
+      segments.push(seg);current.segments.push(seg);current.totalBoxes+=take;current.totalQty+=perQty*take;const w=Number(group.weight);if(Number.isFinite(w))current.totalWeight+=w*take;offset+=take;
+    }
+  }
+  const plan={sig,pallets,segments};state._autoPalletPlan=plan;return plan;
+}
+
+const _assignVisualRowsV10=assignVisualRows;
+assignVisualRows=function(ws,state){
+  if(sheetKind(ws)!=='pallet')return _assignVisualRowsV10(ws,state);
+  const start=generationStartRow(ws),plan=buildAutoPalletPlan(ws,state);let r=start;
+  for(const g of state.completed){g.rows={start:0,end:0};g._visualRanges=[]}
+  for(const p of plan.pallets){p.firstRow=0;p.lastRow=0}
+  for(const seg of plan.segments){const n=Math.max(1,seg.items.length);seg.rows={start:r,end:r+n-1};if(!seg.group.rows.start)seg.group.rows.start=r;seg.group.rows.end=r+n-1;seg.group._visualRanges.push(seg.rows);if(!seg.pallet.firstRow)seg.pallet.firstRow=r;seg.pallet.lastRow=r+n-1;r+=n}
+  state._dividerBefore=r;for(const it of state.incomplete){it._visualRow=r;r++}state._visualEnd=Math.max(start,r-1);state._visualSegments=plan.segments;state._mappedPallets=plan.pallets;return state;
+};
+
+const _recalcWorkSheetV10=recalcWorkSheet;
+recalcWorkSheet=function(ws){
+  if(!ws||ws.name==='발주서')return;
+  if(sheetKind(ws)==='pallet'&&palletStates.has(ws.name)){
+    const state=assignVisualRows(ws,ensurePalletState(ws));let total=0,boxes=0,packed=0;
+    for(const g of state.completed){boxes+=Math.max(1,Number(g.boxCount)||1);for(const i of g.items){const q=Number(i.totalQty||0);total+=q;packed+=q}}
+    for(const i of state.incomplete)total+=Number(i.remainingQty||0);
+    ws.getCell('E3').value=total;ws.getCell('G3').value=boxes;ws.getCell('K3').value=(state._mappedPallets||[]).length;return {total,boxes,packed,pallets:(state._mappedPallets||[]).length};
+  }
+  return _recalcWorkSheetV10(ws);
+};
+
+const _findCompletedGroupByRowV10=findCompletedGroupByRow;
+findCompletedGroupByRow=function(ws,rowNo){
+  if(sheetKind(ws)!=='pallet')return _findCompletedGroupByRowV10(ws,rowNo);
+  const state=assignVisualRows(ws,ensurePalletState(ws));return state?.completed.find(g=>(g._visualRanges||[]).some(x=>rowNo>=x.start&&rowNo<=x.end))||null;
+};
+
+const _renderPalletSheetFastV10=renderPalletSheetFast;
+renderPalletSheetFast=function(keepScroll,ws){
+  if(sheetKind(ws)!=='pallet')return _renderPalletSheetFastV10(keepScroll,ws);
+  const vp=$('sheetViewport'),oldTop=vp.scrollTop,oldLeft=vp.scrollLeft,start=generationStartRow(ws),maxC=18,state=assignVisualRows(ws,ensurePalletState(ws));
+  $('activeSheetName').textContent=ws.name;$('scanReady').style.display='inline';updateInlinePalletPanel(true,ws);recalcWorkSheet(ws);
+  const segments=state._visualSegments||[],pallets=state._mappedPallets||[],visualRows=segments.reduce((a,s)=>a+Math.max(1,s.items.length),0)+state.incomplete.length;$('sheetInfo').textContent=`${(start-1+visualRows).toLocaleString()}행 · ${maxC}열`;
+  let h=fastTableShellStart(ws,maxC)+renderHeaderRowsHtml(ws,start,maxC),r=start;const rowH=pxFromPoints(ws.getRow(start).height);
+  for(const seg of segments){const group=seg.group,p=seg.pallet,n=Math.max(1,seg.items.length),totalPer=seg.totalPerBox;for(let j=0;j<n;j++,r++){const it=seg.items[j]||{},isPalletMaster=r===p.firstRow,palletSpan=Math.max(1,p.lastRow-p.firstRow+1);h+=`<tr class="row-completed-mark" style="height:${rowH}px"><th class="row-number data-row" data-row-no="${r}">${r}</th>`;for(let c=1;c<=maxC;c++){if(ws.getColumn(c).hidden)continue;if(c===9||c===10)continue;if(j>0&&[6,7,8,12,16].includes(c))continue;if([11,13,14,15].includes(c)&&!isPalletMaster)continue;let v='',span='';if(c===1)v=it.productNumber??'';else if(c===2)v=it.productName||'';else if(c===3)v=it.barcode||'';else if(c===4)v=it.center||'';else if(c===5)v=Number(it.totalQty||0)||'';else if(j===0&&c===6){v=totalPer;if(n>1)span+=` rowspan="${n}"`}else if(j===0&&c===7){v=seg.boxCount;if(n>1)span+=` rowspan="${n}"`}else if(j===0&&c===8){v=seg.size||'';span+=` colspan="3"`;if(n>1)span+=` rowspan="${n}"`}else if(c===11&&isPalletMaster){v=p.no;if(palletSpan>1)span+=` rowspan="${palletSpan}"`}else if(j===0&&c===12){v=group.weight??'';if(n>1)span+=` rowspan="${n}"`}else if(c===13&&isPalletMaster){v=Number(p.totalWeight.toFixed(2));if(palletSpan>1)span+=` rowspan="${palletSpan}"`}else if(c===14&&isPalletMaster){v=p.totalQty;if(palletSpan>1)span+=` rowspan="${palletSpan}"`}else if(c===15&&isPalletMaster){v=p.totalBoxes;if(palletSpan>1)span+=` rowspan="${palletSpan}"`}else if(j===0&&c===16){v=seg.boxNo||'';if(n>1)span+=` rowspan="${n}"`}h+=palletVisualCellHtml(ws,r,c,it,v,dataCellExtraStyle(it,c),span)}h+='</tr>'}}
+  if(state.completed.length){const visible=Array.from({length:maxC},(_,i)=>i+1).filter(c=>!ws.getColumn(c).hidden).length;h+=`<tr class="work-divider-row"><th class="row-number work-divider-num">↕</th><td class="work-divider-cell" colspan="${visible}">작업 상태  |  ▲ 완료 ${totalBoxCount(state).toLocaleString()}박스 · ${completedQty(state).toLocaleString()}개 · 팔레트 ${pallets.length.toLocaleString()}개  |  ▼ 미완료 ${state.incomplete.length}품목 · ${incompleteQty(state).toLocaleString()}개</td></tr>`}
+  for(const it of state.incomplete){h+=`<tr style="height:${rowH}px"><th class="row-number data-row" data-row-no="${r}">${r}</th>`;for(let c=1;c<=maxC;c++){if(ws.getColumn(c).hidden)continue;let v='';if(c===1)v=it.productNumber??'';else if(c===2)v=it.productName||'';else if(c===3)v=it.barcode||'';else if(c===4)v=it.center||'';else if(c===5)v=Number(it.remainingQty||0)||'';h+=palletVisualCellHtml(ws,r,c,it,v,dataCellExtraStyle(it,c))}h+='</tr>';r++}
+  h+='</tbody></table>';$('sheetHost').innerHTML=h;bindFastTableEvents(ws,true);if(keepScroll){vp.scrollTop=oldTop;vp.scrollLeft=oldLeft}else{vp.scrollTop=0;vp.scrollLeft=0}
+};
+
+const _syncPalletStateV10=syncPalletState;
+syncPalletState=function(ws,state){
+  if(!ws||!state)return;if(sheetKind(ws)!=='pallet')return _syncPalletStateV10(ws,state);
+  state=assignVisualRows(ws,state);const start=generationStartRow(ws),spec=styleRowFrom(ws,start,1,18),segments=state._visualSegments||[],pallets=state._mappedPallets||[];unmergeDataArea(ws,start);const needed=segments.reduce((a,s)=>a+Math.max(1,s.items.length),0)+state.incomplete.length,clearTo=Math.max(ws.rowCount,start+needed+25);for(let rr=start;rr<=clearTo;rr++){const row=ws.getRow(rr);for(let c=1;c<=22;c++)row.getCell(c).value=null}
+  let r=start,segmentSeq=1;
+  for(const seg of segments){const group=seg.group,first=r;for(const gi of seg.items){const row=ws.getRow(r);applyStyleSpec(row,spec,1);row.getCell(1).value=cloneObj(gi.productNumber);row.getCell(2).value=gi.productName;row.getCell(3).value=gi.barcode;row.getCell(4).value=gi.center;if(gi.centerFill)row.getCell(4).fill=cloneObj(gi.centerFill);if(gi.centerFont?.color)row.getCell(4).font={...cloneObj(row.getCell(4).font),color:cloneObj(gi.centerFont.color)};row.getCell(5).value=Number(gi.totalQty||0);r++}const last=r-1;ws.getCell(`F${first}`).value=seg.totalPerBox;ws.getCell(`G${first}`).value=seg.boxCount;try{ws.mergeCells(first,8,last,10)}catch(e){}if(last>first){for(const c of [6,7,12,16])try{ws.mergeCells(first,c,last,c)}catch(e){}}ws.getCell(`F${first}`).value=seg.totalPerBox;ws.getCell(`G${first}`).value=seg.boxCount;ws.getCell(`H${first}`).value=String(seg.size||'');ws.getCell(`L${first}`).value=(group.weight===''||group.weight===null||group.weight===undefined)?'':(Number(group.weight)||String(group.weight));ws.getCell(`P${first}`).value=String(seg.boxNo||'');for(const c of [6,7,8,9,10,12,16]){const cell=ws.getRow(first).getCell(c);cell.alignment={...(cloneObj(cell.alignment)||{}),horizontal:'center',vertical:'middle',wrapText:true}}ws.getCell(`T${first}`).value='WEBBOX';ws.getCell(`U${first}`).value=`${group.id}::${seg.palletNo}::${seg.boxOffset}`;ws.getCell(`V${first}`).value=segmentSeq++;seg.rows={start:first,end:last}}
+  for(const p of pallets){const first=p.firstRow,last=p.lastRow;if(!first||!last)continue;if(last>first){for(const c of [11,13,14,15])try{ws.mergeCells(first,c,last,c)}catch(e){}}ws.getCell(`K${first}`).value=p.no;ws.getCell(`M${first}`).value=Number(p.totalWeight.toFixed(2));ws.getCell(`N${first}`).value=p.totalQty;ws.getCell(`O${first}`).value=p.totalBoxes;for(const c of [11,13,14,15]){const cell=ws.getRow(first).getCell(c);cell.alignment={...(cloneObj(cell.alignment)||{}),horizontal:'center',vertical:'middle',wrapText:true}}
+  }
+  for(const it of state.incomplete){const row=ws.getRow(r);applyStyleSpec(row,spec,1);row.getCell(1).value=cloneObj(it.productNumber);row.getCell(2).value=it.productName;row.getCell(3).value=it.barcode;row.getCell(4).value=it.center;if(it.centerFill)row.getCell(4).fill=cloneObj(it.centerFill);if(it.centerFont?.color)row.getCell(4).font={...cloneObj(row.getCell(4).font),color:cloneObj(it.centerFont.color)};row.getCell(5).value=Number(it.remainingQty||0);r++}
+  ws.getColumn(20).hidden=true;ws.getColumn(21).hidden=true;ws.getColumn(22).hidden=true;ws.getCell('K3').value=pallets.length;recalcWorkSheet(ws)
+};
+
+const _validateInlineDraftV10=validateInlineDraft;
+validateInlineDraft=function(){
+  const base=_validateInlineDraftV10();if(base)return base;
+  const ws=boxDraft?.sheetName&&workbook?.getWorksheet(boxDraft.sheetName);if(ws&&sheetKind(ws)==='pallet'){
+    const p=palletBoxProfile(boxDraft.size);if(!p.ok)return p.reason;
+  }
+  return '';
+};
+
+const _markPalletDirtyV10=markPalletDirty;
+markPalletDirty=function(ws,state){if(state){delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets}_markPalletDirtyV10(ws,state)};
+
+const _commitInlineBoxDraftV10=commitInlineBoxDraft;
+commitInlineBoxDraft=function(){
+  const sheetName=boxDraft?.sheetName;const beforeSeq=sheetName&&palletStates.get(sheetName)?.completed?.length||0;_commitInlineBoxDraftV10();
+  const ws=sheetName&&workbook?.getWorksheet(sheetName);if(ws&&sheetKind(ws)==='pallet')setTimeout(()=>{try{const st=assignVisualRows(ws,ensurePalletState(ws)),last=(st.completed||[]).slice().sort((a,b)=>b.seq-a.seq)[0],segs=(st._visualSegments||[]).filter(s=>s.group===last),nos=[...new Set(segs.map(s=>s.palletNo))];if(last&&nos.length)setStatus(`✓ ${last.boxNo} 완료 · 자동 팔레트 ${nos.join(' → ')}번 맵핑 · 현재 총 ${st._mappedPallets.length}팔레트`,'ok')}catch(e){console.warn(e)}},20)
+};
+
+
 // Save unfinished mixed-box drafts too (barcode list, quantities, size/weight/box no).
 inlineEl('palletInline')?.addEventListener('input',()=>schedulePersistentState(350));
 inlineEl('palletInline')?.addEventListener('change',()=>schedulePersistentState(180));
