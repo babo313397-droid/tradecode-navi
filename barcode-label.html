@@ -1528,31 +1528,54 @@
       return;
     }
 
-    // 먼저 공용 라벨을 최신 상태로 갱신하고 저장 라벨이 있으면 전체값 복원
+    // 자동 불러오기는 무조건 "맨 마지막 저장 작업"을 기준으로 한다.
+    // 기존 상품의 과거 라벨 크기/폰트/수입원 등이 자동으로 덮어쓰지 않도록 한다.
     await fetchSharedLabels(true);
     const saved=findSavedLabel(bc,'');
-    if(saved){
-      rememberCurrentState();
-      applyLabelConfig(saved);
-      showAutoMatchCard({source:'shared',...saved});
-      setAutoImportStatus(`✓ ${bc} · 공용 라벨 보관함에서 전체 설정을 자동 불러왔습니다.`,'ok');
-      return;
-    }
-
-    // 저장 라벨이 없으면 상품 기준목록에서 상품번호/상품명만 매칭
     const item=await lookupProductCatalog(bc);
+
     rememberCurrentState();
-    el('barcodeValue').value=bc;
-    if(item){
-      if(item.productNumber)el('productNumber').value=item.productNumber;
-      if(item.productName)el('productName').value=item.productName;
-      updateLabel();
-      showAutoMatchCard({source:'catalog',...item});
-      setAutoImportStatus(`✓ 바코드 ${bc}를 기준목록에서 찾았습니다. 상품번호와 상품명을 자동 입력했습니다.`,'ok');
+
+    const productNumber =
+      item?.productNumber ||
+      saved?.productNumber ||
+      '';
+
+    const productName =
+      item?.productName ||
+      saved?.productName ||
+      '';
+
+    applyIdentifiersOnLastWork({
+      productNumber,
+      barcode:bc,
+      productName
+    });
+
+    if(saved){
+      showAutoMatchCard({
+        source:'shared',
+        ...saved,
+        productNumber:productNumber||saved.productNumber,
+        productName:productName||saved.productName,
+        barcode:bc
+      });
+      setAutoImportStatus(
+        `✓ ${bc} · 마지막 저장 작업의 라벨 설정을 유지하고 상품정보만 불러왔습니다. 예전 상품별 설정 전체가 필요하면 [공용 라벨 불러오기]를 사용하세요.`,
+        'ok'
+      );
+    }else if(item){
+      showAutoMatchCard({source:'catalog',...item,barcode:bc});
+      setAutoImportStatus(
+        `✓ 바코드 ${bc} · 마지막 저장 작업 설정을 유지하고 상품번호/상품명만 자동 입력했습니다.`,
+        'ok'
+      );
     }else{
-      updateLabel();
       showAutoMatchCard({source:'image',barcode:bc});
-      setAutoImportStatus(`바코드 ${bc}는 인식했지만 상품 기준목록에서 찾지 못했습니다. 기준 엑셀을 업데이트해 주세요.`,'warn');
+      setAutoImportStatus(
+        `바코드 ${bc}는 인식했습니다. 마지막 저장 작업 설정은 그대로 유지됩니다. 상품 기준목록에서 상품정보는 찾지 못했습니다.`,
+        'warn'
+      );
     }
   }
 
@@ -1730,6 +1753,24 @@
     return true;
   }
 
+
+  // 자동 불러오기/발주서 이동 시에는 항상 "맨 마지막으로 저장한 작업"을 기준으로 시작한다.
+  // 상품별 예전 저장값(라벨 크기/글자 크기 등)이 자동으로 덮어쓰는 것을 막는다.
+  // 과거 상품의 전체 설정을 불러오고 싶을 때만 [공용 라벨 불러오기] 버튼을 사용한다.
+  function applyLastSavedWorkBase(){
+    return applyUserDefaults();
+  }
+
+  function applyIdentifiersOnLastWork({productNumber='',barcode='',productName=''}={}){
+    applyLastSavedWorkBase();
+
+    if(productNumber && el('productNumber')) el('productNumber').value=productNumber;
+    if(barcode && el('barcodeValue')) el('barcodeValue').value=barcode;
+    if(productName && el('productName')) el('productName').value=productName;
+
+    updateLabel();
+  }
+
   function currentLabelConfig(){
     return {
       productNumber: normalizeProductNo(value('productNumber')),
@@ -1824,7 +1865,7 @@
       saveUserDefaults(cfg);
       await fetchSharedLabels(true);
       renderSavedLibrary();
-      setSaveStatus(`✓ 공용 저장 완료 · ${cfg.labelWidth}×${cfg.labelHeight}mm · 공용 보관함 ${getLabelLibrary().length}개`);
+      setSaveStatus(`✓ 공용 저장 완료 · 이 작업이 새 기본값으로 저장됨 · ${cfg.labelWidth}×${cfg.labelHeight}mm · 공용 보관함 ${getLabelLibrary().length}개`);
       await completeCurrentBatchItemAndAdvance(cfg);
     }catch(err){
       console.error(err);
@@ -1943,27 +1984,25 @@
   }
 
   function applyUrlPrefill(){
-    // 먼저 이 브라우저에서 마지막으로 저장한 사용자 기본 설정을 불러온다.
-    applyUserDefaults();
+    // 페이지 시작값은 항상 "맨 마지막으로 저장한 작업"이다.
+    applyLastSavedWorkBase();
 
     const q=new URLSearchParams(location.search);
     const productNumber=q.get('productNumber')||'';
     const barcode=q.get('barcode')||'';
     const productName=q.get('productName')||'';
 
-    if(productNumber||barcode){
-      const saved=findSavedLabel(barcode,productNumber);
-      if(saved){
-        applyLabelConfig(saved);
-        setSaveStatus('✓ 이 상품의 기존 저장 라벨을 자동으로 불러왔습니다.');
-      }else{
-        // 발주서에서 넘어온 3개 값은 사용자 기본값보다 우선한다.
-        if(productNumber) el('productNumber').value=productNumber;
-        if(barcode) el('barcodeValue').value=barcode;
-        if(productName) el('productName').value=productName;
-        updateLabel();
-        setSaveStatus('발주서 상품정보 + 마지막 저장 설정을 불러왔습니다. 완성 후 [라벨 저장]을 눌러주세요.');
-      }
+    if(productNumber||barcode||productName){
+      // 발주서에서 넘어온 상품 식별정보만 마지막 작업 위에 덮어쓴다.
+      // 상품별 과거 저장 라벨의 크기/폰트/문구는 자동 적용하지 않는다.
+      applyIdentifiersOnLastWork({
+        productNumber,
+        barcode,
+        productName
+      });
+      setSaveStatus(
+        '✓ 마지막 저장 작업의 라벨 설정 + 현재 상품정보를 불러왔습니다. 과거 상품별 전체 설정이 필요하면 [공용 라벨 불러오기]를 눌러주세요.'
+      );
     }else{
       updateLabel();
     }
@@ -2058,7 +2097,7 @@
   });
 
   function resetForm(){
-    if(!confirm('마지막으로 저장한 기본 설정으로 되돌릴까요?')) return;
+    if(!confirm('맨 마지막으로 저장한 라벨 작업 설정으로 되돌릴까요?')) return;
     rememberCurrentState();
 
     // 기본 예시값
