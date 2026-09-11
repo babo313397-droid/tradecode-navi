@@ -1059,5 +1059,145 @@ setTimeout(restorePersistentSession,30);
 })();
 </script>
 
+
+
+<style id="v13-pallet-separator-style">
+/* v13: visual boundary between automatically mapped pallets */
+.pallet-separator-row{height:18px!important}
+.pallet-separator-row th,.pallet-separator-row td{background:#00b050!important;border-top:1px solid #00843d!important;border-bottom:1px solid #00843d!important;padding:0!important;height:18px!important;min-height:18px!important}
+.pallet-separator-row .row-number{color:transparent!important}
+</style>
+<script>
+// ===== v13 pallet boundaries + global outbound box numbering =====
+// Q (출고 박스번호) is a global physical-box sequence following the visible tab order.
+// Auto pallet mapping remains strictly limited to sheetKind==='pallet' (팔레트 + 밀크런), never parcel.
+(function(){
+  function v13RangeLabel(a,b){a=Number(a)||0;b=Number(b)||a;return a===b?String(a):`${a}~${b}`}
+  function v13SortedCompleted(state){return (state?.completed||[]).slice().sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0))}
+
+  function refreshGlobalOutboundBoxNumbersV13(){
+    if(!workbook)return 0;
+    let next=1;
+    for(const ws of visibleWorkSheets()){
+      const state=ensurePalletState(ws);if(!state)continue;
+      if(sheetKind(ws)==='pallet'){
+        // This includes both pallet and milk-run sheets. Parcel sheets never enter the auto-pallet planner.
+        const st=assignVisualRows(ws,state),segs=st._visualSegments||[];
+        for(const seg of segs){
+          const count=Math.max(1,Number(seg.boxCount)||1);
+          seg._outStart=next;seg._outEnd=next+count-1;seg._outLabel=v13RangeLabel(seg._outStart,seg._outEnd);
+          next+=count;
+        }
+      }else if(sheetKind(ws)==='parcel'){
+        // Each parcel completion is exactly one physical shipping box.
+        for(const g of v13SortedCompleted(state)){
+          g._outStart=next;g._outEnd=next;g._outLabel=String(next);next++;
+        }
+        // Explicitly keep parcel sheets outside pallet mapping.
+        try{ws.getCell('K3').value=null}catch(e){}
+      }
+    }
+    return next-1;
+  }
+  window.refreshGlobalOutboundBoxNumbersV13=refreshGlobalOutboundBoxNumbersV13;
+
+  function setMergedDomValueV13(start,end,col,label){
+    start=Number(start)||0;end=Number(end)||start;if(!start)return;
+    const first=document.querySelector(`#sheetHost td[data-r="${start}"][data-c="${col}"]`);if(!first)return;
+    first.textContent=label||'';
+    if(end>start){
+      first.setAttribute('rowspan',String(end-start+1));
+      for(let r=start+1;r<=end;r++)document.querySelector(`#sheetHost td[data-r="${r}"][data-c="${col}"]`)?.remove();
+    }
+  }
+
+  function decorateOutboundNumbersV13(ws){
+    const state=ensurePalletState(ws);if(!state)return;
+    if(sheetKind(ws)==='pallet'){
+      const st=assignVisualRows(ws,state);
+      for(const seg of st._visualSegments||[])setMergedDomValueV13(seg.rows?.start,seg.rows?.end,17,seg._outLabel||'');
+    }else if(sheetKind(ws)==='parcel'){
+      for(const g of v13SortedCompleted(state))setMergedDomValueV13(g.rows?.start,g.rows?.end,17,g._outLabel||'');
+    }
+  }
+
+  function insertPalletBoundaryRowsV13(ws){
+    if(sheetKind(ws)!=='pallet')return;
+    const state=assignVisualRows(ws,ensurePalletState(ws)),pallets=state?._mappedPallets||[];
+    if(pallets.length<2)return;
+    const maxC=18,visible=Array.from({length:maxC},(_,i)=>i+1).filter(c=>!ws.getColumn(c).hidden).length;
+    // Insert from bottom to top so DOM positions are not disturbed.
+    for(let i=pallets.length-2;i>=0;i--){
+      const p=pallets[i],last=Number(p.lastRow)||0;if(!last)continue;
+      const anchor=document.querySelector(`#sheetHost th.row-number[data-row-no="${last}"]`)?.closest('tr');if(!anchor)continue;
+      const tr=document.createElement('tr');tr.className='pallet-separator-row';
+      tr.innerHTML=`<th class="row-number"></th><td colspan="${visible}"></td>`;
+      anchor.insertAdjacentElement('afterend',tr);
+    }
+  }
+
+  function applyOutboundNumbersToWorksheetV13(ws,state){
+    if(!ws||!state)return;
+    refreshGlobalOutboundBoxNumbersV13();
+    if(sheetKind(ws)==='pallet'){
+      const st=assignVisualRows(ws,state);
+      for(const seg of st._visualSegments||[]){
+        const first=Number(seg.rows?.start)||0,last=Number(seg.rows?.end)||first;if(!first)continue;
+        try{if(last>first)ws.mergeCells(first,17,last,17)}catch(e){}
+        ws.getCell(`Q${first}`).value=seg._outLabel||'';
+        ws.getCell(`Q${first}`).alignment={...(cloneObj(ws.getCell(`Q${first}`).alignment)||{}),horizontal:'center',vertical:'middle',wrapText:true};
+      }
+    }else if(sheetKind(ws)==='parcel'){
+      for(const g of v13SortedCompleted(state)){
+        const first=Number(g.rows?.start)||0,last=Number(g.rows?.end)||first;if(!first)continue;
+        try{if(last>first)ws.mergeCells(first,17,last,17)}catch(e){}
+        ws.getCell(`Q${first}`).value=g._outLabel||'';
+        ws.getCell(`Q${first}`).alignment={...(cloneObj(ws.getCell(`Q${first}`).alignment)||{}),horizontal:'center',vertical:'middle',wrapText:true};
+      }
+      // Parcel: no automatic pallet assignment/count.
+      try{ws.getCell('K3').value=null}catch(e){}
+    }
+  }
+
+  // Persist Q numbering after the existing v11/v12 worksheet serializers run.
+  const _syncPalletStateV13=syncPalletState;
+  syncPalletState=function(ws,state){
+    const ret=_syncPalletStateV13(ws,state);
+    try{applyOutboundNumbersToWorksheetV13(ws,state)}catch(e){console.warn('v13 outbound sync',e)}
+    return ret;
+  };
+
+  // Render existing Excel UI first, then add only the requested visual enhancements.
+  const _renderPalletSheetFastV13=renderPalletSheetFast;
+  renderPalletSheetFast=function(keepScroll,ws){
+    try{refreshGlobalOutboundBoxNumbersV13();if(sheetKind(ws)==='parcel')ws.getCell('K3').value=null}catch(e){}
+    const ret=_renderPalletSheetFastV13(keepScroll,ws);
+    try{
+      decorateOutboundNumbersV13(ws);
+      if(sheetKind(ws)==='pallet')insertPalletBoundaryRowsV13(ws);
+    }catch(e){console.warn('v13 decorate',e)}
+    return ret;
+  };
+
+  // Keep parcel totals independent from pallet mapping even when an older workbook had K3=0/legacy data.
+  const _recalcWorkSheetV13=recalcWorkSheet;
+  recalcWorkSheet=function(ws){
+    const ret=_recalcWorkSheetV13(ws);
+    if(ws&&sheetKind(ws)==='parcel')try{ws.getCell('K3').value=null}catch(e){}
+    return ret;
+  };
+
+  // After commit/cancel/edit, recalculate the global Q sequence and refresh the current sheet only.
+  const _markPalletDirtyV13=markPalletDirty;
+  markPalletDirty=function(ws,state){
+    const ret=_markPalletDirtyV13(ws,state);
+    try{refreshGlobalOutboundBoxNumbersV13()}catch(e){}
+    return ret;
+  };
+
+  // One-time normalization after autosave restoration/loading.
+  setTimeout(()=>{try{refreshGlobalOutboundBoxNumbersV13();const ws=workbook?.getWorksheet(activeSheet);if(ws&&isPackWorkSheet(ws))renderSheet(true)}catch(e){}},120);
+})();
+</script>
 </body>
 </html>
