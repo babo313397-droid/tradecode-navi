@@ -863,5 +863,201 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 setTimeout(restorePersistentSession,30);
 
 </script>
+
+<script>
+// ===== v12 parcel workflow rules =====
+// Parcel sheets are different from pallet/milk-run sheets:
+// G = sequential parcel-box number (1,2,3...), G3 = COUNT of completed parcel boxes.
+// P = mandatory physical box number. R = manually entered 12-digit tracking number.
+(function(){
+  function isParcelV12(ws){return !!ws&&sheetKind(ws)==='parcel'}
+  function parcelSortedGroups(state){return (state?.completed||[]).slice().sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0))}
+  function normalizeParcelStateV12(ws,state){
+    if(!isParcelV12(ws)||!state)return state;
+    const groups=parcelSortedGroups(state);
+    groups.forEach((g,idx)=>{
+      g.boxCount=1;g._parcelNo=idx+1;
+      if(g.trackingNo==null)g.trackingNo='';
+      (g.items||[]).forEach(it=>{if(Number.isFinite(Number(it.totalQty)))it.perBoxQty=Number(it.totalQty)});
+    });
+    ws.getColumn(18).width=Math.max(Number(ws.getColumn(18).width)||0,19);
+    return state;
+  }
+
+  // Parse existing parcel Excel correctly: G is a sequence, not a quantity multiplier.
+  const _inferPalletStateV12=inferPalletState;
+  inferPalletState=function(ws){
+    if(!isParcelV12(ws))return _inferPalletStateV12(ws);
+    const start=generationStartRow(ws),completed=[],used=new Set(),maxR=ws.rowCount;let nextSeq=1;
+    for(let r=start;r<=maxR;r++){
+      if(used.has(r))continue;
+      const row=ws.getRow(r),f=cellNum(row.getCell(6)),parcelNo=cellNum(row.getCell(7)),size=norm(displayText(row.getCell(8))),weight=cellNum(row.getCell(12)),boxNo=norm(displayText(row.getCell(16))),trackingNo=norm(displayText(row.getCell(18)));
+      if(!(f>0||parcelNo>0||size||boxNo||trackingNo))continue;
+      let end=r;
+      for(const c of [6,7,8,12,16,18]){const p=fastMergeForCell(ws,r,c);if(p)end=Math.max(end,p.r2)}
+      const items=[];
+      for(let rr=r;rr<=end;rr++){
+        used.add(rr);const it=rowCoreItem(ws,rr);
+        if((it.barcode||it.productNumber||it.productName)&&it.qty>0)items.push({...it,totalQty:Number(it.qty),perBoxQty:Number(it.qty)});
+      }
+      if(items.length){
+        const savedId=norm(displayText(row.getCell(21)))||`parcel-${ws.name}-${r}`;
+        const hiddenSeq=cellNum(row.getCell(22));const savedSeq=hiddenSeq||parcelNo||nextSeq;
+        completed.push({id:savedId,seq:savedSeq,items,boxCount:1,size:size||'',weight:weight||'',boxNo,trackingNo,rows:{start:r,end}});
+        nextSeq=Math.max(nextSeq,savedSeq+1);
+      }
+    }
+    const incomplete=[];
+    for(let r=start;r<=maxR;r++){
+      if(used.has(r))continue;const it=rowCoreItem(ws,r);
+      if((it.barcode||it.productNumber||it.productName)&&it.qty>0)incomplete.push({...it,remainingQty:Number(it.qty)});
+    }
+    return normalizeParcelStateV12(ws,assignVisualRows(ws,{completed,incomplete,nextSeq,templateRow:start,nextItemId:1}));
+  };
+
+  // Parcel sheet total: count completed boxes, never sum the sequence values in G.
+  const _recalcWorkSheetV12=recalcWorkSheet;
+  recalcWorkSheet=function(ws){
+    if(!isParcelV12(ws))return _recalcWorkSheetV12(ws);
+    const state=normalizeParcelStateV12(ws,ensurePalletState(ws));let total=0,packed=0;
+    for(const g of state.completed||[])for(const it of g.items||[]){const q=Number(it.totalQty||0);total+=q;packed+=q}
+    for(const it of state.incomplete||[])total+=Number(it.remainingQty||0);
+    const boxes=(state.completed||[]).length;
+    ws.getCell('E3').value=total;ws.getCell('G3').value=boxes;
+    return {total,boxes,packed};
+  };
+
+  // Persist the visible parcel layout into Excel: G=1,2,3..., R=tracking number.
+  const _syncPalletStateV12=syncPalletState;
+  syncPalletState=function(ws,state){
+    if(!isParcelV12(ws))return _syncPalletStateV12(ws,state);
+    state=normalizeParcelStateV12(ws,assignVisualRows(ws,state));
+    const start=generationStartRow(ws),spec=styleRowFrom(ws,start,1,19);unmergeDataArea(ws,start);
+    const needed=(state.completed||[]).reduce((a,g)=>a+Math.max(1,(g.items||[]).length),0)+(state.incomplete||[]).length;
+    const clearTo=Math.max(ws.rowCount,start+needed+25);
+    for(let rr=start;rr<=clearTo;rr++){const row=ws.getRow(rr);for(let c=1;c<=22;c++)row.getCell(c).value=null}
+    let r=start;const groups=parcelSortedGroups(state);
+    groups.forEach((group,idx)=>{
+      group.boxCount=1;group._parcelNo=idx+1;const first=r;
+      for(const gi of group.items||[]){
+        const row=ws.getRow(r);applyStyleSpec(row,spec,1);row.getCell(1).value=cloneObj(gi.productNumber);row.getCell(2).value=gi.productName;row.getCell(3).value=gi.barcode;row.getCell(4).value=gi.center;
+        if(gi.centerFill)row.getCell(4).fill=cloneObj(gi.centerFill);if(gi.centerFont?.color)row.getCell(4).font={...cloneObj(row.getCell(4).font),color:cloneObj(gi.centerFont.color)};
+        row.getCell(5).value=Number(gi.totalQty||0);r++;
+      }
+      const last=Math.max(first,r-1),totalPerBox=(group.items||[]).reduce((a,i)=>a+Number(i.perBoxQty||i.totalQty||0),0);
+      try{ws.mergeCells(first,8,last,10)}catch(e){}
+      if(last>first){for(const c of [6,7,12,16,18])try{ws.mergeCells(first,c,last,c)}catch(e){}}
+      ws.getCell(`F${first}`).value=totalPerBox;
+      ws.getCell(`G${first}`).value=idx+1;
+      ws.getCell(`H${first}`).value=String(group.size||'');
+      ws.getCell(`L${first}`).value=(group.weight===''||group.weight==null)?'':(Number(group.weight)||String(group.weight));
+      ws.getCell(`P${first}`).value=String(group.boxNo||'');
+      ws.getCell(`R${first}`).value=String(group.trackingNo||'');
+      for(const c of [6,7,8,9,10,12,16,18]){const cell=ws.getRow(first).getCell(c);cell.alignment={...(cloneObj(cell.alignment)||{}),horizontal:'center',vertical:'middle',wrapText:true}}
+      group.rows={start:first,end:last};
+      ws.getCell(`T${first}`).value='WEBBOX';ws.getCell(`U${first}`).value=group.id;ws.getCell(`V${first}`).value=group.seq;
+    });
+    for(const it of state.incomplete||[]){
+      const row=ws.getRow(r);applyStyleSpec(row,spec,1);row.getCell(1).value=cloneObj(it.productNumber);row.getCell(2).value=it.productName;row.getCell(3).value=it.barcode;row.getCell(4).value=it.center;
+      if(it.centerFill)row.getCell(4).fill=cloneObj(it.centerFill);if(it.centerFont?.color)row.getCell(4).font={...cloneObj(row.getCell(4).font),color:cloneObj(it.centerFont.color)};
+      row.getCell(5).value=Number(it.remainingQty||0);r++;
+    }
+    ws.getColumn(18).width=Math.max(Number(ws.getColumn(18).width)||0,19);ws.getColumn(20).hidden=true;ws.getColumn(21).hidden=true;ws.getColumn(22).hidden=true;
+    recalcWorkSheet(ws);
+  };
+
+  function parcelVisualCellHtmlV12(ws,r,c,item,value,extra='',span='',editable=false,title=''){
+    const base=ws.getRow(generationStartRow(ws)).getCell(c),css=cellCss(base)+(extra?';'+extra:'');
+    return `<td class="cell${editable?' editable':''}" data-r="${r}" data-c="${c}" data-addr="${excelCol(c)}${r}"${editable?' data-editable="1"':''}${title?` title="${escAttr(title)}"`:''}${span} style="${escAttr(css)}">${escHtml(value??'')}</td>`;
+  }
+
+  // Parcel renderer: G is parcel order, R is editable tracking number.
+  const _renderPalletSheetFastV12=renderPalletSheetFast;
+  renderPalletSheetFast=function(keepScroll,ws){
+    if(!isParcelV12(ws))return _renderPalletSheetFastV12(keepScroll,ws);
+    ws.getColumn(18).width=Math.max(Number(ws.getColumn(18).width)||0,19);
+    const vp=$('sheetViewport'),oldTop=vp.scrollTop,oldLeft=vp.scrollLeft,start=generationStartRow(ws),maxC=19,state=normalizeParcelStateV12(ws,assignVisualRows(ws,ensurePalletState(ws)));
+    $('activeSheetName').textContent=ws.name;$('scanReady').style.display='inline';updateInlinePalletPanel(true,ws);recalcWorkSheet(ws);
+    const visualRows=(state.completed||[]).reduce((a,g)=>a+Math.max(1,(g.items||[]).length),0)+(state.incomplete||[]).length;$('sheetInfo').textContent=`${(start-1+visualRows).toLocaleString()}행 · ${maxC}열`;
+    let h=fastTableShellStart(ws,maxC)+renderHeaderRowsHtml(ws,start,maxC),r=start;const rowH=pxFromPoints(ws.getRow(start).height),groups=parcelSortedGroups(state);
+    groups.forEach((group,idx)=>{
+      group._parcelNo=idx+1;group.boxCount=1;const n=Math.max(1,(group.items||[]).length),totalPer=(group.items||[]).reduce((a,i)=>a+Number(i.perBoxQty||i.totalQty||0),0);
+      for(let j=0;j<n;j++,r++){
+        const it=(group.items||[])[j]||{};h+=`<tr class="row-completed-mark" style="height:${rowH}px"><th class="row-number data-row" data-row-no="${r}">${r}</th>`;
+        for(let c=1;c<=maxC;c++){
+          if(ws.getColumn(c).hidden)continue;if(c===9||c===10)continue;if(j>0&&[6,7,8,12,16,18].includes(c))continue;
+          let v='',span='',editable=false,title='';
+          if(c===1)v=it.productNumber??'';else if(c===2)v=it.productName||'';else if(c===3)v=it.barcode||'';else if(c===4)v=it.center||'';else if(c===5)v=Number(it.totalQty||0)||'';
+          else if(j===0&&c===6){v=totalPer;if(n>1)span+=` rowspan="${n}"`}
+          else if(j===0&&c===7){v=idx+1;if(n>1)span+=` rowspan="${n}"`}
+          else if(j===0&&c===8){v=group.size||'';span+=` colspan="3"`;if(n>1)span+=` rowspan="${n}"`}
+          else if(j===0&&c===12){v=group.weight??'';if(n>1)span+=` rowspan="${n}"`}
+          else if(j===0&&c===16){v=group.boxNo||'';if(n>1)span+=` rowspan="${n}"`}
+          else if(j===0&&c===18){v=group.trackingNo||'';editable=true;title='더블클릭하여 12자리 송장번호 입력';if(n>1)span+=` rowspan="${n}"`}
+          h+=parcelVisualCellHtmlV12(ws,r,c,it,v,dataCellExtraStyle(it,c),span,editable,title);
+        }
+        h+='</tr>';
+      }
+    });
+    if((state.completed||[]).length){const visible=Array.from({length:maxC},(_,i)=>i+1).filter(c=>!ws.getColumn(c).hidden).length;h+=`<tr class="work-divider-row"><th class="row-number work-divider-num">↕</th><td class="work-divider-cell" colspan="${visible}">작업 상태  |  ▲ 완료 ${(state.completed||[]).length.toLocaleString()}박스 · ${completedQty(state).toLocaleString()}개  |  ▼ 미완료 ${(state.incomplete||[]).length}품목 · ${incompleteQty(state).toLocaleString()}개</td></tr>`}
+    for(const it of state.incomplete||[]){h+=`<tr style="height:${rowH}px"><th class="row-number data-row" data-row-no="${r}">${r}</th>`;for(let c=1;c<=maxC;c++){if(ws.getColumn(c).hidden)continue;let v='';if(c===1)v=it.productNumber??'';else if(c===2)v=it.productName||'';else if(c===3)v=it.barcode||'';else if(c===4)v=it.center||'';else if(c===5)v=Number(it.remainingQty||0)||'';h+=parcelVisualCellHtmlV12(ws,r,c,it,v,dataCellExtraStyle(it,c))}h+='</tr>';r++}
+    h+='</tbody></table>';$('sheetHost').innerHTML=h;bindFastTableEvents(ws,true);if(keepScroll){vp.scrollTop=oldTop;vp.scrollLeft=oldLeft}else{vp.scrollTop=0;vp.scrollLeft=0}
+  };
+
+  // Tracking number direct cell editing. Blank is allowed until entered; any nonblank value must be exactly 12 digits.
+  const _beginCellEditV12=beginCellEdit;
+  beginCellEdit=function(td,cell,ws,r,c){
+    if(!(isParcelV12(ws)&&c===18))return _beginCellEditV12(td,cell,ws,r,c);
+    if(td.classList.contains('editing'))return;const group=findCompletedGroupByRow(ws,r);if(!group){setStatus('송장번호는 작업 완료된 택배 박스에 입력해 주세요.','bad');return}
+    const original=String(group.trackingNo||displayText(cell)||'');td.classList.add('editing');td.contentEditable='true';td.spellcheck=false;td.textContent=original;td.focus();
+    const range=document.createRange();range.selectNodeContents(td);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);let done=false;
+    const finish=(commit)=>{if(done)return;done=true;td.removeEventListener('blur',onBlur);td.removeEventListener('keydown',onKey);td.contentEditable='false';td.classList.remove('editing');
+      if(!commit){td.textContent=original;return}
+      const value=String(td.innerText||'').trim();if(value!==''&&!/^\d{12}$/.test(value)){alert('송장번호는 숫자 12자리로 입력해 주세요.');td.textContent=original;setStatus('송장번호는 숫자 12자리여야 합니다.','bad');return}
+      group.trackingNo=value;cell.value=value;td.textContent=value;dirtyPalletSheets.add(ws.name);schedulePersistentState(60);setStatus(value?`✓ 송장번호 ${value} 저장`:'송장번호를 비웠습니다.','ok');
+    };
+    const onBlur=()=>finish(true),onKey=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}else if(e.key==='Tab'){e.preventDefault();finish(true)}};
+    td.addEventListener('blur',onBlur);td.addEventListener('keydown',onKey);
+  };
+
+  // Box number is mandatory for every pallet/milk-run/parcel job. Parcel jobs are always one physical box per completion.
+  const _pullInlineDraftV12=pullInlineDraft;
+  pullInlineDraft=function(){_pullInlineDraftV12();if(!boxDraft)return;const ws=workbook?.getWorksheet(boxDraft.sheetName);if(isParcelV12(ws))boxDraft.boxCount=1};
+  const _validateInlineDraftV12=validateInlineDraft;
+  validateInlineDraft=function(){const base=_validateInlineDraftV12();if(base)return base;if(!norm(boxDraft?.boxNo))return '박스번호를 반드시 입력해 주세요.';return ''};
+  if(typeof validateDraft==='function'){
+    const _validateDraftV12=validateDraft;validateDraft=function(){const base=_validateDraftV12();if(base)return base;if(!norm(boxDraft?.boxNo))return '박스번호를 반드시 입력해 주세요.';return ''};
+  }
+
+  const _renderInlineDraftV12=renderInlineDraft;
+  renderInlineDraft=function(){
+    _renderInlineDraftV12();if(!boxDraft)return;const ws=workbook?.getWorksheet(boxDraft.sheetName),parcel=isParcelV12(ws),cnt=inlineEl('inlineBoxCount'),boxNo=inlineEl('inlineBoxNo');
+    if(boxNo)boxNo.placeholder='필수 입력';
+    if(cnt){cnt.disabled=parcel;if(parcel){cnt.value='1';boxDraft.boxCount=1;cnt.title='택배 작업은 작업 완료 1건 = 1박스입니다.'}else cnt.title=''}
+    const cntLabel=cnt?.closest('label');if(cntLabel&&cntLabel.firstChild?.nodeType===3)cntLabel.firstChild.nodeValue=parcel?'박스수(택배 1박스)':'박스수';
+  };
+
+  // Keep tracking numbers in the light-weight autosave state.
+  const _cleanPalletStateForSaveV12=cleanPalletStateForSave;
+  cleanPalletStateForSave=function(state){
+    const out=_cleanPalletStateForSaveV12(state);if(!out)return out;
+    const byId=new Map((state.completed||[]).map(g=>[g.id,g]));
+    (out.completed||[]).forEach(g=>{const src=byId.get(g.id);if(src&&src.trackingNo!=null)g.trackingNo=String(src.trackingNo)});return out;
+  };
+
+  // Normalize any older parcel autosave restored from v10/v11.
+  const _applyRecoveredStateV12=applyRecoveredState;
+  applyRecoveredState=function(saved){
+    _applyRecoveredStateV12(saved);if(!workbook)return;
+    for(const ws of visibleWorkSheets())if(isParcelV12(ws)&&palletStates.has(ws.name)){const st=normalizeParcelStateV12(ws,palletStates.get(ws.name));assignVisualRows(ws,st);dirtyPalletSheets.add(ws.name);recalcWorkSheet(ws)}
+  };
+
+  // Static hints from older versions.
+  const inlineBoxNo=inlineEl('inlineBoxNo');if(inlineBoxNo)inlineBoxNo.placeholder='필수 입력';
+  const modalBoxNo=$('boxNo');if(modalBoxNo)modalBoxNo.placeholder='필수 입력';
+  try{const modalLabel=modalBoxNo?.closest('.box-field')?.querySelector('label');if(modalLabel)modalLabel.textContent='박스번호(필수)'}catch(e){}
+})();
+</script>
+
 </body>
 </html>
