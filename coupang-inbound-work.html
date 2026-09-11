@@ -4,101 +4,115 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>쿠팡 입고 작업 | TradeCode Navi</title>
-<meta name="description" content="쿠팡 선적 발주 엑셀을 엑셀과 익숙한 화면으로 센터별 팔레트/택배 작업 관리">
+<meta name="description" content="쿠팡 선적 발주 엑셀을 팔레트·밀크런·택배 작업으로 나누고 바코드 스캔과 혼합박스 패킹을 관리합니다.">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+window.XLSX_READ=window.XLSX;
+window.XLSX_STYLE=window.XLSX;
+</script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"
+        onload="window.XLSX_STYLE=window.XLSX;window.XLSX=window.XLSX_READ"
+        onerror="window.XLSX=window.XLSX_READ"></script>
 <style>
 :root{
-  --navy:#0b2f4f;--navy2:#08253f;--gold:#d6a52b;--bg:#eef2f5;--line:#8b8b8b;
-  --grid:#7c7c7c;--head:#e8e8e8;--green:#d9ead3;--yellow:#fff2cc;--orange:#f4c7a1;
-  --blue:#dcebf7;--select:#d9eaf7;--text:#111;--muted:#667788;
+  --navy:#082b49;--navy2:#061f35;--gold:#d9a526;--bg:#f2f5f8;--line:#cfd8e1;
+  --text:#182a39;--muted:#66798a;--good:#16824a;--bad:#d42a2a;--blue:#0e63a5;
 }
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:#111}
+html,body{margin:0;background:var(--bg);font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:var(--text)}
 button,input,select{font:inherit}button{cursor:pointer}
-.sidebar{position:fixed;left:0;top:0;bottom:0;width:258px;background:linear-gradient(180deg,var(--navy2),var(--navy));padding:22px 15px;overflow:auto;z-index:50}
-.side-brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;font-size:17px;margin-bottom:18px}
-.logo-badge{width:38px;height:38px;border-radius:10px;background:var(--gold);color:#08253f;display:grid;place-items:center;font-weight:1000}
-.side-brand small{font-size:11px;font-weight:500;color:#c8d4df}
-.nav-section-label{font-size:10.5px;color:#8fa6ba;margin:14px 8px 7px;font-weight:900;letter-spacing:.08em}
-.nav-btn{display:block;width:100%;text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);color:#e8eef4;border-radius:10px;padding:12px;font-size:13px;font-weight:800;margin-bottom:7px;text-decoration:none}
-.nav-btn:hover{background:rgba(255,255,255,.12)}.nav-btn.active{background:var(--gold);color:#08253f;border-color:var(--gold)}
-.main{margin-left:258px;min-width:0;padding:14px}
-.toolbar{background:#fff;border:1px solid #cbd3da;border-radius:10px;padding:10px 12px;margin-bottom:8px;box-shadow:0 2px 7px rgba(0,0,0,.04)}
-.toolbar-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.title{font-size:19px;font-weight:1000;color:#0b3152;margin-right:auto}
-.sub{font-size:11px;color:#6c7b88}
-.btn{border:1px solid #cbd4dc;border-radius:7px;padding:7px 10px;background:#fff;font-size:11px;font-weight:900}
-.btn-primary{background:#0a3a64;color:#fff;border-color:#0a3a64}.btn-gold{background:#d8a827;color:#08253f;border-color:#d8a827}
-.btn-danger{background:#fff0f0;color:#a62626;border-color:#e7c5c5}.btn-soft{background:#f4f7f9}.btn-sm{padding:5px 7px;font-size:10px}
-.file-name{font-size:10.5px;color:#637586;font-weight:800}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:258px;background:linear-gradient(180deg,var(--navy2),var(--navy));padding:20px 14px;overflow:auto;z-index:20}
+.brand{display:flex;gap:10px;align-items:center;color:#fff;font-weight:900;margin-bottom:18px}
+.brand-badge{width:38px;height:38px;border-radius:10px;background:var(--gold);color:#08253f;display:grid;place-items:center;font-weight:1000}
+.brand small{display:block;font-size:10px;color:#c9d4dd;font-weight:500}
+.nav-label{font-size:10px;color:#90a6b8;margin:12px 7px 7px;font-weight:900}
+.nav-btn{display:block;width:100%;text-decoration:none;text-align:left;color:#eaf0f5;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;margin-bottom:7px;font-size:12.5px;font-weight:900}
+.nav-btn:hover{background:rgba(255,255,255,.12)}
+.nav-btn.active{background:var(--gold);color:#08253f;border-color:var(--gold)}
+.main{margin-left:258px;padding:18px;min-width:0}
+.head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}
+.head h1{margin:0 0 5px;font-size:26px;color:#082f50}
+.head p{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.badge{background:#e9f4ff;color:#105d98;border-radius:999px;padding:7px 10px;font-size:10.5px;font-weight:900}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 6px 18px rgba(15,45,68,.035)}
+.btn{border-radius:8px;border:1px solid transparent;padding:8px 11px;font-weight:900;font-size:11.5px}
+.btn-primary{background:#0b3a63;color:#fff}.btn-gold{background:var(--gold);color:#08253f}
+.btn-secondary{background:#eef3f7;color:#213b50;border-color:#d5dee6}.btn-ghost{background:#fff;color:#405769;border-color:#d2dce4}
+.btn-danger{background:#fff0f0;color:#b32727;border-color:#f0cccc}.btn-good{background:#eaf8f0;color:#137241;border-color:#c3e4cf}
+.btn-sm{padding:6px 8px;font-size:10.5px}
+.row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.file-label{font-size:10.5px;color:#687b8c;font-weight:800}
 input[type=file]{display:none}
-.job-select{border:1px solid #c7d1da;border-radius:7px;padding:7px 9px;min-width:270px;background:#fff}
-.scanline{display:grid;grid-template-columns:160px minmax(280px,480px) auto 1fr;gap:7px;align-items:center;margin-top:8px}
-.scanlabel{font-size:11px;font-weight:1000;color:#29455d}
-.scan{height:38px;border:2px solid #1470b8;border-radius:6px;padding:0 10px;font-size:17px;font-weight:1000;outline:none}
-.scan:focus{box-shadow:0 0 0 3px rgba(20,112,184,.12)}
-.scanmsg{font-size:10.5px;padding:7px 9px;background:#f1f4f7;border-radius:6px;color:#5a6d7f;min-height:30px}
-.scanmsg.ok{background:#e4f4e8;color:#176c3e}.scanmsg.bad{background:#fde8e8;color:#a92727}.scanmsg.warn{background:#fff3d5;color:#815b00}
-.summaryline{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
-.kpi{font-size:10.5px;border:1px solid #d6dde3;background:#fafbfc;border-radius:6px;padding:5px 8px}.kpi b{font-size:12px;color:#123653}
+.job-title{font-size:20px;font-weight:1000;color:#0a3458}
+.job-title small{display:block;font-size:10.5px;color:#718292;margin-top:4px;font-weight:700}
+.job-select{min-width:280px;border:1px solid #cad6df;border-radius:8px;padding:8px;background:#fff;font-size:11px}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.kpi{border:1px solid #e0e7ec;border-radius:9px;padding:9px;background:#fbfcfd}
+.kpi span{font-size:9.5px;color:#748391;font-weight:800}.kpi b{display:block;font-size:18px;margin-top:3px;color:#0b3456}
+.kpi.good b{color:#147842}.progress{height:7px;background:#e6edf2;border-radius:99px;overflow:hidden;margin-top:6px}.progress i{display:block;height:100%;background:#15834b;width:0}
+.scan{border:2px solid #8db5d6;background:#f7fbff}
+.scan-grid{display:grid;grid-template-columns:minmax(280px,1fr) auto;gap:8px}
+.scan-input{width:100%;height:48px;border:2px solid #1668aa;border-radius:9px;padding:0 14px;font-size:18px;font-weight:1000;outline:none}
+.scan-msg{margin-top:7px;padding:7px 9px;border-radius:7px;background:#edf2f6;font-size:11px;color:#556a7a;font-weight:900}
+.scan-msg.ok{background:#e9f8ef;color:#167844}.scan-msg.bad{background:#fff0f0;color:#bb2d2d}.scan-msg.warn{background:#fff7e6;color:#93600d}
 
-/* Excel-like sheet */
-.excel-shell{background:#fff;border:1px solid #9ca3a9;box-shadow:0 2px 8px rgba(0,0,0,.05);overflow:hidden}
-.sheet-tabs-top{display:flex;gap:1px;background:#e9edf0;border-bottom:1px solid #aeb5bb;overflow:auto;padding:5px 5px 0}
-.sheet-tab{white-space:nowrap;border:1px solid #adb5bb;border-bottom:none;background:#f4f4f4;padding:7px 13px;font-size:10.5px;font-weight:900;color:#333;border-radius:5px 5px 0 0}
-.sheet-tab.active{background:#fff;color:#0b5c9b;border-top:3px solid #217346;padding-top:5px}
-.sheet-tab.pallet::before{content:"▣ ";color:#217346}.sheet-tab.parcel::before{content:"▤ ";color:#c47b00}
-.sheet-actions{display:flex;gap:5px;margin-left:auto;padding:1px 5px 4px;align-items:center}
-.sheet-area{overflow:auto;max-height:calc(100vh - 265px);min-height:520px}
-.excel-table{border-collapse:collapse;table-layout:fixed;width:max-content;min-width:100%;font-size:11px;background:#fff}
-.excel-table th,.excel-table td{border:1px solid var(--grid);padding:5px 6px;vertical-align:middle;height:31px}
-.excel-table thead th{background:var(--head);font-weight:1000;text-align:center;position:sticky;top:0;z-index:5}
-.excel-table .letters-row td{background:#f1f1f1;color:#666;text-align:center;font-weight:900;height:23px;padding:2px 4px;border-color:#b4b4b4}
-.excel-table .letters-row .rowno{background:#e7e7e7!important}
-.company-separator td{background:#d9ead3!important;font-weight:1000;border-top:2px solid #6d8e72;border-bottom:2px solid #6d8e72;height:28px!important}
-.company-separator .company-title{padding-left:10px!important;color:#214d2b}
-.order-sheet-row td{background:#fff}
-.order-sheet-row:hover td{background:#edf7ff}
-.recent-done td{background:#eef8ff}
-.recent-done td:first-child{box-shadow:inset 4px 0 #2b78c5}
+/* fixed tab order */
+.tabs{display:flex;gap:5px;flex-wrap:wrap}
+.tab{border:1px solid #cfd9e2;background:#fff;border-radius:8px;padding:8px 10px;font-size:10.5px;font-weight:900;color:#40586a}
+.tab.active{background:#0b3b64;color:#fff;border-color:#0b3b64}
+.tab small{opacity:.75;margin-left:4px}
+.center-line{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px}
+.center-chip{border:1px solid #d3dde5;background:#fff;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:900;color:#496074}
+.center-chip.active{background:#eaf4fd;color:#0b5f9d;border-color:#8bb9dc}
 
-.excel-table .title-row td{font-size:17px;font-weight:1000;text-align:center;background:#fff;height:37px}
-.excel-table .total-row td{background:#fff;font-weight:1000}
-.excel-table .total-yellow{background:#fff200!important}
-.excel-table .center-cell{background:var(--orange);text-align:center}
-.excel-table .done-row{background:#f8fff8}
-.excel-table .done-row td:first-child{box-shadow:inset 4px 0 #41a35d}
-.excel-table .draft-row{background:#fff8c9}
-.excel-table .draft-row td:first-child{box-shadow:inset 4px 0 #d6a500}
-.excel-table .remain-row{background:#fff}
-.excel-table .remain-row:hover{background:#edf7ff}
-.excel-table .selected-row{background:#dceefb!important}
-.excel-table .product-name{white-space:normal;line-height:1.35;font-weight:700}
-.excel-table .nowrap{white-space:nowrap}.excel-table .center{text-align:center}.excel-table .right{text-align:right}
-.excel-table input,.excel-table select{width:100%;border:1px solid #8aa4b8;border-radius:2px;padding:4px 5px;background:#fff;font-size:10.5px;height:26px}
-.excel-table input:focus,.excel-table select:focus{outline:2px solid #2b78c5}
-.rowno{width:40px;background:#f0f0f0!important;color:#666;text-align:center!important;font-weight:700}
-.c-a{width:95px}.c-b{width:320px}.c-c{width:145px}.c-d{width:90px}.c-e{width:95px}.c-f{width:105px}.c-g{width:90px}.c-h{width:105px}.c-k{width:85px}.c-p{width:105px}.c-q{width:110px}.c-r{width:155px}.c-action{width:86px}
-.status-badge{display:inline-flex;padding:3px 6px;border-radius:999px;font-size:9px;font-weight:1000;background:#eee;color:#555}
-.status-badge.done{background:#d9ead3;color:#1d6b36}.status-badge.work{background:#fff2cc;color:#806000}.status-badge.wait{background:#eee;color:#666}
-.worked-separator td{height:10px!important;padding:0!important;background:#ececec;border-top:2px solid #555;border-bottom:2px solid #555}
-.worked-separator .septext{font-size:9px;color:#666;font-weight:900;padding-left:8px!important}
-.sheet-bottom{display:flex;align-items:center;background:#eceff1;border-top:1px solid #aeb5bb;padding:4px 7px;gap:6px;overflow:auto}
-.sheet-bottom .hint{font-size:9.5px;color:#667480;margin-left:auto;white-space:nowrap}
-.empty{padding:45px;text-align:center;color:#6d7c88}
-.box-counter{display:flex;gap:5px;align-items:center}.box-counter input{width:70px}
-.quick{display:flex;gap:3px}.quick button{font-size:9px;padding:3px 5px;border:1px solid #aaa;background:#fff;border-radius:3px}
-.notice{font-size:10px;color:#687886;margin-top:6px}
-@media(max-width:850px){
- .sidebar{position:static;width:auto;display:flex;gap:5px;overflow:auto;padding:8px}.side-brand,.nav-section-label{display:none}
- .nav-btn{width:auto;white-space:nowrap;margin:0}.main{margin-left:0;padding:6px}.scanline{grid-template-columns:1fr}.job-select{min-width:0;width:100%}
+/* current box */
+.box-builder{display:grid;grid-template-columns:minmax(420px,.9fr) minmax(460px,1.1fr);gap:12px;align-items:start}
+.panel-title{font-size:14px;font-weight:1000;color:#0a3457;margin-bottom:8px}
+.selected-product{border:1px solid #d7e1e9;background:#f8fafc;border-radius:9px;padding:9px;margin-bottom:8px}
+.selected-product strong{display:block;font-size:11.5px;color:#0b3457;line-height:1.4}
+.selected-product small{display:block;font-size:9.5px;color:#6d7e8e;margin-top:3px}
+.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.field{font-size:9.5px;font-weight:900;color:#526879}
+.field input,.field select{width:100%;margin-top:4px;border:1px solid #cad6df;border-radius:7px;padding:8px;background:#fff}
+.quick{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.quick button{border:1px solid #d1dce5;background:#fff;border-radius:999px;padding:4px 7px;font-size:9px;font-weight:900}
+.current-box{border:1px solid #d7e1e8;border-radius:9px;overflow:hidden}
+.current-box table{width:100%;border-collapse:collapse;font-size:10px}.current-box th,.current-box td{border-bottom:1px solid #e5eaee;padding:6px}
+.current-box th{background:#f3f6f8;color:#4f6475}
+.current-box-total{padding:8px 9px;background:#f8fafc;font-size:10.5px;font-weight:900}
+.empty{padding:28px 10px;text-align:center;color:#798997;font-size:11px}
+
+/* excel view */
+.excel-wrap{overflow:auto;border:1px solid #bfcbd5;background:#fff;max-height:720px}
+.excel{border-collapse:collapse;min-width:1500px;width:100%;font-size:10.5px}
+.excel th,.excel td{border:1px solid #333;padding:5px 6px;text-align:center;vertical-align:middle}
+.excel thead th{background:#f3f3f3;font-weight:1000;position:sticky;top:0;z-index:4}
+.excel .title-row th{font-size:15px;background:#fff}
+.excel .prod{text-align:left;min-width:310px;line-height:1.35}
+.excel .code{min-width:125px}.excel .barcode{min-width:155px}.excel .center{min-width:90px}
+.excel .qty{min-width:75px}.excel .size{min-width:150px;font-weight:900}.excel .weight{min-width:80px;font-weight:900}
+.excel .boxno{min-width:90px;font-weight:900}.excel .track{min-width:120px}
+.excel tr.done-item td.item-cell{background:#fff}
+.excel tr.pending td.item-cell{color:#e01818;font-weight:800}
+.excel tr.highlight td.item-cell{background:#fff4bf}
+.excel .box-cell{background:#fff;font-weight:900}
+.excel .green-center{background:#c6e8b5}
+.excel .unassigned{color:#bb2525}
+.table-tools{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px}
+.search{min-width:250px;border:1px solid #cad5df;border-radius:8px;padding:8px 9px}
+.note{font-size:10px;color:#6d7e8d;line-height:1.5;margin-top:7px}
+.order-table{width:100%;border-collapse:collapse;font-size:10.5px}.order-table th,.order-table td{border:1px solid #555;padding:6px}.order-table th{background:#d9d9d9}.order-table .name{text-align:left}
+.route-select{border:1px solid #ccd6df;border-radius:6px;padding:5px;font-size:9.5px}
+@media(max-width:1180px){.box-builder{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:820px){
+ .sidebar{position:static;width:auto;display:flex;gap:5px;overflow:auto;padding:9px}.brand,.nav-label{display:none}.nav-btn{width:auto;white-space:nowrap;margin:0}
+ .main{margin-left:0;padding:9px}.kpis{grid-template-columns:repeat(2,1fr)}.scan-grid{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}
 }
 </style>
 </head>
 <body>
 <nav class="sidebar">
-  <div class="side-brand"><div class="logo-badge">TC</div><div>TradeCode Navi<br><small>기능 목록</small></div></div>
-  <div class="nav-section-label">도구</div>
+  <div class="brand"><div class="brand-badge">TC</div><div>TradeCode Navi<small>기능 목록</small></div></div>
+  <div class="nav-label">도구</div>
   <a class="nav-btn" href="/">📊 TradeCode Navi 관세율 계산</a>
   <a class="nav-btn" href="/coupang-margin">🚀 로켓배송 원가&amp;마진률 계산</a>
   <a class="nav-btn" href="/logistics-cost">🚚 물류비 계산기</a>
@@ -109,480 +123,510 @@ input[type=file]{display:none}
 </nav>
 
 <main class="main">
-  <section class="toolbar">
-    <div class="toolbar-top">
-      <div class="title" id="jobTitle">쿠팡 입고 작업</div>
-      <select id="jobSelect" class="job-select" onchange="loadJobById(this.value)"><option value="">저장된 입고건 없음</option></select>
-      <button class="btn btn-primary" onclick="$('sourceFile').click()">새 입고 엑셀</button>
+  <header class="head">
+    <div><h1>📦 쿠팡 입고 작업</h1><p>엑셀과 같은 표 형태로 보면서 바코드 스캔 → 현재 박스에 여러 상품 추가 → 박스 크기·무게 입력 → 작업 완료 순서로 진행합니다.</p></div>
+    <span class="badge">혼합박스 / 팔레트 / 밀크런 / 택배</span>
+  </header>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div class="job-title" id="jobTitle">새 입고건을 만들어 주세요<small>첫 번째 발주 엑셀을 올리면 선적일과 쿠팡 입고일을 자동 인식합니다.</small></div>
+      <select id="jobSelect" class="job-select" onchange="loadJob(this.value)"><option value="">저장된 입고건 없음</option></select>
+    </div>
+    <div class="row" style="margin-top:9px">
+      <button class="btn btn-primary" onclick="$('sourceFile').click()">+ 새 입고건 엑셀 업로드</button>
       <input id="sourceFile" type="file" accept=".xlsx,.xls">
-      <button class="btn btn-soft" onclick="downloadWorkXlsx()">작업현황 엑셀</button>
-      <button class="btn btn-soft" onclick="downloadBackup()">백업</button>
-      <span id="sourceFileName" class="file-name"></span>
-    </div>
-
-    <div class="scanline">
-      <div class="scanlabel">제품 바코드 스캔</div>
-      <input id="scanInput" class="scan" autocomplete="off" placeholder="바코드를 찍고 Enter" onkeydown="handleScanKey(event)">
-      <button class="btn btn-gold" onclick="scanBarcode()">찾기</button>
-      <div id="scanMessage" class="scanmsg">바코드를 찍으면 해당 상품이 맨 위 작업행으로 올라옵니다. 박스 사이즈와 박스내 수량을 바로 입력하세요.</div>
-    </div>
-
-    <div class="summaryline">
-      <span class="kpi">총 발주 <b id="kpiOrder">0</b></span>
-      <span class="kpi">작업 <b id="kpiPacked">0</b></span>
-      <span class="kpi">남음 <b id="kpiRemain">0</b></span>
-      <span class="kpi">박스 <b id="kpiBoxes">0</b></span>
-      <span class="kpi">진행률 <b id="kpiProgress">0%</b></span>
-      <span class="kpi box-counter">다음 박스번호 <input id="nextBoxNoInput" type="number" min="1" value="1"><button class="btn btn-sm" onclick="setNextBoxNo()">설정</button></span>
+      <button class="btn btn-secondary" onclick="downloadExcel()">⬇ 엑셀 양식 다운로드</button>
+      <button class="btn btn-ghost" onclick="downloadBackup()">⬇ 작업 백업</button>
+      <button class="btn btn-danger" onclick="deleteJob()">현재 입고건 삭제</button>
+      <span id="fileName" class="file-label"></span>
     </div>
   </section>
 
-  <section class="excel-shell">
-    <div id="sheetTabsTop" class="sheet-tabs-top">
-      <button class="sheet-tab active">입고건 없음</button>
+  <section class="card">
+    <div class="kpis">
+      <div class="kpi"><span>총 발주수량</span><b id="kOrder">0</b></div>
+      <div class="kpi good"><span>현재 작업수량</span><b id="kPacked">0</b></div>
+      <div class="kpi"><span>남은수량</span><b id="kRemain">0</b></div>
+      <div class="kpi"><span>완료 박스수</span><b id="kBoxes">0</b></div>
+      <div class="kpi"><span>총중량</span><b id="kWeight">0 kg</b></div>
+      <div class="kpi"><span>전체 진행률</span><b id="kPct">0%</b><div class="progress"><i id="kBar"></i></div></div>
     </div>
-    <div class="sheet-area">
-      <table class="excel-table">
-        <tbody id="excelBody"><tr><td class="empty">새 입고 엑셀을 업로드해 주세요.</td></tr></tbody>
-      </table>
+  </section>
+
+  <section class="card scan">
+    <div class="scan-grid">
+      <input id="scanInput" class="scan-input" placeholder="제품 바코드를 찍고 Enter" autocomplete="off" onkeydown="scanKey(event)">
+      <button class="btn btn-gold" onclick="scan()">바코드 찾기</button>
     </div>
-    <div class="sheet-bottom">
-      <button class="btn btn-sm" onclick="addManualCenter('pallet')">＋ 팔레트 시트</button>
-      <button class="btn btn-sm" onclick="addManualCenter('parcel')">＋ 택배 시트</button>
-      <select id="centerTypeSelect" onchange="changeCurrentCenterType(this.value)" style="font-size:10px;padding:4px">
-        <option value="pallet">현재 시트: 팔레트/밀크런</option>
-        <option value="parcel">현재 시트: 택배</option>
-      </select>
-      <span class="hint">발주서 + 센터별 엑셀 시트 · 바코드 작업행은 맨 위 · 완료행 위쪽 / 미작업 아래쪽</span>
+    <div id="scanMsg" class="scan-msg">입고건을 불러온 뒤 제품 바코드를 찍어 주세요.</div>
+  </section>
+
+  <section class="card">
+    <div id="tabs" class="tabs"></div>
+    <div id="centerLine" class="center-line"></div>
+  </section>
+
+  <section id="builderCard" class="card">
+    <div class="box-builder">
+      <div>
+        <div class="panel-title">현재 제품</div>
+        <div id="selectedProduct" class="selected-product"><span class="empty">바코드를 찍거나 아래 표의 상품을 클릭하세요.</span></div>
+        <div class="form-grid">
+          <label class="field">이 박스 1개당 수량
+            <input id="itemQty" type="number" min="1" step="1" placeholder="예: 16">
+          </label>
+          <label class="field">현재 박스에 추가
+            <button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="addSelectedToBox()">상품 추가</button>
+          </label>
+          <label class="field">현재 박스 비우기
+            <button class="btn btn-ghost" style="width:100%;margin-top:4px" onclick="clearDraftBox()">초기화</button>
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel-title">현재 작업중 박스</div>
+        <div id="draftItems" class="current-box"><div class="empty">현재 박스에 담긴 상품이 없습니다.</div></div>
+        <div class="form-grid" style="margin-top:8px">
+          <label class="field">물류센터
+            <input id="boxCenter" placeholder="예: 인천14">
+          </label>
+          <label class="field">박스 사이즈
+            <input id="boxSize" list="boxSizes" placeholder="60*50*45">
+            <div class="quick"><button type="button" onclick="setSize('60*50*45')">60*50*45</button><button type="button" onclick="setSize('60*50*25')">60*50*25</button></div>
+          </label>
+          <label class="field">총중량(kg)
+            <input id="boxWeight" type="number" min="0" step="0.1" placeholder="예: 17.2">
+          </label>
+          <label class="field">박스수
+            <input id="boxCount" type="number" min="1" step="1" value="1">
+          </label>
+          <label class="field">Palette 번호
+            <input id="palletNo" placeholder="필요 시 입력">
+          </label>
+          <label class="field">박스번호
+            <input id="boxNo" placeholder="예: 309~315 / 378">
+          </label>
+          <label class="field">출고 박스번호
+            <input id="outBoxNo" placeholder="필요 시 입력">
+          </label>
+          <label class="field">송장번호
+            <input id="trackingNo" placeholder="택배 작업 시 입력">
+          </label>
+          <label class="field">박스 완료
+            <button class="btn btn-good" style="width:100%;margin-top:4px" onclick="completeBox()">✓ 박스 작업 완료</button>
+          </label>
+        </div>
+      </div>
     </div>
+  </section>
+
+  <section class="card">
+    <div class="table-tools">
+      <div><b id="viewTitle">발주서</b><div id="viewSummary" class="file-label"></div></div>
+      <input id="searchInput" class="search" placeholder="상품명 / 상품번호 / 바코드 검색" oninput="renderView()">
+    </div>
+    <div id="view"></div>
+    <div class="note">완료 박스는 엑셀처럼 같은 박스에 들어간 여러 아이템을 여러 행으로 표시하고, 박스당 제품수량·박스총수량·사이즈·총중량·박스번호 등 박스 공통값은 하나의 병합 셀처럼 표시합니다.</div>
   </section>
 </main>
 
-<datalist id="boxSizeList">
-  <option value="60*50*45"><option value="60*50*25"><option value="50*40*40"><option value="40*30*30">
-</datalist>
+<datalist id="boxSizes"><option value="60*50*45"><option value="60*50*25"></datalist>
 
 <script>
 const $=id=>document.getElementById(id);
-const DB_NAME='tradecodeInboundWorkDB';
-const DB_VERSION=1;
-const STORE='jobs';
-let db=null;
-let currentJob=null;
-let currentCenterId='';
-let selectedItemId='';
-let draftItemId='';
-let saveTimer=null;
+const DB='tradecodeInboundWorkDBV3',STORE='jobs',VER=1;
+const TAB_ORDER=[
+  {key:'order',label:'발주서'},
+  {key:'korea_pallet',label:'코리아원 팔레트',company:'코리아원',route:'pallet'},
+  {key:'korea_milk',label:'코리아원 밀크런',company:'코리아원',route:'milk'},
+  {key:'bom_pallet',label:'봄날애 팔레트',company:'봄날애',route:'pallet'},
+  {key:'bom_milk',label:'봄날애 밀크런',company:'봄날애',route:'milk'},
+  {key:'chatong_pallet',label:'차통익스프레스 팔레트',company:'차통익스프레스',route:'pallet'},
+  {key:'chatong_milk',label:'차통익스프레스 밀크런',company:'차통익스프레스',route:'milk'},
+  {key:'parcel',label:'택배',route:'parcel'}
+];
+let db=null,currentJob=null,currentTab='order',currentCenter='all',selectedItemId='',draftBox={items:[]},saveTimer=null;
 
-function uid(prefix='id'){try{return prefix+'-'+crypto.randomUUID()}catch(e){return prefix+'-'+Date.now()+'-'+Math.random().toString(16).slice(2)}}
+function uid(p='id'){try{return p+'-'+crypto.randomUUID()}catch(e){return p+'-'+Date.now()+'-'+Math.random().toString(16).slice(2)}}
 function norm(v){return String(v??'').trim().replace(/\s+/g,' ')}
-function normBarcode(v){return String(v??'').trim().replace(/\s+/g,'').replace(/\.0$/,'').toUpperCase()}
-function num(v){const n=Number(v);return Number.isFinite(n)?n:0}
-function fmt(v){return Math.round(num(v)).toLocaleString()}
+function bc(v){return String(v??'').trim().replace(/\s+/g,'').replace(/\.0$/,'').toUpperCase()}
+function n(v){const x=Number(v);return Number.isFinite(x)?x:0}
+function fmt(v){return Math.round(n(v)).toLocaleString()}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function companyNorm(v){const s=norm(v);if(/봄날애/.test(s))return'봄날애';if(/차통/.test(s))return'차통익스프레스';return'코리아원'}
+function guessRoute(center){const c=norm(center).replace(/\s+/g,'');if(/밀크런|인천47/i.test(c))return'milk';if(/팔레트|인천14/i.test(c))return'pallet';return'parcel'}
+function tabDef(key=currentTab){return TAB_ORDER.find(x=>x.key===key)||TAB_ORDER[0]}
+function routeLabel(r){return r==='pallet'?'팔레트':r==='milk'?'밀크런':'택배'}
 
-function openDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB_NAME,DB_VERSION);req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(STORE)){const s=d.createObjectStore(STORE,{keyPath:'id'});s.createIndex('updatedAt','updatedAt')}};req.onsuccess=()=>{db=req.result;resolve(db)};req.onerror=()=>reject(req.error)})}
-function idbPut(job){if(!db)return Promise.resolve();return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(job);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}
-function idbGet(id){if(!db)return Promise.resolve(null);return new Promise((resolve,reject)=>{const req=db.transaction(STORE,'readonly').objectStore(STORE).get(id);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error)})}
-function idbDelete(id){if(!db)return Promise.resolve();return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}
-function idbAll(){if(!db)return Promise.resolve([]);return new Promise((resolve,reject)=>{const req=db.transaction(STORE,'readonly').objectStore(STORE).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)})}
-function scheduleSave(){clearTimeout(saveTimer);saveTimer=setTimeout(saveCurrentJob,250)}
-async function saveCurrentJob(){if(!currentJob)return;currentJob.updatedAt=Date.now();await idbPut(currentJob);refreshJobSelect(false)}
+function openDb(){return new Promise((ok,bad)=>{const r=indexedDB.open(DB,VER);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains(STORE))d.createObjectStore(STORE,{keyPath:'id'})};r.onsuccess=()=>{db=r.result;ok()};r.onerror=()=>bad(r.error)})}
+function allJobs(){return new Promise((ok,bad)=>{const r=db.transaction(STORE).objectStore(STORE).getAll();r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>bad(r.error)})}
+function getJob(id){return new Promise((ok,bad)=>{const r=db.transaction(STORE).objectStore(STORE).get(id);r.onsuccess=()=>ok(r.result||null);r.onerror=()=>bad(r.error)})}
+function putJob(j){return new Promise((ok,bad)=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).put(j);t.oncomplete=ok;t.onerror=()=>bad(t.error)})}
+function delJob(id){return new Promise((ok,bad)=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).delete(id);t.oncomplete=ok;t.onerror=()=>bad(t.error)})}
+function scheduleSave(){clearTimeout(saveTimer);saveTimer=setTimeout(async()=>{if(currentJob){currentJob.updatedAt=Date.now();await putJob(currentJob);refreshJobSelect(false)}},200)}
 
-function parseHeaderTitle(text){
-  const t=norm(text);
+function parseTitle(s){
+  const t=norm(s);
   const m=t.match(/(\d{1,2})월\s*(\d{1,2})일\s*선적(?:건)?\s*\(?\s*(\d{1,2})월\s*(\d{1,2})일\s*쿠팡\s*입고(?:건)?\s*\)?/);
   if(!m)return null;
-  return {shipMonth:+m[1],shipDay:+m[2],inboundMonth:+m[3],inboundDay:+m[4],title:`${+m[1]}월 ${+m[2]}일 선적 (${+m[3]}월 ${+m[4]}일 쿠팡 입고)`};
+  return {shipM:+m[1],shipD:+m[2],inM:+m[3],inD:+m[4],title:`${+m[1]}월 ${+m[2]}일 선적 (${+m[3]}월 ${+m[4]}일 쿠팡 입고)`};
 }
-function companyFromHeader(text){const t=norm(text);const m=t.match(/^(.*?)\s*\d{1,2}월\s*\d{1,2}일\s*선적/);return norm(m?.[1]||'')}
-function centerDisplay(company,rawCenter){let c=norm(rawCenter);const comp=norm(company);if(/봄날애/.test(comp)&&!/봄날애/.test(c))c=`봄날애 ${c}`;if(/차통/.test(comp)&&!/차통/.test(c))c=`차통 ${c}`;return c}
-function guessCenterType(center){const c=norm(center).replace(/\s+/g,'');if(/팔레트|밀크런/i.test(c))return 'pallet';if(/인천14|인천47/i.test(c))return 'pallet';return 'parcel'}
-function classifyType(center){if(currentJob?.centerTypes?.[center])return currentJob.centerTypes[center];return guessCenterType(center)}
-
-function parseSourceWorkbook(wb,fileName){
-  let rows=[],foundTitle=null,company='',originalOrder=0;
-  wb.SheetNames.forEach(sheetName=>{
-    const ws=wb.Sheets[sheetName];
-    const data=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+function headerCompany(s){
+  const t=norm(s);
+  if(/봄날애/.test(t))return'봄날애';
+  if(/차통/.test(t))return'차통익스프레스';
+  if(/코리아원/.test(t))return'코리아원';
+  return'';
+}
+function parseWorkbook(wb,fileName){
+  const items=[];let titleInfo=null;let company='코리아원';let order=0;
+  wb.SheetNames.forEach(sn=>{
+    const data=XLSX_READ.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:false,defval:''});
     data.forEach(r=>{
-      const a=norm(r[0]);const titleInfo=parseHeaderTitle(a);
-      if(titleInfo){if(!foundTitle)foundTitle=titleInfo;company=companyFromHeader(a);return}
-      const productNumber=norm(r[0]),productName=norm(r[1]),barcode=normBarcode(r[2]),centerRaw=norm(r[3]),orderQty=num(String(r[4]).replace(/,/g,''));
-      if(productNumber&&productName&&barcode&&centerRaw&&orderQty>0){
-        originalOrder++;
-        const centerName=centerDisplay(company,centerRaw);
-        rows.push({id:uid('item'),originalOrder,company,productNumber,productName,barcode,centerRaw,centerName,orderQty,entries:[],touchedAt:0,scannedCount:0,manual:false});
+      const a=norm(r[0]);
+      const ti=parseTitle(a);
+      if(ti){if(!titleInfo)titleInfo=ti;company=headerCompany(a)||company;return}
+      if(headerCompany(a)&&!/^\d+$/.test(a)){company=headerCompany(a)||company}
+      const productNumber=norm(r[0]),productName=norm(r[1]),barcode=bc(r[2]),center=norm(r[3]);
+      const qty=n(String(r[4]).replace(/,/g,''));
+      if(productNumber&&productName&&barcode&&center&&qty>0){
+        order++;
+        items.push({id:uid('item'),order,company:companyNorm(company),productNumber,productName,barcode,center,orderQty:qty,route:guessRoute(center)});
       }
-    })
+    });
   });
-  if(!rows.length)throw new Error('상품번호 / 제품명 / 바코드 / 물류센터 / 발주수량 데이터를 찾지 못했습니다.');
-  const job={id:uid('job'),title:foundTitle?.title||norm(fileName).replace(/\.(xlsx|xls)$/i,''),shipMonth:foundTitle?.shipMonth||null,shipDay:foundTitle?.shipDay||null,inboundMonth:foundTitle?.inboundMonth||null,inboundDay:foundTitle?.inboundDay||null,sourceFileName:fileName,createdAt:Date.now(),updatedAt:Date.now(),items:rows,manualCenters:[],centerDefaults:{},centerTypes:{},nextBoxNo:1};
-  [...new Set(rows.map(x=>x.centerName))].forEach(name=>job.centerTypes[name]=guessCenterType(name));
-  return job;
+  if(!items.length)throw new Error('발주 데이터(상품번호/제품명/바코드/물류센터/수량)를 찾지 못했습니다.');
+  return {id:uid('job'),title:titleInfo?.title||fileName.replace(/\.(xlsx|xls)$/i,''),sourceFileName:fileName,createdAt:Date.now(),updatedAt:Date.now(),items,boxes:[]};
 }
 
-function allCenterDefs(){
-  if(!currentJob)return[];
-  const map=new Map();
-  currentJob.items.forEach(item=>{if(!map.has(item.centerName))map.set(item.centerName,{id:'center-'+item.centerName,name:item.centerName,type:currentJob.centerTypes?.[item.centerName]||guessCenterType(item.centerName),manual:false})});
-  (currentJob.manualCenters||[]).forEach(c=>map.set(c.name,{...c,manual:true,type:currentJob.centerTypes?.[c.name]||c.type||guessCenterType(c.name)}));
-  return [...map.values()];
+function itemPacked(id){
+  if(!currentJob)return 0;
+  let total=0;
+  currentJob.boxes.forEach(box=>{
+    box.items.forEach(it=>{if(it.itemId===id)total+=n(it.qtyPerBox)*n(box.boxCount||1)});
+  });
+  return total;
 }
-function centerIdFromName(name){return 'center-'+name}
-function selectedCenter(){return allCenterDefs().find(c=>c.id===currentCenterId)||null}
-function currentCenterName(){return selectedCenter()?.name||''}
-function itemsForCenter(centerName){return (currentJob?.items||[]).filter(x=>x.centerName===centerName)}
-function entryPacked(item,e){return classifyType(item.centerName)==='pallet'?num(e.qtyPerBox)*Math.max(1,num(e.boxCount)):num(e.qtyPerBox)}
-function itemPacked(item){return (item.entries||[]).reduce((s,e)=>s+entryPacked(item,e),0)}
-function itemRemain(item){return Math.max(0,num(item.orderQty)-itemPacked(item))}
-function itemComplete(item){return num(item.orderQty)>0&&itemPacked(item)>=num(item.orderQty)}
-function centerStats(name){const items=itemsForCenter(name);const order=items.reduce((s,x)=>s+num(x.orderQty),0);const packed=items.reduce((s,x)=>s+itemPacked(x),0);const boxes=items.reduce((s,x)=>s+(x.entries||[]).reduce((a,e)=>a+(classifyType(x.centerName)==='pallet'?Math.max(1,num(e.boxCount)):1),0),0);return{order,packed,remain:Math.max(0,order-packed),boxes}}
-function jobStats(){if(!currentJob)return{order:0,packed:0,remain:0,boxes:0};const order=currentJob.items.reduce((s,x)=>s+num(x.orderQty),0);const packed=currentJob.items.reduce((s,x)=>s+itemPacked(x),0);const boxes=currentJob.items.reduce((s,x)=>s+(x.entries||[]).reduce((a,e)=>a+(classifyType(x.centerName)==='pallet'?Math.max(1,num(e.boxCount)):1),0),0);return{order,packed,remain:Math.max(0,order-packed),boxes}}
+function itemRemain(item){return Math.max(0,n(item.orderQty)-itemPacked(item.id))}
+function jobStats(){
+  if(!currentJob)return{order:0,packed:0,boxes:0,weight:0};
+  const order=currentJob.items.reduce((s,x)=>s+n(x.orderQty),0);
+  const packed=currentJob.items.reduce((s,x)=>s+itemPacked(x.id),0);
+  const boxes=currentJob.boxes.reduce((s,b)=>s+n(b.boxCount||1),0);
+  const weight=currentJob.boxes.reduce((s,b)=>s+n(b.weight)*n(b.boxCount||1),0);
+  return{order,packed,remain:Math.max(0,order-packed),boxes,weight};
+}
+function boxPerQty(box){return box.items.reduce((s,x)=>s+n(x.qtyPerBox),0)}
+function boxMatchesTab(box,key=currentTab){
+  const t=tabDef(key);if(key==='order')return false;
+  if(t.route==='parcel')return box.route==='parcel';
+  return box.company===t.company&&box.route===t.route;
+}
+function itemMatchesTab(item,key=currentTab){
+  const t=tabDef(key);if(key==='order')return true;
+  if(t.route==='parcel')return item.route==='parcel';
+  return item.company===t.company&&item.route===t.route;
+}
+function tabCount(key){
+  if(!currentJob)return 0;if(key==='order')return currentJob.items.length;
+  return currentJob.boxes.filter(b=>boxMatchesTab(b,key)).length;
+}
+function tabCenters(key=currentTab){
+  if(!currentJob||key==='order')return[];
+  const set=new Set();
+  currentJob.items.filter(x=>itemMatchesTab(x,key)).forEach(x=>set.add(x.center));
+  currentJob.boxes.filter(x=>boxMatchesTab(x,key)).forEach(x=>set.add(x.center));
+  return[...set];
+}
 
-function setScanMessage(msg,type=''){const el=$('scanMessage');el.textContent=msg;el.className='scanmsg'+(type?' '+type:'')}
-function beep(ok=true){try{const ctx=new(window.AudioContext||window.webkitAudioContext)(),osc=ctx.createOscillator(),gain=ctx.createGain();osc.frequency.value=ok?880:220;gain.gain.value=.04;osc.connect(gain);gain.connect(ctx.destination);osc.start();setTimeout(()=>{osc.stop();ctx.close()},ok?90:180)}catch(e){}}
-function focusScan(){setTimeout(()=>{$('scanInput')?.focus();$('scanInput')?.select()},30)}
-
-function renderAll(){renderHeader();renderKpis();renderSheetTabs();renderExcelSheet()}
+function renderAll(){renderHeader();renderKpis();renderTabs();renderCenters();renderBuilder();renderView()}
 function renderHeader(){
-  if(!currentJob){$('jobTitle').textContent='쿠팡 입고 작업';$('sourceFileName').textContent='';return}
-  $('jobTitle').textContent=currentJob.title;
-  $('sourceFileName').textContent=`원본: ${currentJob.sourceFileName||''} · 자동저장`;
+  if(!currentJob){$('jobTitle').innerHTML='새 입고건을 만들어 주세요<small>첫 번째 발주 엑셀을 올리면 선적일과 쿠팡 입고일을 자동 인식합니다.</small>';$('fileName').textContent='';return}
+  $('jobTitle').innerHTML=`${esc(currentJob.title)}<small>자동저장 · 완료 박스 ${currentJob.boxes.length}건</small>`;
+  $('fileName').textContent=`원본: ${currentJob.sourceFileName||''}`;
 }
 function renderKpis(){
-  const s=jobStats();$('kpiOrder').textContent=fmt(s.order);$('kpiPacked').textContent=fmt(s.packed);$('kpiRemain').textContent=fmt(s.remain);$('kpiBoxes').textContent=fmt(s.boxes);
-  $('kpiProgress').textContent=(s.order?Math.min(100,s.packed/s.order*100):0).toFixed(1)+'%';
-  const next=Math.max(1,Math.floor(num(currentJob?.nextBoxNo)||1));$('nextBoxNoInput').value=next;
+  const s=jobStats(),pct=s.order?Math.min(100,s.packed/s.order*100):0;
+  $('kOrder').textContent=fmt(s.order);$('kPacked').textContent=fmt(s.packed);$('kRemain').textContent=fmt(s.remain);
+  $('kBoxes').textContent=fmt(s.boxes);$('kWeight').textContent=`${s.weight.toFixed(1)} kg`;$('kPct').textContent=`${pct.toFixed(1)}%`;$('kBar').style.width=pct+'%';
 }
-function renderSheetTabs(){
-  const wrap=$('sheetTabsTop');
-  if(!currentJob){wrap.innerHTML='<button class="sheet-tab active">입고건 없음</button>';return}
-  const centers=allCenterDefs();
+function renderTabs(){
+  $('tabs').innerHTML=TAB_ORDER.map(t=>`<button class="tab ${currentTab===t.key?'active':''}" onclick="setTab('${t.key}')">${t.label}<small>${tabCount(t.key)}</small></button>`).join('');
+}
+function setTab(k){currentTab=k;currentCenter='all';selectedItemId='';clearDraftBox(false);renderAll();focusScan()}
+function renderCenters(){
+  if(currentTab==='order'){$('centerLine').innerHTML='';return}
+  const centers=tabCenters();
+  $('centerLine').innerHTML=`<button class="center-chip ${currentCenter==='all'?'active':''}" onclick="setCenter('all')">전체 센터</button>`+
+    centers.map(c=>`<button class="center-chip ${currentCenter===c?'active':''}" onclick="setCenter('${encodeURIComponent(c)}')">${esc(c)}</button>`).join('');
+}
+function setCenter(v){currentCenter=v==='all'?'all':decodeURIComponent(v);selectedItemId='';clearDraftBox(false);renderAll();focusScan()}
 
-  if(!currentCenterId)currentCenterId='__order__';
-  if(currentCenterId!=='__order__'&&!centers.some(c=>c.id===currentCenterId))currentCenterId='__order__';
-
-  const orderTab=`<button class="sheet-tab ${currentCenterId==='__order__'?'active':''} order-sheet-tab" onclick="selectCenter('${encodeURIComponent('__order__')}')">▦ 발주서</button>`;
-  const centerTabs=centers.map(c=>`<button class="sheet-tab ${c.type} ${c.id===currentCenterId?'active':''}" onclick="selectCenter('${encodeURIComponent(c.id)}')">${esc(c.name)}</button>`).join('');
-  wrap.innerHTML=orderTab+centerTabs;
-
-  const c=selectedCenter();
-  if($('centerTypeSelect')){
-    $('centerTypeSelect').disabled=!c;
-    if(c)$('centerTypeSelect').value=c.type;
+function selectedItem(){return currentJob?.items.find(x=>x.id===selectedItemId)||null}
+function setScanMsg(m,t=''){$('scanMsg').textContent=m;$('scanMsg').className='scan-msg'+(t?' '+t:'')}
+function focusScan(){setTimeout(()=>{$('scanInput')?.focus();$('scanInput')?.select()},30)}
+function scanKey(e){if(e.key==='Enter'){e.preventDefault();scan()}}
+function beep(ok=true){try{const c=new(window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.frequency.value=ok?880:220;g.gain.value=.04;o.connect(g);g.connect(c.destination);o.start();setTimeout(()=>{o.stop();c.close()},ok?80:160)}catch(e){}}
+function scan(){
+  if(!currentJob){setScanMsg('먼저 입고건 엑셀을 업로드해 주세요.','warn');return}
+  const code=bc($('scanInput').value);if(!code){focusScan();return}
+  let matches=currentJob.items.filter(x=>x.barcode===code);
+  if(!matches.length){setScanMsg(`바코드 ${code}를 발주서에서 찾지 못했습니다.`,'bad');beep(false);focusScan();return}
+  const inTab=matches.filter(x=>itemMatchesTab(x));
+  let item=(currentTab!=='order'?inTab:matches).find(x=>itemRemain(x)>0)||(currentTab!=='order'?inTab:matches)[0];
+  if(!item){setScanMsg('현재 탭에는 이 상품이 없습니다. 발주서에서 작업구분을 확인해 주세요.','warn');beep(false);focusScan();return}
+  if(currentTab==='order'){
+    currentTab=item.route==='parcel'?'parcel':`${item.company==='코리아원'?'korea':item.company==='봄날애'?'bom':'chatong'}_${item.route}`;
   }
+  currentCenter=item.center;selectedItemId=item.id;$('scanInput').value='';
+  renderAll();setScanMsg(`✓ ${item.productName} 선택 · 이 박스에 들어가는 수량을 입력하세요.`,'ok');beep(true);
+  setTimeout(()=>{$('itemQty')?.focus();$('itemQty')?.select()},30)
 }
-function selectCenter(enc){currentCenterId=decodeURIComponent(enc);selectedItemId='';draftItemId='';renderAll();focusScan()}
-function setNextBoxNo(){if(!currentJob)return;currentJob.nextBoxNo=Math.max(1,Math.floor(num($('nextBoxNoInput').value)||1));scheduleSave();renderKpis()}
-function changeCurrentCenterType(type){const c=selectedCenter();if(!currentJob||!c)return;currentJob.centerTypes=currentJob.centerTypes||{};currentJob.centerTypes[c.name]=type==='pallet'?'pallet':'parcel';scheduleSave();renderAll()}
-function nextAutoBoxRange(cnt=1){const start=Math.max(1,Math.floor(num(currentJob?.nextBoxNo)||1)),n=Math.max(1,Math.floor(num(cnt)||1)),end=start+n-1;return{start,end,text:n===1?String(start):`${start}~${end}`}}
-function consumeAutoBoxNumbers(cnt=1){currentJob.nextBoxNo=Math.max(1,Math.floor(num(currentJob?.nextBoxNo)||1))+Math.max(1,Math.floor(num(cnt)||1))}
-function parcelBoxSequence(centerName,entryId){const arr=[];(currentJob?.items||[]).filter(x=>x.centerName===centerName).forEach(item=>(item.entries||[]).forEach(e=>arr.push({id:e.id,createdAt:e.createdAt||0})));arr.sort((a,b)=>a.createdAt-b.createdAt);const i=arr.findIndex(x=>x.id===entryId);return i>=0?i+1:0}
 
-function completedRowsForCenter(name){
-  const out=[];
-  itemsForCenter(name).forEach(item=>(item.entries||[]).forEach(e=>out.push({item,e,createdAt:e.createdAt||0})));
-  out.sort((a,b)=>b.createdAt-a.createdAt);
-  return out;
+function renderBuilder(){
+  const item=selectedItem();
+  $('builderCard').style.display=currentTab==='order'?'none':'block';
+  if(currentTab==='order')return;
+  const def=tabDef(),route=def.route;
+  if(route==='parcel')$('boxCount').value=1;
+  $('boxCount').disabled=route==='parcel';
+  $('trackingNo').disabled=route!=='parcel';
+  $('palletNo').disabled=route==='parcel';
+
+  if(!item){
+    $('selectedProduct').innerHTML='<span class="empty">바코드를 찍거나 아래 표의 상품을 클릭하세요.</span>';
+  }else{
+    $('selectedProduct').innerHTML=`<strong>${esc(item.productName)}</strong><small>${esc(item.productNumber)} · ${esc(item.barcode)} · ${esc(item.center)} · 발주 ${fmt(item.orderQty)} / 남음 ${fmt(itemRemain(item))}</small>`;
+    if(!$('boxCenter').value)$('boxCenter').value=item.center;
+  }
+  renderDraftItems();
 }
-function residualRowsForCenter(name){
-  return itemsForCenter(name).filter(x=>itemRemain(x)>0).slice().sort((a,b)=>a.originalOrder-b.originalOrder);
+function renderDraftItems(){
+  const box=$('draftItems');
+  if(!draftBox.items.length){box.innerHTML='<div class="empty">현재 박스에 담긴 상품이 없습니다.</div>';return}
+  const rows=draftBox.items.map((x,i)=>{
+    const item=currentJob.items.find(v=>v.id===x.itemId);
+    return `<tr><td>${esc(item?.productName||'')}</td><td>${fmt(x.qtyPerBox)}</td><td><button class="btn btn-danger btn-sm" onclick="removeDraftItem(${i})">삭제</button></td></tr>`
+  }).join('');
+  box.innerHTML=`<table><thead><tr><th>제품명</th><th>박스 1개당 수량</th><th></th></tr></thead><tbody>${rows}</tbody></table><div class="current-box-total">박스 1개당 총 제품수량: ${fmt(draftBox.items.reduce((s,x)=>s+n(x.qtyPerBox),0))}</div>`;
 }
-function totalCell(c){
-  const s=centerStats(c.name);return s.order?s.packed+'/'+s.order:'0';
+function addSelectedToBox(){
+  const item=selectedItem();if(!item){alert('먼저 제품을 선택해 주세요.');return}
+  const qty=Math.max(1,Math.floor(n($('itemQty').value)));
+  const existing=draftBox.items.find(x=>x.itemId===item.id);
+  if(existing)existing.qtyPerBox+=qty;else draftBox.items.push({itemId:item.id,qtyPerBox:qty});
+  if(!$('boxCenter').value)$('boxCenter').value=item.center;
+  $('itemQty').value='';renderDraftItems();renderView();setScanMsg(`✓ 현재 박스에 ${item.productName} ${fmt(qty)}개 추가`,'ok');focusScan()
 }
-function sizeDisplay(e){return esc(e?.boxSize||'')}
-function rowNo(i){return i+4}
-
-
-function renderOrderSheet(){
-  const body=$('excelBody');
-  if(!currentJob){body.innerHTML='<tr><td class="empty">새 입고 엑셀을 업로드해 주세요.</td></tr>';return}
-
-  const items=(currentJob.items||[]).slice().sort((a,b)=>(a.originalOrder||0)-(b.originalOrder||0));
-  const total=items.reduce((s,x)=>s+num(x.orderQty),0);
-
-  let html=`
-    <tr class="letters-row">
-      <td class="rowno"></td>
-      <td>A</td><td>B</td><td>C</td><td>D</td><td>E</td>
-    </tr>
-    <tr class="title-row">
-      <td class="rowno">1</td>
-      <td colspan="5">${esc(currentJob.title)}</td>
-    </tr>
-    <tr>
-      <th class="rowno">2</th>
-      <th class="c-a">상품번호</th>
-      <th class="c-b">제품명</th>
-      <th class="c-c">바코드</th>
-      <th class="c-d">물류센터</th>
-      <th class="c-e">발주수량</th>
-    </tr>
-    <tr class="total-row">
-      <td class="rowno">3</td>
-      <td></td><td></td><td></td>
-      <td class="center"><b>TOTAL</b></td>
-      <td class="center total-yellow"><b>${fmt(total)}</b></td>
-    </tr>`;
-
-  let row=4;
-  let lastCompany=null;
-
-  items.forEach(item=>{
-    const company=norm(item.company)||'코리아원';
-    if(company!==lastCompany){
-      html+=`<tr class="company-separator">
-        <td class="rowno"></td>
-        <td colspan="5" class="company-title">${esc(company)} · ${esc(currentJob.title)}</td>
-      </tr>`;
-      lastCompany=company;
-    }
-
-    html+=`<tr class="order-sheet-row">
-      <td class="rowno">${row++}</td>
-      <td class="center">${esc(item.productNumber)}</td>
-      <td class="product-name">${esc(item.productName)}</td>
-      <td class="nowrap">${esc(item.barcode)}</td>
-      <td class="center-cell">${esc(item.centerName)}</td>
-      <td class="center"><b>${fmt(item.orderQty)}</b></td>
-    </tr>`;
+function removeDraftItem(i){draftBox.items.splice(i,1);renderDraftItems();renderView()}
+function clearDraftBox(resetFields=true){
+  draftBox={items:[]};selectedItemId='';
+  if(resetFields&&$('boxSize')){['boxCenter','boxSize','boxWeight','palletNo','boxNo','outBoxNo','trackingNo'].forEach(id=>$(id).value='');$('boxCount').value=1}
+  if($('draftItems'))renderDraftItems()
+}
+function setSize(v){$('boxSize').value=v}
+function autoBoxNo(boxCount){
+  const nums=(currentJob?.boxes||[]).flatMap(b=>{
+    const m=String(b.boxNo||'').match(/\d+/g)||[];return m.map(Number).filter(Number.isFinite)
   });
-
-  body.innerHTML=html;
+  const start=(nums.length?Math.max(...nums):300)+1,end=start+boxCount-1;
+  return boxCount>1?`${start}~${end}`:String(start)
 }
+function parcelSequence(center){
+  return currentJob.boxes.filter(b=>b.route==='parcel'&&b.center===center).length+1
+}
+function completeBox(){
+  if(!currentJob||currentTab==='order'){return}
+  if(!draftBox.items.length){alert('현재 박스에 제품을 하나 이상 추가해 주세요.');return}
+  const t=tabDef(),route=t.route,company=t.company||companyNorm(currentJob.items.find(x=>x.id===draftBox.items[0].itemId)?.company);
+  const center=norm($('boxCenter').value)||currentCenter;
+  if(!center||center==='all'){alert('물류센터를 입력해 주세요.');return}
+  const boxSize=norm($('boxSize').value),weight=n($('boxWeight').value),boxCount=route==='parcel'?1:Math.max(1,Math.floor(n($('boxCount').value)||1));
+  if(!boxSize){alert('박스 사이즈를 입력해 주세요.');return}
+  if(weight<=0){if(!confirm('총중량이 입력되지 않았습니다. 그대로 저장할까요?'))return}
+  let boxNo=norm($('boxNo').value);if(!boxNo)boxNo=autoBoxNo(boxCount);
+  const palletNo=norm($('palletNo').value),outBoxNo=norm($('outBoxNo').value),trackingNo=norm($('trackingNo').value);
 
-function renderExcelSheet(){
-  const body=$('excelBody');
-  if(currentCenterId==='__order__'){renderOrderSheet();return}
-  const c=selectedCenter();
-  if(!currentJob||!c){body.innerHTML='<tr><td class="empty">새 입고 엑셀을 업로드해 주세요.</td></tr>';return}
-  const type=c.type,completed=completedRowsForCenter(c.name),residual=residualRowsForCenter(c.name),stats=centerStats(c.name);
-  let rowIndex=0;
-
-  const letters=type==='pallet'
-    ?['A','B','C','D','E','F','G','H','K','P','Q','']
-    :['A','B','C','D','E','F','G','H','P','Q','R',''];
-
-  let html=`
-    <tr class="letters-row">
-      <td class="rowno"></td>
-      ${letters.map(x=>`<td>${x}</td>`).join('')}
-    </tr>
-    <tr class="title-row">
-      <td class="rowno">1</td>
-      <td colspan="${type==='pallet'?12:13}">${esc(c.name)}</td>
-    </tr>
-    <tr>
-      <th class="rowno">2</th>
-      <th class="c-a">상품번호</th>
-      <th class="c-b">제품명</th>
-      <th class="c-c">바코드</th>
-      <th class="c-d">물류센터</th>
-      <th class="c-e">출고총수량</th>
-      <th class="c-f">박스당<br>제품수량</th>
-      <th class="c-g">박스총수량</th>
-      <th class="c-h">사이즈</th>
-      ${type==='pallet'?'<th class="c-k">Palette</th>':''}
-      <th class="c-p">박스번호</th>
-      <th class="c-q">출고<br>박스번호</th>
-      ${type==='parcel'?'<th class="c-r">송장번호</th>':''}
-      <th class="c-action">작업</th>
-    </tr>
-    <tr class="total-row">
-      <td class="rowno">3</td>
-      <td></td><td></td><td></td><td></td>
-      <td class="center"><b>${fmt(stats.order)}</b></td>
-      <td></td>
-      <td class="center"><b>${fmt(stats.boxes)}</b></td>
-      <td></td>
-      ${type==='pallet'?'<td class="total-yellow center"><b>'+fmt(new Set(completed.map(x=>norm(x.e.palletNo)).filter(Boolean)).size)+'</b></td>':''}
-      <td></td><td></td>${type==='parcel'?'<td></td>':''}
-      <td class="center"><b>${stats.order?Math.min(100,stats.packed/stats.order*100).toFixed(0):0}%</b></td>
-    </tr>`;
-
-  if(draftItemId){
-    const item=currentJob.items.find(x=>x.id===draftItemId);
-    if(item&&item.centerName===c.name){
-      const defaults=currentJob.centerDefaults?.[c.name]||{};
-      const remain=itemRemain(item);
-      const auto=nextAutoBoxRange(1);
-      html+=`
-      <tr class="draft-row selected-row" id="draftRow">
-        <td class="rowno">▶</td>
-        <td class="center">${esc(item.productNumber)}</td>
-        <td class="product-name">${esc(item.productName)}</td>
-        <td class="nowrap">${esc(item.barcode)}</td>
-        <td class="center-cell">${esc(item.centerName)}</td>
-        <td class="center"><b>${fmt(remain)}</b></td>
-        <td><input id="draftQty" type="number" min="1" value="${remain>0?Math.min(remain,num(defaults.qtyPerBox)||remain):''}" onkeydown="draftKey(event)"></td>
-        <td><input id="draftBoxCount" type="number" min="1" value="1" ${type==='parcel'?'disabled':''} onkeydown="draftKey(event)"></td>
-        <td><input id="draftSize" list="boxSizeList" value="${esc(defaults.boxSize||'60*50*45')}" onkeydown="draftKey(event)"></td>
-        ${type==='pallet'?`<td><input id="draftPallet" value="${esc(defaults.palletNo||'')}" placeholder="1" onkeydown="draftKey(event)"></td>`:''}
-        <td><input id="draftBoxNo" value="${esc(auto.text)}" onkeydown="draftKey(event)"></td>
-        <td><input id="draftOutBox" value="" onkeydown="draftKey(event)"></td>
-        ${type==='parcel'?'<td><input id="draftTracking" value="" onkeydown="draftKey(event)"></td>':''}
-        <td class="center"><button class="btn btn-primary btn-sm" onclick="saveDraftRow()">저장</button></td>
-      </tr>`;
+  for(const di of draftBox.items){
+    const item=currentJob.items.find(x=>x.id===di.itemId);
+    if(!item)continue;
+    const add=n(di.qtyPerBox)*boxCount;
+    if(itemPacked(item.id)+add>item.orderQty){
+      if(!confirm(`${item.productName}\n발주 ${fmt(item.orderQty)}개보다 누적 작업 ${fmt(itemPacked(item.id)+add)}개가 많습니다. 그래도 저장할까요?`))return
     }
   }
 
-  completed.forEach(({item,e},doneIndex)=>{
-    const qty=entryPacked(item,e);
-    const boxTotal=type==='pallet'?Math.max(1,num(e.boxCount)):parcelBoxSequence(item.centerName,e.id);
-    html+=`
-      <tr class="done-row ${doneIndex===0?'recent-done':''}">
-        <td class="rowno">${rowNo(rowIndex++)}</td>
-        <td class="center">${esc(item.productNumber)}</td>
-        <td class="product-name">${esc(item.productName)}</td>
-        <td class="nowrap">${esc(item.barcode)}</td>
-        <td class="center-cell">${esc(item.centerName)}</td>
-        <td class="center"><b>${fmt(qty)}</b></td>
-        <td class="center">${fmt(e.qtyPerBox)}</td>
-        <td class="center">${fmt(boxTotal)}</td>
-        <td class="center"><b>${sizeDisplay(e)}</b></td>
-        ${type==='pallet'?`<td class="center">${esc(e.palletNo||'')}</td>`:''}
-        <td class="center">${esc(e.boxNo||'')}</td>
-        <td class="center">${esc(e.outBoxNo||'')}</td>
-        ${type==='parcel'?`<td>${esc(e.trackingNo||'')}</td>`:''}
-        <td class="center"><span class="status-badge done">완료</span> <button class="btn btn-danger btn-sm" onclick="deleteEntryById('${item.id}','${e.id}')">×</button></td>
-      </tr>`;
+  const box={
+    id:uid('box'),createdAt:Date.now(),company,route,center,boxSize,weight,boxCount,palletNo,boxNo,outBoxNo,trackingNo,
+    parcelSeq:route==='parcel'?parcelSequence(center):null,
+    items:draftBox.items.map(x=>({...x}))
+  };
+  currentJob.boxes.push(box);scheduleSave();
+  setScanMsg(`✓ 박스 완료 · ${center} · ${boxNo} · ${fmt(boxPerQty(box))}개/박스 · ${weight||0}kg`,'ok');
+  clearDraftBox(true);currentCenter=center;renderAll();focusScan()
+}
+
+function clickItem(id){
+  const item=currentJob.items.find(x=>x.id===id);if(!item)return;
+  if(currentTab==='order'){
+    currentTab=item.route==='parcel'?'parcel':`${item.company==='코리아원'?'korea':item.company==='봄날애'?'bom':'chatong'}_${item.route}`;
+  }
+  currentCenter=item.center;selectedItemId=id;renderAll();setTimeout(()=>{$('itemQty')?.focus();$('itemQty')?.select()},20)
+}
+function changeRoute(id,v){
+  const item=currentJob.items.find(x=>x.id===id);if(!item)return;
+  item.route=v; scheduleSave();renderAll()
+}
+
+function renderView(){
+  if(!currentJob){$('view').innerHTML='<div class="empty">입고건을 먼저 업로드하세요.</div>';return}
+  const q=norm($('searchInput').value).toLowerCase();
+  if(currentTab==='order'){renderOrder(q);return}
+  renderPacking(q)
+}
+function renderOrder(q){
+  $('viewTitle').textContent='발주서';$('viewSummary').textContent='원본 발주 데이터 · 작업구분은 필요하면 직접 변경 가능';
+  const rows=currentJob.items.filter(x=>!q||x.productName.toLowerCase().includes(q)||x.productNumber.toLowerCase().includes(q)||x.barcode.toLowerCase().includes(q));
+  $('view').innerHTML=`<div class="excel-wrap"><table class="order-table"><thead><tr><th>상품번호</th><th>제품명</th><th>바코드</th><th>물류센터</th><th>order 총수량</th><th>회사</th><th>작업구분</th><th>작업수량</th><th>남음</th></tr></thead><tbody>${rows.map(x=>`<tr onclick="clickItem('${x.id}')"><td>${esc(x.productNumber)}</td><td class="name">${esc(x.productName)}</td><td>${esc(x.barcode)}</td><td>${esc(x.center)}</td><td>${fmt(x.orderQty)}</td><td>${esc(x.company)}</td><td><select class="route-select" onclick="event.stopPropagation()" onchange="changeRoute('${x.id}',this.value)"><option value="pallet" ${x.route==='pallet'?'selected':''}>팔레트</option><option value="milk" ${x.route==='milk'?'selected':''}>밀크런</option><option value="parcel" ${x.route==='parcel'?'selected':''}>택배</option></select></td><td>${fmt(itemPacked(x.id))}</td><td>${fmt(itemRemain(x))}</td></tr>`).join('')}</tbody></table></div>`
+}
+function matchingBoxes(){
+  return currentJob.boxes.filter(b=>boxMatchesTab(b)&& (currentCenter==='all'||b.center===currentCenter)).slice().sort((a,b)=>b.createdAt-a.createdAt)
+}
+function pendingItems(){
+  return currentJob.items.filter(x=>itemMatchesTab(x)&&itemRemain(x)>0&&(currentCenter==='all'||x.center===currentCenter))
+}
+function renderPacking(q){
+  const t=tabDef(),boxes=matchingBoxes(),pending=pendingItems();
+  $('viewTitle').textContent=t.label;
+  const packed=boxes.reduce((s,b)=>s+boxPerQty(b)*b.boxCount,0),boxCount=boxes.reduce((s,b)=>s+b.boxCount,0),weight=boxes.reduce((s,b)=>s+b.weight*b.boxCount,0);
+  $('viewSummary').textContent=`완료 박스 ${fmt(boxCount)} · 작업 ${fmt(packed)} · 중량 ${weight.toFixed(1)}kg`;
+
+  let body='';
+  boxes.forEach(box=>{
+    const items=box.items.map(x=>({d:x,item:currentJob.items.find(i=>i.id===x.itemId)})).filter(x=>x.item);
+    const filtered=items.filter(x=>!q||x.item.productName.toLowerCase().includes(q)||x.item.productNumber.toLowerCase().includes(q)||x.item.barcode.toLowerCase().includes(q));
+    if(q&&!filtered.length)return;
+    const rowspan=items.length||1,per=boxPerQty(box),g=box.route==='parcel'?(box.parcelSeq||''):box.boxCount;
+    items.forEach((x,idx)=>{
+      const total=n(x.d.qtyPerBox)*box.boxCount;
+      body+=`<tr class="done-item">
+        <td class="item-cell code">${esc(x.item.productNumber)}</td>
+        <td class="item-cell prod">${esc(x.item.productName)}</td>
+        <td class="item-cell barcode">${esc(x.item.barcode)}</td>
+        <td class="item-cell center ${box.route==='parcel'?'green-center':''}">${esc(box.center)}</td>
+        <td class="item-cell qty">${fmt(total)}</td>
+        ${idx===0?`<td rowspan="${rowspan}" class="box-cell qty">${fmt(per)}</td><td rowspan="${rowspan}" class="box-cell qty">${fmt(g)}</td><td rowspan="${rowspan}" class="box-cell size">${esc(box.boxSize)}</td><td rowspan="${rowspan}" class="box-cell">${esc(box.palletNo||'')}</td><td rowspan="${rowspan}" class="box-cell weight">${box.weight?Number(box.weight).toFixed(1):''}</td><td rowspan="${rowspan}" class="box-cell"></td><td rowspan="${rowspan}" class="box-cell"></td><td rowspan="${rowspan}" class="box-cell"></td><td rowspan="${rowspan}" class="box-cell boxno">${esc(box.boxNo||'')}</td><td rowspan="${rowspan}" class="box-cell">${esc(box.outBoxNo||'')}</td><td rowspan="${rowspan}" class="box-cell track">${esc(box.trackingNo||'')}</td>`:''}
+      </tr>`
+    })
   });
 
-  if(completed.length&&residual.length){
-    html+=`<tr class="worked-separator"><td class="rowno"></td><td class="septext" colspan="${type==='pallet'?12:13}">↓ 미작업 / 남은 수량</td></tr>`;
-  }
-
-  residual.forEach(item=>{
-    html+=`
-      <tr class="remain-row ${item.id===selectedItemId?'selected-row':''}" onclick="selectResidual('${item.id}')">
-        <td class="rowno">${rowNo(rowIndex++)}</td>
-        <td class="center">${esc(item.productNumber)}</td>
-        <td class="product-name">${esc(item.productName)}</td>
-        <td class="nowrap">${esc(item.barcode)}</td>
-        <td class="center-cell">${esc(item.centerName)}</td>
-        <td class="center"><b>${fmt(itemRemain(item))}</b></td>
-        <td></td><td></td><td></td>
-        ${type==='pallet'?'<td></td>':''}
-        <td></td><td></td>${type==='parcel'?'<td></td>':''}
-        <td class="center"><span class="status-badge wait">대기</span></td>
-      </tr>`;
+  pending.filter(x=>!q||x.productName.toLowerCase().includes(q)||x.productNumber.toLowerCase().includes(q)||x.barcode.toLowerCase().includes(q)).forEach(x=>{
+    body+=`<tr class="pending" onclick="clickItem('${x.id}')"><td class="item-cell code">${esc(x.productNumber)}</td><td class="item-cell prod">${esc(x.productName)}</td><td class="item-cell barcode">${esc(x.barcode)}</td><td class="item-cell center">${esc(x.center)}</td><td class="item-cell qty">${fmt(itemRemain(x))}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`
   });
 
-  if(!completed.length&&!residual.length&&!draftItemId){
-    html+=`<tr><td colspan="${type==='pallet'?13:14}" class="empty">이 시트에 작업할 상품이 없습니다.</td></tr>`;
-  }
-  body.innerHTML=html;
-  setTimeout(()=>{$('draftQty')?.focus();$('draftQty')?.select()},20);
+  $('view').innerHTML=`<div class="excel-wrap"><table class="excel"><thead>
+    <tr class="title-row"><th colspan="5">${esc(t.label)}</th><th colspan="8">출고수량</th><th colspan="3"></th></tr>
+    <tr><th>상품번호</th><th>제품명</th><th>바코드</th><th>물류센터</th><th>출고총수량</th><th>박스당 제품수량</th><th>박스총수량</th><th>사이즈</th><th>Palette</th><th>총중량</th><th>TOTAL</th><th>Palette 당제품수량</th><th>Palette 박스수량</th><th>박스번호</th><th>출고 박스번호</th><th>송장번호</th></tr>
+  </thead><tbody>${body||'<tr><td colspan="16" class="empty">표시할 작업이 없습니다.</td></tr>'}</tbody></table></div>`
 }
 
-function selectResidual(id){selectedItemId=id;draftItemId=id;const item=currentJob.items.find(x=>x.id===id);if(item)item.touchedAt=Date.now();scheduleSave();renderExcelSheet()}
-function draftKey(e){if(e.key==='Enter'){e.preventDefault();saveDraftRow()}}
-
-function saveDraftRow(){
-  const item=currentJob?.items.find(x=>x.id===draftItemId);const c=selectedCenter();if(!item||!c)return;
-  const type=c.type;
-  const qtyPerBox=Math.max(0,Math.floor(num($('draftQty')?.value)));
-  const boxCount=type==='pallet'?Math.max(1,Math.floor(num($('draftBoxCount')?.value)||1)):1;
-  const boxSize=norm($('draftSize')?.value);
-  const palletNo=type==='pallet'?norm($('draftPallet')?.value):'';
-  let boxNo=norm($('draftBoxNo')?.value);
-  const outBoxNo=norm($('draftOutBox')?.value);
-  const trackingNo=type==='parcel'?norm($('draftTracking')?.value):'';
-  if(qtyPerBox<=0){alert('박스당 제품수량을 입력해 주세요.');return}
-  if(!boxSize){alert('사이즈를 입력해 주세요.');return}
-  const addQty=qtyPerBox*boxCount;
-  if(itemPacked(item)+addQty>item.orderQty&&!confirm(`발주수량보다 ${fmt(itemPacked(item)+addQty-item.orderQty)}개 많습니다. 그대로 저장할까요?`))return;
-
-  let autoUsed=false;
-  if(!boxNo){boxNo=nextAutoBoxRange(type==='pallet'?boxCount:1).text;autoUsed=true}
-  else{
-    const auto=nextAutoBoxRange(type==='pallet'?boxCount:1);
-    if(boxNo===auto.text)autoUsed=true;
-  }
-
-  item.entries=item.entries||[];
-  item.entries.push({id:uid('entry'),createdAt:Date.now(),boxSize,qtyPerBox,boxCount,palletNo,boxNo,outBoxNo,trackingNo});
-  if(autoUsed)consumeAutoBoxNumbers(type==='pallet'?boxCount:1);
-  item.touchedAt=Date.now();
-
-  currentJob.centerDefaults=currentJob.centerDefaults||{};
-  currentJob.centerDefaults[c.name]={boxSize,qtyPerBox,palletNo};
-  draftItemId='';selectedItemId='';
-  scheduleSave();renderAll();
-  setScanMessage(`✓ ${item.productName} · ${fmt(addQty)}개 작업 저장 완료`,'ok');beep(true);focusScan();
-}
-function deleteEntryById(itemId,entryId){
-  const item=currentJob?.items.find(x=>x.id===itemId);if(!item)return;
-  const i=(item.entries||[]).findIndex(e=>e.id===entryId);if(i<0)return;
-  if(!confirm('이 작업행을 삭제할까요?'))return;
-  item.entries.splice(i,1);item.touchedAt=Date.now();scheduleSave();renderAll();
-}
-
-function handleScanKey(e){if(e.key==='Enter'){e.preventDefault();scanBarcode()}}
-function scanBarcode(){
-  if(!currentJob){setScanMessage('먼저 입고 엑셀을 업로드해 주세요.','warn');return}
-  const bc=normBarcode($('scanInput').value);if(!bc){focusScan();return}
-  const matches=currentJob.items.filter(x=>normBarcode(x.barcode)===bc);
-  if(!matches.length){setScanMessage(`바코드 ${bc} : 발주 데이터에 없습니다.`,'bad');beep(false);focusScan();return}
-  const cur=currentCenterName();
-  const item=matches.find(x=>x.centerName===cur&&!itemComplete(x))||matches.find(x=>!itemComplete(x))||matches[0];
-  currentCenterId=centerIdFromName(item.centerName);selectedItemId=item.id;draftItemId=item.id;item.touchedAt=Date.now();item.scannedCount=num(item.scannedCount)+1;
-  $('scanInput').value='';scheduleSave();renderAll();
-  setScanMessage(`✓ ${item.centerName} 시트로 이동 · ${item.productName} → 맨 위 작업행`,'ok');beep(true);
-}
-
-async function handleSourceFile(file){
-  if(!file)return;
+async function handleFile(file){
   try{
-    const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:'array'});const newJob=parseSourceWorkbook(wb,file.name);
-    const jobs=await idbAll();const existing=jobs.find(j=>j.title===newJob.title);
-    if(existing&&confirm(`"${newJob.title}" 작업이 이미 있습니다.\n기존 작업을 이어서 불러올까요?`))currentJob=existing;
-    else{currentJob=newJob;await idbPut(currentJob)}
-    currentJob.centerTypes=currentJob.centerTypes||{};[...new Set(currentJob.items.map(x=>x.centerName))].forEach(n=>{if(!currentJob.centerTypes[n])currentJob.centerTypes[n]=guessCenterType(n)});
-    currentJob.nextBoxNo=Math.max(1,Math.floor(num(currentJob.nextBoxNo)||1));
-    currentCenterId='__order__';selectedItemId='';draftItemId='';
-    await refreshJobSelect();renderAll();focusScan();setScanMessage(`✓ ${currentJob.title} · ${currentJob.items.length}개 상품 불러오기 완료`,'ok')
-  }catch(err){console.error(err);setScanMessage(err.message||'엑셀 파일을 읽지 못했습니다.','bad')}
+    const buf=await file.arrayBuffer(),wb=XLSX_READ.read(buf,{type:'array'});
+    const job=parseWorkbook(wb,file.name),jobs=await allJobs(),same=jobs.find(x=>x.title===job.title);
+    if(same&&confirm(`"${job.title}" 작업이 이미 있습니다.\n기존 작업을 이어서 불러올까요?`))currentJob=same;else{currentJob=job;await putJob(job)}
+    currentTab='order';currentCenter='all';selectedItemId='';draftBox={items:[]};await refreshJobSelect();renderAll();setScanMsg(`✓ ${job.items.length}개 발주 항목을 불러왔습니다.`,'ok');focusScan()
+  }catch(e){console.error(e);setScanMsg(e.message||'엑셀을 읽지 못했습니다.','bad')}
 }
-async function refreshJobSelect(selectCurrent=true){
-  const jobs=(await idbAll()).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));const sel=$('jobSelect');const old=currentJob?.id||sel.value;
-  sel.innerHTML=jobs.length?jobs.map(j=>`<option value="${esc(j.id)}">${esc(j.title)}</option>`).join(''):'<option value="">저장된 입고건 없음</option>';
-  if(old&&jobs.some(j=>j.id===old))sel.value=old;if(selectCurrent&&currentJob)sel.value=currentJob.id;
+async function refreshJobSelect(select=true){
+  const jobs=(await allJobs()).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  $('jobSelect').innerHTML=jobs.length?jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join(''):'<option value="">저장된 입고건 없음</option>';
+  if(currentJob&&jobs.some(j=>j.id===currentJob.id))$('jobSelect').value=currentJob.id
 }
-async function loadJobById(id){
-  if(!id)return;const job=await idbGet(id);if(!job)return;currentJob=job;currentJob.centerTypes=currentJob.centerTypes||{};[...new Set((currentJob.items||[]).map(x=>x.centerName))].forEach(n=>{if(!currentJob.centerTypes[n])currentJob.centerTypes[n]=guessCenterType(n)});currentJob.nextBoxNo=Math.max(1,Math.floor(num(currentJob.nextBoxNo)||1));currentCenterId='__order__';selectedItemId='';draftItemId='';renderAll();focusScan()
-}
+async function loadJob(id){if(!id)return;currentJob=await getJob(id);currentTab='order';currentCenter='all';selectedItemId='';draftBox={items:[]};renderAll();focusScan()}
+async function deleteJob(){if(!currentJob)return;if(!confirm(`"${currentJob.title}" 작업을 삭제할까요?`))return;await delJob(currentJob.id);currentJob=null;const jobs=await allJobs();await refreshJobSelect();if(jobs.length)await loadJob(jobs.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0].id);else renderAll()}
 
-function addManualCenter(type){
-  if(!currentJob){alert('먼저 입고건을 업로드해 주세요.');return}
-  const name=norm(prompt(type==='pallet'?'추가할 팔레트/밀크런 시트 이름':'추가할 택배 시트 이름'));if(!name)return;
-  if(allCenterDefs().some(c=>c.name===name)){alert('이미 같은 시트가 있습니다.');return}
-  const c={id:centerIdFromName(name),name,type,manual:true};currentJob.manualCenters=currentJob.manualCenters||[];currentJob.manualCenters.push(c);currentJob.centerTypes=currentJob.centerTypes||{};currentJob.centerTypes[name]=type;currentCenterId=c.id;scheduleSave();renderAll()
-}
+/* Excel export */
+function cell(v,s){return{v:v??'',t:typeof v==='number'?'n':'s',s}}
+const border={top:{style:'thin',color:{rgb:'000000'}},bottom:{style:'thin',color:{rgb:'000000'}},left:{style:'thin',color:{rgb:'000000'}},right:{style:'thin',color:{rgb:'000000'}}};
+const styles={
+  base:{font:{name:'맑은 고딕',sz:10,bold:true,color:{rgb:'333333'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border},
+  title:{font:{name:'맑은 고딕',sz:15,bold:true,color:{rgb:'111111'}},alignment:{horizontal:'center',vertical:'center'},border},
+  head:{font:{name:'맑은 고딕',sz:10,bold:true,color:{rgb:'222222'}},fill:{fgColor:{rgb:'D9D9D9'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border},
+  yellow:{font:{name:'맑은 고딕',sz:10,bold:true},fill:{fgColor:{rgb:'FFF200'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border},
+  red:{font:{name:'맑은 고딕',sz:10,bold:true,color:{rgb:'FF0000'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border},
+  green:{font:{name:'맑은 고딕',sz:10,bold:true},fill:{fgColor:{rgb:'C6E8B5'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border}
+};
+function setStyled(ws,addr,value,style=styles.base){ws[addr]=cell(value,style)}
+function addMerge(ws,sr,sc,er,ec){ws['!merges']=ws['!merges']||[];ws['!merges'].push({s:{r:sr,c:sc},e:{r:er,c:ec}})}
+function makePackingSheet(t){
+  const X=XLSX_STYLE||XLSX_READ,ws=X.utils.aoa_to_sheet([[]]);ws['!merges']=[];
+  const title=t.label;
+  setStyled(ws,'A1',title,styles.title);addMerge(ws,0,0,0,4);
+  setStyled(ws,'F1','출고수량',styles.title);addMerge(ws,0,5,0,14);
+  const headers=['상품번호','제품명','바코드','물류센터','출고총수량','박스당      제품수량','박스총수량','사이즈','','','Palette','총중량','TOTAL','Palette      당제품수량','Palette      박스수량','박스번호','출고\\n박스번호',t.route==='parcel'?'송장번호':'','발주서로 돌아가기'];
+  headers.forEach((v,c)=>setStyled(ws,X.utils.encode_cell({r:1,c}),v,styles.head));
+  addMerge(ws,1,7,1,9);
 
-function downloadWorkXlsx(){
-  if(!currentJob){alert('먼저 입고건을 불러와 주세요.');return}
-  const wb=XLSX.utils.book_new();const s=jobStats();
-  const summary=[[currentJob.title],['원본파일',currentJob.sourceFileName||''],['다음 자동 박스번호',currentJob.nextBoxNo||1],[],['구분','작업방식','발주수량','작업수량','남은수량','박스수','진행률'],['전체','',s.order,s.packed,s.remain,s.boxes,s.order?s.packed/s.order:0]];
-  allCenterDefs().forEach(c=>{const st=centerStats(c.name);summary.push([c.name,c.type==='pallet'?'팔레트/밀크런':'택배',st.order,st.packed,st.remain,st.boxes,st.order?st.packed/st.order:0])});
-  const sumWs=XLSX.utils.aoa_to_sheet(summary);XLSX.utils.book_append_sheet(wb,sumWs,'작업현황');
-
-  allCenterDefs().forEach((c,ci)=>{
-    const rows=[['상품번호','제품명','바코드','물류센터','출고총수량','박스당 제품수량','박스총수량','사이즈','Palette','박스번호','출고박스번호','송장번호']];
-    const completed=completedRowsForCenter(c.name);
-    completed.forEach(({item,e})=>rows.push([item.productNumber,item.productName,item.barcode,item.centerName,entryPacked(item,e),e.qtyPerBox,c.type==='pallet'?e.boxCount:parcelBoxSequence(c.name,e.id),e.boxSize,e.palletNo||'',e.boxNo||'',e.outBoxNo||'',e.trackingNo||'']));
-    residualRowsForCenter(c.name).forEach(item=>rows.push([item.productNumber,item.productName,item.barcode,item.centerName,itemRemain(item),'','','','','','','']));
-    const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=[{wch:12},{wch:42},{wch:18},{wch:15},{wch:12},{wch:14},{wch:12},{wch:14},{wch:10},{wch:14},{wch:14},{wch:20}];
-    let name=c.name.replace(/[\\/?*[\]:]/g,' ').slice(0,28)||`센터${ci+1}`;if(wb.SheetNames.includes(name))name=(name.slice(0,25)+'-'+(ci+1));XLSX.utils.book_append_sheet(wb,ws,name)
+  setStyled(ws,'E3','',styles.yellow);setStyled(ws,'G3','0',styles.yellow);setStyled(ws,'K3','0',styles.yellow);setStyled(ws,'L3','박스별중량',styles.yellow);setStyled(ws,'M3','TOTAL',styles.yellow);
+  let r=3;
+  const boxes=currentJob.boxes.filter(b=>boxMatchesTab(b,t.key)).slice().sort((a,b)=>a.createdAt-b.createdAt);
+  boxes.forEach(box=>{
+    const its=box.items.map(x=>({x,item:currentJob.items.find(i=>i.id===x.itemId)})).filter(x=>x.item);
+    if(!its.length)return;
+    const start=r,end=r+its.length-1;
+    its.forEach(({x,item},idx)=>{
+      setStyled(ws,X.utils.encode_cell({r,c:0}),item.productNumber,styles.base);
+      setStyled(ws,X.utils.encode_cell({r,c:1}),item.productName,styles.base);
+      setStyled(ws,X.utils.encode_cell({r,c:2}),item.barcode,styles.base);
+      setStyled(ws,X.utils.encode_cell({r,c:3}),box.center,box.route==='parcel'?styles.green:styles.base);
+      setStyled(ws,X.utils.encode_cell({r,c:4}),n(x.qtyPerBox)*n(box.boxCount),styles.base);
+      r++
+    });
+    const per=boxPerQty(box),g=box.route==='parcel'?(box.parcelSeq||1):box.boxCount;
+    const vals={5:per,6:g,10:box.palletNo||'',11:box.weight||'',12:'',13:'',14:'',15:box.boxNo||'',16:box.outBoxNo||'',17:box.trackingNo||'',18:''};
+    Object.entries(vals).forEach(([c,v])=>{setStyled(ws,X.utils.encode_cell({r:start,c:+c}),v,styles.base);if(end>start)addMerge(ws,start,+c,end,+c)});
+    setStyled(ws,X.utils.encode_cell({r:start,c:7}),box.boxSize||'',styles.base);addMerge(ws,start,7,end,9);
   });
-  XLSX.writeFile(wb,`${currentJob.title.replace(/[\\/:*?"<>|]/g,'_')}_작업현황.xlsx`)
-}
-function downloadBackup(){if(!currentJob)return;const blob=new Blob([JSON.stringify(currentJob,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${currentJob.title}_작업백업.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 
-$('sourceFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)handleSourceFile(f);e.target.value=''});
-(async function init(){try{await openDB();await refreshJobSelect();const jobs=(await idbAll()).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));if(jobs.length)await loadJobById(jobs[0].id);else renderAll()}catch(err){console.error(err);renderAll();setScanMessage('브라우저 저장소를 열지 못했습니다.','bad')}setTimeout(focusScan,100)})();
+  currentJob.items.filter(x=>itemMatchesTab(x,t.key)&&itemRemain(x)>0).forEach(item=>{
+    setStyled(ws,X.utils.encode_cell({r,c:0}),item.productNumber,styles.red);
+    setStyled(ws,X.utils.encode_cell({r,c:1}),item.productName,styles.red);
+    setStyled(ws,X.utils.encode_cell({r,c:2}),item.barcode,styles.red);
+    setStyled(ws,X.utils.encode_cell({r,c:3}),item.center,item.route==='parcel'?styles.green:styles.red);
+    setStyled(ws,X.utils.encode_cell({r,c:4}),itemRemain(item),styles.red);
+    for(let c=5;c<19;c++)if(!ws[X.utils.encode_cell({r,c})])setStyled(ws,X.utils.encode_cell({r,c}),'',styles.base);
+    r++
+  });
+
+  ws['!ref']=`A1:S${Math.max(4,r)}`;
+  ws['!cols']=[{wch:12},{wch:34},{wch:18},{wch:13},{wch:12},{wch:12},{wch:10},{wch:9},{wch:8},{wch:8},{wch:10},{wch:10},{wch:8},{wch:12},{wch:12},{wch:12},{wch:12},{wch:18},{wch:14}];
+  ws['!rows']=[{hpt:24},{hpt:28},{hpt:24}];
+  return ws
+}
+function makeOrderSheet(){
+  const X=XLSX_STYLE||XLSX_READ,ws=X.utils.aoa_to_sheet([[]]);ws['!merges']=[];
+  setStyled(ws,'A1',currentJob.title,styles.title);addMerge(ws,0,0,0,4);
+  ['상품번호','제품명','바코드','물류센터','order 총수량'].forEach((v,c)=>setStyled(ws,X.utils.encode_cell({r:1,c}),v,styles.head));
+  let r=2;currentJob.items.forEach(item=>{[item.productNumber,item.productName,item.barcode,item.center,item.orderQty].forEach((v,c)=>setStyled(ws,X.utils.encode_cell({r,c}),v,styles.base));r++});
+  ws['!ref']=`A1:E${r}`;ws['!cols']=[{wch:12},{wch:42},{wch:18},{wch:16},{wch:13}];return ws
+}
+function downloadExcel(){
+  if(!currentJob){alert('먼저 입고건을 불러와 주세요.');return}
+  const X=XLSX_STYLE||XLSX_READ,wb=X.utils.book_new();
+  X.utils.book_append_sheet(wb,makeOrderSheet(),'발주서');
+  TAB_ORDER.slice(1).forEach(t=>X.utils.book_append_sheet(wb,makePackingSheet(t),t.label.slice(0,31)));
+  X.writeFile(wb,`${currentJob.title.replace(/[\\\\/:*?"<>|]/g,'_')}_작업현황.xlsx`,{cellStyles:true})
+}
+function downloadBackup(){
+  if(!currentJob)return;
+  const a=document.createElement('a'),blob=new Blob([JSON.stringify(currentJob,null,2)],{type:'application/json'});a.href=URL.createObjectURL(blob);a.download=`${currentJob.title}_작업백업.json`;document.body.appendChild(a);a.click();a.remove()
+}
+
+$('sourceFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)handleFile(f);e.target.value=''});
+(async()=>{await openDb();await refreshJobSelect();const jobs=(await allJobs()).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));if(jobs.length)await loadJob(jobs[0].id);else renderAll();focusScan()})()
 </script>
 </body>
 </html>
