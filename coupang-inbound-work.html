@@ -66,7 +66,7 @@ button,input,select{font:inherit}button{cursor:pointer}
 @media(max-width:1100px){.pallet-inline{overflow-x:auto}.pallet-inline-top{padding-bottom:2px}.inline-scan{min-width:290px}}
 
 
-/* v9: large mixed-box work + durable autosave. Excel sheet UI stays unchanged. */
+/* v14: shared multi-PC work + durable autosave. Excel sheet UI stays unchanged. */
 .inline-box-items{
   display:grid!important;
   grid-template-columns:repeat(3,minmax(0,1fr))!important;
@@ -597,9 +597,123 @@ function openPersistDb(){
   });
   return persistDbPromise;
 }
-async function persistPut(key,value){const db=await openPersistDb();return new Promise((resolve,reject)=>{const tx=db.transaction(PERSIST_STORE,'readwrite');tx.objectStore(PERSIST_STORE).put(value,key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error||new Error('IndexedDB write failed'));tx.onabort=()=>reject(tx.error||new Error('IndexedDB write aborted'))})}
-async function persistGet(key){const db=await openPersistDb();return new Promise((resolve,reject)=>{const tx=db.transaction(PERSIST_STORE,'readonly'),req=tx.objectStore(PERSIST_STORE).get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('IndexedDB read failed'))})}
-async function persistDelete(key){const db=await openPersistDb();return new Promise((resolve,reject)=>{const tx=db.transaction(PERSIST_STORE,'readwrite');tx.objectStore(PERSIST_STORE).delete(key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error||new Error('IndexedDB delete failed'))})}
+// ===== v14 shared server persistence (multi-PC) =====
+// Server is the common source of truth; IndexedDB remains a per-PC offline cache.
+const SHARED_API_BASE=(location.protocol==='file:'?'https://tool.dasaba.co.kr':'')+'/api/coupang-shared';
+let sharedApiReachable=false,sharedLastStateAt=0,sharedLastSourceAt=0,sharedLastSnapshotAt=0;
+let sharedStateQueued=null,sharedStateSending=false,sharedApplyingRemote=false,sharedTokenPrompted=false;
+
+async function localPersistPut(key,value){const db=await openPersistDb();return new Promise((resolve,reject)=>{const tx=db.transaction(PERSIST_STORE,'readwrite');tx.objectStore(PERSIST_STORE).put(value,key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error||new Error('IndexedDB write failed'));tx.onabort=()=>reject(tx.error||new Error('IndexedDB write aborted'))})}
+async function localPersistGet(key){const db=await openPersistDb();return new Promise((resolve,reject)=>{const tx=db.transaction(PERSIST_STORE,'readonly'),req=tx.objectStore(PERSIST_STORE).get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('IndexedDB read failed'))})}
+async function localPersistDelete(key){const db=await openPersistDb();return new Promise((resolve,reject)=>{const tx=db.transaction(PERSIST_STORE,'readwrite');tx.objectStore(PERSIST_STORE).delete(key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error||new Error('IndexedDB delete failed'))})}
+
+function sharedToken(){try{return localStorage.getItem('coupangSharedToken')||''}catch(_){return ''}}
+async function sharedFetch(path,opts={},allowPrompt=true){
+  const headers=new Headers(opts.headers||{}),token=sharedToken();if(token)headers.set('X-Coupang-Work-Token',token);
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+  try{
+    let r=await fetch(SHARED_API_BASE+path,{...opts,headers,signal:controller.signal,cache:'no-store'});
+    if(r.status===401&&allowPrompt&&!sharedTokenPrompted){
+      sharedTokenPrompted=true;const pw=prompt('쿠팡 공용 작업 암호를 입력해 주세요.');
+      if(pw){try{localStorage.setItem('coupangSharedToken',pw)}catch(_){};return sharedFetch(path,opts,false)}
+    }
+    if(r.status!==404)sharedApiReachable=true;
+    return r;
+  }finally{clearTimeout(timer)}
+}
+function encHeader(v){return encodeURIComponent(String(v??''))}
+function decHeader(v){try{return decodeURIComponent(v||'')}catch(_){return v||''}}
+
+async function sharedRemoteGet(key){
+  try{
+    if(key==='state'){
+      const r=await sharedFetch('/state');if(r.status===404)return null;if(!r.ok)throw new Error('shared state '+r.status);
+      const j=await r.json();sharedLastStateAt=Math.max(sharedLastStateAt,Number(j.updatedAt||r.headers.get('X-Updated-At')||0));return j.state||null;
+    }
+    if(key==='source'||key==='workbookSnapshot'){
+      const r=await sharedFetch('/blob/'+key);if(r.status===404)return null;if(!r.ok)throw new Error('shared blob '+r.status);
+      const blob=await r.blob(),updated=Number(r.headers.get('X-Updated-At')||0);
+      if(key==='source')sharedLastSourceAt=Math.max(sharedLastSourceAt,updated);else sharedLastSnapshotAt=Math.max(sharedLastSnapshotAt,updated);
+      return {name:decHeader(r.headers.get('X-File-Name')),type:decHeader(r.headers.get('X-File-Type'))||blob.type,mode:decHeader(r.headers.get('X-File-Mode')),savedAt:Number(r.headers.get('X-Saved-At')||updated||Date.now()),blob};
+    }
+  }catch(e){console.warn('shared get fallback',key,e)}
+  return undefined;
+}
+
+async function sharedSendState(value){
+  try{
+    const send={...value,boxDraft:null};
+    const r=await sharedFetch('/state',{method:'PUT',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(send)});
+    if(!r.ok)throw new Error('shared state save '+r.status);const j=await r.json();sharedLastStateAt=Math.max(sharedLastStateAt,Number(j.updatedAt||0));
+  }catch(e){console.warn('shared state save failed; local cache kept',e)}
+}
+async function sharedDrainStateQueue(){
+  if(sharedStateSending)return;sharedStateSending=true;
+  try{while(sharedStateQueued){const v=sharedStateQueued;sharedStateQueued=null;await sharedSendState(v)}}finally{sharedStateSending=false}
+}
+function sharedQueueState(value){sharedStateQueued=value;sharedDrainStateQueue()}
+
+async function sharedRemotePut(key,value){
+  if(key==='state'){sharedQueueState(value);return}
+  if((key==='source'||key==='workbookSnapshot')&&value?.blob){
+    try{
+      const headers={'Content-Type':'application/octet-stream','X-File-Name':encHeader(value.name||`${key}.xlsx`),'X-File-Type':encHeader(value.type||value.blob.type||''),'X-File-Mode':encHeader(value.mode||''),'X-Saved-At':String(value.savedAt||Date.now())};
+      const r=await sharedFetch('/blob/'+key,{method:'PUT',headers,body:value.blob});if(!r.ok)throw new Error('shared blob save '+r.status);const j=await r.json();
+      if(key==='source'){sharedLastSourceAt=Number(j.updatedAt||Date.now());sharedLastStateAt=0;sharedLastSnapshotAt=0}else sharedLastSnapshotAt=Number(j.updatedAt||Date.now());
+    }catch(e){console.warn('shared blob save failed; local cache kept',key,e)}
+  }
+}
+async function sharedRemoteDelete(key){
+  try{const path=key==='state'?'/state':'/blob/'+key;const r=await sharedFetch(path,{method:'DELETE'});if(!r.ok&&r.status!==404)throw new Error('shared delete '+r.status)}catch(e){console.warn('shared delete fallback',key,e)}
+}
+
+async function persistPut(key,value){
+  try{await localPersistPut(key,value)}catch(e){console.warn('local cache save failed',e)}
+  await sharedRemotePut(key,value);
+}
+async function persistGet(key){
+  let local;try{local=await localPersistGet(key)}catch(e){console.warn('local cache read failed',e)}
+  const remote=await sharedRemoteGet(key);
+  if(remote!==undefined&&remote!==null){
+    if(key==='state'){
+      // Active tab and unfinished scan list belong to each PC, not to the whole team.
+      if(local?.activeSheet)remote.activeSheet=local.activeSheet;
+      if(local?.boxDraft)remote.boxDraft=local.boxDraft;
+    }
+    try{await localPersistPut(key,remote)}catch(_){}
+    return remote;
+  }
+  // First v14 launch: migrate the existing PC's v13 data to the shared server automatically.
+  if(local&&remote===null){try{await sharedRemotePut(key,local)}catch(_){}}
+  return local;
+}
+async function persistDelete(key){
+  try{await localPersistDelete(key)}catch(_){}
+  await sharedRemoteDelete(key);
+}
+
+async function sharedStatus(){
+  try{const r=await sharedFetch('/status',{},false);if(!r.ok)return null;return await r.json()}catch(_){return null}
+}
+function sharedHasActiveDraft(){return !!(boxDraft&&Array.isArray(boxDraft.items)&&boxDraft.items.length)}
+async function sharedPollUpdates(){
+  if(document.hidden||persistRestoring||sharedApplyingRemote||!workbook)return;
+  const st=await sharedStatus();if(!st?.ok)return;
+  const srcAt=Number(st.source?.updatedAt||0),stateAt=Number(st.state?.updatedAt||0);
+  if(srcAt&&srcAt>sharedLastSourceAt+5){
+    if(sharedHasActiveDraft()){setStatus('☁ 다른 PC에서 새 선적 파일을 열었습니다. 현재 박스를 완료/취소하면 자동 반영됩니다.','busy');return}
+    sharedApplyingRemote=true;try{await restorePersistentSession();sharedLastSourceAt=srcAt;sharedLastStateAt=Number(st.state?.updatedAt||sharedLastStateAt);setStatus('☁ 다른 PC의 새 선적 작업을 불러왔습니다.','ok')}finally{sharedApplyingRemote=false}return;
+  }
+  if(stateAt&&stateAt>sharedLastStateAt+5){
+    if(sharedHasActiveDraft()){setStatus('☁ 다른 PC 작업 업데이트 대기 중 · 현재 박스 완료 후 자동 반영','busy');return}
+    const saved=await sharedRemoteGet('state');if(!saved)return;
+    const keepActive=activeSheet,keepDraft=boxDraft; saved.activeSheet=keepActive;saved.boxDraft=keepDraft;
+    sharedApplyingRemote=true;persistRestoring=true;
+    try{applyRecoveredState(saved);sharedLastStateAt=stateAt;setStatus('☁ 다른 PC 작업 내용이 자동 반영되었습니다.','ok')}catch(e){console.warn('shared apply failed',e)}finally{persistRestoring=false;sharedApplyingRemote=false}
+  }
+}
+setInterval(sharedPollUpdates,4000);
+// ===== /v14 shared server persistence =====
 
 function cleanPalletStateForSave(state){
   if(!state)return null;
