@@ -2124,5 +2124,108 @@ requestAnimationFrame(updateCenterExcelButtonV22);
 // ===== /v22 =====
 </script>
 
+
+<style id="v23-new-project-drop-style">
+.new-project-drop-v23{position:fixed;inset:0;z-index:10050;display:none;align-items:center;justify-content:center;background:rgba(13,31,47,.48);backdrop-filter:blur(1px)}
+.new-project-drop-v23.show{display:flex}
+.new-project-drop-card-v23{width:min(680px,calc(100vw - 34px));background:#fff;border-radius:12px;box-shadow:0 18px 55px rgba(0,0,0,.28);padding:18px}
+.new-project-drop-title-v23{font-size:18px;font-weight:1000;color:#173c58;margin-bottom:8px}
+.new-project-drop-help-v23{font-size:12px;color:#52646f;margin-bottom:12px;line-height:1.55}
+.new-project-drop-zone-v23{min-height:210px;border:3px dashed #217346;border-radius:10px;background:#f1fbf5;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;text-align:center;padding:24px;cursor:pointer;transition:.12s ease}
+.new-project-drop-zone-v23.drag{background:#dcf5e5;border-color:#0b6a3c;transform:scale(1.006)}
+.new-project-drop-icon-v23{font-size:38px;line-height:1}
+.new-project-drop-main-v23{font-size:17px;font-weight:1000;color:#145b38}
+.new-project-drop-sub-v23{font-size:11px;color:#607168}
+.new-project-drop-actions-v23{display:flex;justify-content:flex-end;gap:7px;margin-top:12px}
+.new-project-drop-actions-v23 button{height:34px;border-radius:6px;border:1px solid #9badb4;background:#fff;font-size:11px;font-weight:900;padding:0 14px;cursor:pointer}
+.new-project-drop-actions-v23 .pick{background:#0b5f92;color:#fff;border-color:#0b5f92}
+</style>
+<script id="v23-new-project-drag-drop">
+// ===== v23: new shipment can be created by drag & drop =====
+let newProjectDropOpenV23=false;
+let newProjectDropDepthV23=0;
+
+function ensureNewProjectDropPanelV23(){
+  let panel=document.getElementById('newProjectDropPanelV23');
+  if(panel)return panel;
+  panel=document.createElement('div');
+  panel.id='newProjectDropPanelV23';
+  panel.className='new-project-drop-v23';
+  panel.innerHTML=`<div class="new-project-drop-card-v23" role="dialog" aria-modal="true" aria-label="새 선적 작업 파일 업로드">
+    <div class="new-project-drop-title-v23">＋ 새 선적 작업</div>
+    <div class="new-project-drop-help-v23">선적 엑셀을 아래 영역으로 끌어놓으세요. 파일을 읽은 뒤 <b>발주서 A8</b>을 기준으로 선적 작업명이 자동 생성됩니다.</div>
+    <div class="new-project-drop-zone-v23" id="newProjectDropZoneV23" tabindex="0">
+      <div class="new-project-drop-icon-v23">📥</div>
+      <div class="new-project-drop-main-v23">엑셀 파일을 여기에 끌어놓으세요</div>
+      <div class="new-project-drop-sub-v23">.xlsx / .xlsm / .xls · 또는 여기를 클릭해서 파일 선택</div>
+    </div>
+    <div class="new-project-drop-actions-v23">
+      <button type="button" onclick="closeNewProjectDropV23()">취소</button>
+      <button type="button" class="pick" onclick="pickNewProjectFileV23()">파일 선택</button>
+    </div>
+  </div>`;
+  document.body.appendChild(panel);
+  const zone=panel.querySelector('#newProjectDropZoneV23');
+  zone.addEventListener('click',pickNewProjectFileV23);
+  zone.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pickNewProjectFileV23();}});
+  panel.addEventListener('click',e=>{if(e.target===panel)closeNewProjectDropV23();});
+  return panel;
+}
+function openNewProjectDropV23(){
+  if(projectSwitchBusyV18||newProjectFileBusyV20)return;
+  const panel=ensureNewProjectDropPanelV23();
+  newProjectDropOpenV23=true;newProjectDropDepthV23=0;
+  panel.classList.add('show');
+  panel.querySelector('#newProjectDropZoneV23')?.classList.remove('drag');
+  setStatus('새 선적 작업 대기 · 엑셀 파일을 화면에 끌어놓거나 파일 선택을 눌러주세요.','ok');
+}
+function closeNewProjectDropV23(){
+  newProjectDropOpenV23=false;newProjectDropDepthV23=0;
+  const panel=document.getElementById('newProjectDropPanelV23');
+  panel?.classList.remove('show');
+  panel?.querySelector('#newProjectDropZoneV23')?.classList.remove('drag');
+}
+function pickNewProjectFileV23(){
+  if(!newProjectDropOpenV23)return;
+  ensureNewProjectFileInputV20().click();
+}
+function excelFromDropV23(e){
+  return [...(e.dataTransfer?.files||[])].find(f=>typeof isExcelFile==='function'?isExcelFile(f):/\.(xlsx|xlsm|xls)$/i.test(f?.name||''))||null;
+}
+async function acceptNewProjectDropV23(file){
+  if(!file)return;
+  closeNewProjectDropV23();
+  await createProjectFromShipmentFileV20(file);
+}
+// 새 선적 작업 버튼은 파일 탐색기를 즉시 띄우지 않고 드롭 대기 화면을 연다.
+createProjectV18=function(){openNewProjectDropV23();};
+
+// 대기 화면이 열려 있을 때는 페이지 어디에 놓아도 '새 선적 작업'으로 처리한다.
+window.addEventListener('dragenter',e=>{
+  if(!newProjectDropOpenV23||![...(e.dataTransfer?.types||[])].includes('Files'))return;
+  e.preventDefault();e.stopImmediatePropagation();newProjectDropDepthV23++;
+  ensureNewProjectDropPanelV23().querySelector('#newProjectDropZoneV23')?.classList.add('drag');
+},{capture:true});
+window.addEventListener('dragover',e=>{
+  if(!newProjectDropOpenV23||![...(e.dataTransfer?.types||[])].includes('Files'))return;
+  e.preventDefault();e.stopImmediatePropagation();if(e.dataTransfer)e.dataTransfer.dropEffect='copy';
+  ensureNewProjectDropPanelV23().querySelector('#newProjectDropZoneV23')?.classList.add('drag');
+},{capture:true});
+window.addEventListener('dragleave',e=>{
+  if(!newProjectDropOpenV23||![...(e.dataTransfer?.types||[])].includes('Files'))return;
+  e.preventDefault();e.stopImmediatePropagation();newProjectDropDepthV23=Math.max(0,newProjectDropDepthV23-1);
+  if(!newProjectDropDepthV23)ensureNewProjectDropPanelV23().querySelector('#newProjectDropZoneV23')?.classList.remove('drag');
+},{capture:true});
+window.addEventListener('drop',e=>{
+  if(!newProjectDropOpenV23)return;
+  e.preventDefault();e.stopImmediatePropagation();newProjectDropDepthV23=0;
+  const file=excelFromDropV23(e);
+  if(!file){alert('엑셀(.xlsx/.xlsm/.xls) 파일을 끌어놓아 주세요.');return;}
+  acceptNewProjectDropV23(file);
+},{capture:true});
+window.addEventListener('keydown',e=>{if(newProjectDropOpenV23&&e.key==='Escape')closeNewProjectDropV23();});
+// ===== /v23 =====
+</script>
+
 </body>
 </html>
