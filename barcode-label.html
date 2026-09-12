@@ -220,7 +220,6 @@
         <button class="btn-secondary" type="button" onclick="showSavedLibrary()">📚 공용 라벨 보기</button>
         <button class="btn-ghost" type="button" onclick="deleteSavedLabel()">🗑 공용 라벨 삭제</button>
         <button class="btn-secondary" type="button" onclick="migrateLegacyLabels()">⬆ 이 PC 기존 라벨 공용으로 옮기기</button>
-        <button class="btn-primary" type="button" onclick="recoverSharedLabelsV30()">🛟 기존 공용 라벨 복구</button>
         <button class="btn-ghost" type="button" onclick="window.location.href='/api/shared-labels-backup'">⬇ 공용 라벨 백업</button>
         <button class="btn-ghost" type="button" onclick="el('sharedBackupFile').click()">⬆ 공용 라벨 백업 복원</button>
         <input id="sharedBackupFile" type="file" accept=".json,application/json" style="display:none" onchange="restoreSharedBackup(this.files?.[0]);this.value=''">
@@ -805,67 +804,6 @@
     }
   }
 
-
-  function collectRecoverableLocalLabelsV30(){
-    const merged=[];
-    const seen=new Set();
-    const add=(arr)=>{
-      if(!Array.isArray(arr))return;
-      for(const x of arr){
-        if(!x||typeof x!=='object'||(!x.barcode&&!x.productNumber&&!x.productName))continue;
-        const key=(normalizeBarcode(x.barcode)||'')+'|'+(normalizeProductNo(x.productNumber)||'')+'|'+String(x.productName||'');
-        if(seen.has(key))continue; seen.add(key); merged.push(x);
-      }
-    };
-    try{ add(JSON.parse(localStorage.getItem(LABEL_LIBRARY_KEY)||'[]')); }catch(e){}
-    try{ add(JSON.parse(localStorage.getItem(LEGACY_LABEL_LIBRARY_KEY)||'[]')); }catch(e){}
-    try{
-      for(let i=0;i<localStorage.length;i++){
-        const k=localStorage.key(i); if(!k||k===LABEL_LIBRARY_KEY||k===LEGACY_LABEL_LIBRARY_KEY)continue;
-        if(!/label|barcode/i.test(k))continue;
-        try{
-          const v=JSON.parse(localStorage.getItem(k)||'null');
-          add(Array.isArray(v)?v:(Array.isArray(v?.labels)?v.labels:(Array.isArray(v?.items)?v.items:[])));
-        }catch(e){}
-      }
-    }catch(e){}
-    return merged;
-  }
-
-  async function recoverSharedLabelsV30(){
-    try{
-      setSaveStatus('기존 공용 라벨 복구 위치를 확인하는 중...');
-      let serverCount=0, sources=[];
-      try{
-        const scan=await fetch('/api/shared-labels-recovery-scan',{cache:'no-store'});
-        const sd=await scan.json();
-        if(sd?.ok){serverCount=Number(sd.count||0);sources=sd.sources||[];}
-      }catch(e){console.warn(e)}
-
-      const local=collectRecoverableLocalLabelsV30();
-      let restored=0;
-      if(local.length){
-        if(!confirm(`이 PC 브라우저에서 복구 가능한 라벨 ${local.length}개를 찾았습니다.\n공용 보관함으로 복구할까요?`)){
-          await fetchSharedLabels(true); renderSavedLibrary();
-          setSaveStatus(`서버 공용 라벨 ${getLabelLibrary().length}개 확인됨 · 로컬 복구는 취소했습니다.`);
-          return;
-        }
-        const res=await sharedFetch('/api/shared-labels-restore',{method:'POST',body:JSON.stringify({labels:local})});
-        const data=await res.json();
-        if(!res.ok||!data.ok)throw new Error(data.error||'브라우저 캐시 복구 실패');
-        restored=Number(data.restored||0);
-      }
-      await fetchSharedLabels(true); renderSavedLibrary();
-      const sourceText=sources.length?` · 서버 이전 저장파일 ${sources.length}곳 발견`:'';
-      setSaveStatus(`✓ 복구 확인 완료 · 공용 라벨 ${getLabelLibrary().length}개${sourceText}${restored?` · 이 PC에서 ${restored}개 복구`:''}`);
-      if(!getLabelLibrary().length){
-        alert('이 PC와 서버에서 자동 복구 가능한 라벨을 찾지 못했습니다.\n다른 PC에서 아직 바코드 라벨 페이지를 열지 않았다면 그 PC에서 이 복구 버튼을 눌러 주세요.');
-      }
-    }catch(err){
-      console.error(err); setSaveStatus(err?.message||'공용 라벨 복구 실패',false); alert(err?.message||'공용 라벨 복구에 실패했습니다.');
-    }
-  }
-
   function sharedWriteHeaders(){
     const headers={'Content-Type':'application/json'};
     try{
@@ -891,21 +829,13 @@
 
   async function fetchSharedLabels(silent=false){
     try{
-      const cachedBefore=(()=>{try{return JSON.parse(localStorage.getItem(LABEL_LIBRARY_KEY)||'[]')}catch(e){return []}})();
       const res=await fetch('/api/shared-labels',{cache:'no-store'});
       const data=await res.json();
       if(!res.ok||!data.ok) throw new Error(data.error||'공용 라벨 조회 실패');
       sharedEditKeyRequired=!!data.editKeyRequired;
-      const serverLabels=Array.isArray(data.labels)?data.labels:[];
-      // v30: 서버가 0개일 때 기존 PC 캐시를 빈 배열로 덮어쓰지 않는다.
-      if(serverLabels.length===0 && Array.isArray(cachedBefore) && cachedBefore.length>0){
-        sharedLabelCache=cachedBefore;
-        if(!silent)setSaveStatus(`⚠ 서버 공용 라벨은 0개지만 이 PC 캐시 ${cachedBefore.length}개를 보호했습니다. '기존 공용 라벨 복구'를 눌러 복원하세요.`,false);
-        return true;
-      }
-      setLabelLibrary(serverLabels);
+      setLabelLibrary(data.labels||[]);
       if(!silent){
-        const storageText=data.permanent?'Supabase 영구 저장':'서버 저장';
+        const storageText=data.permanent?'Supabase 영구 저장':'임시 저장';
         setSaveStatus(`✓ 공용 라벨 ${sharedLabelCache.length}개 · ${storageText}`);
       }
       return true;
