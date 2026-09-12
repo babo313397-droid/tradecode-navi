@@ -779,60 +779,99 @@ app.get('/coupang-inbound-work', (req, res) => {
 
 
 // =====================================================================
-// v31 공용 바코드 라벨 보관함
-// - 쿠팡 선적 작업 코드는 위의 정상 v18 구조를 그대로 유지합니다.
-// - Supabase가 설정되어 있으면 public.shared_labels를 영구 저장소로 사용합니다.
-// - Supabase 미설정 시에만 서버 JSON 파일로 폴백합니다.
-// - 상품 기준목록(product catalog)은 공용 라벨로 자동 변환/복구하지 않습니다.
+// v32 공용 바코드 라벨 보관함 - 안전 복원
+// - 쿠팡 선적 작업 API/저장경로는 위 코드를 그대로 사용합니다.
+// - 상품 기준목록(product catalog)은 라벨 복구에 절대 섞지 않습니다.
+// - Supabase public.shared_labels가 있으면 우선 사용합니다.
+// - Supabase가 비어 있거나 미설정이면, '라벨 전용 파일명'의 기존 저장소만 확인합니다.
 // =====================================================================
 const SHARED_LABEL_DIR = process.env.SHARED_LABEL_DIR || path.join(path.dirname(COUPANG_SHARED_DIR), 'shared-barcode');
-const SHARED_LABELS_PATH = path.join(SHARED_LABEL_DIR, 'labels.json');
+const SHARED_LABELS_PATH = process.env.SHARED_LABELS_PATH || path.join(SHARED_LABEL_DIR, 'labels.json');
 const PRODUCT_CATALOG_PATH = path.join(SHARED_LABEL_DIR, 'product-catalog.json');
 const LABEL_EDIT_KEY = String(process.env.SHARED_LABEL_EDIT_KEY || process.env.LABEL_EDIT_KEY || '').trim();
-const SUPABASE_URL = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+const SUPABASE_URL = String(
+  process.env.SUPABASE_URL ||
+  process.env.SUPABASE_PROJECT_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL || ''
+).replace(/\/+$/, '');
 const SUPABASE_SERVICE_KEY = String(
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE ||
   process.env.SUPABASE_SERVICE_KEY ||
+  process.env.SUPABASE_SECRET_KEY ||
   process.env.SUPABASE_KEY || ''
 ).trim();
 const SUPABASE_LABELS_ENABLED = !!(SUPABASE_URL && SUPABASE_SERVICE_KEY);
 
-function ensureSharedLabelDirV31(){ fs.mkdirSync(SHARED_LABEL_DIR,{recursive:true}); }
-function readSharedArrayV31(filePath){
+function ensureSharedLabelDirV32(filePath=SHARED_LABELS_PATH){
+  fs.mkdirSync(path.dirname(filePath),{recursive:true});
+}
+function rawArrayV32(filePath){
   try{
-    if(!fs.existsSync(filePath)) return [];
+    if(!filePath || !fs.existsSync(filePath)) return [];
     const parsed=JSON.parse(fs.readFileSync(filePath,'utf8')||'[]');
     return Array.isArray(parsed)?parsed:(Array.isArray(parsed?.labels)?parsed.labels:(Array.isArray(parsed?.items)?parsed.items:[]));
-  }catch(err){ console.error('[공용 라벨] 로컬 파일 읽기 실패:',err.message); return []; }
+  }catch(err){ console.warn('[공용 라벨] 파일 읽기 실패:',filePath,err.message); return []; }
 }
-function writeSharedArrayV31(filePath,arr){
-  ensureSharedLabelDirV31();
+function looksLikeActualSavedLabelV32(x){
+  if(!x || typeof x!=='object') return false;
+  if(!String(x.barcode||'').trim() && !String(x.productNumber||x.product_number||'').trim()) return false;
+  const labelOnlyKeys=['optionText','option_text','material','importer','address','phone','warning','age','country','labelWidth','label_width','labelHeight','label_height','titleFont','title_font','bodyFont','body_font','barcodeHeight','barcode_height','barcodeTextFont','barcode_text_font','madeInFont','made_in_font'];
+  return labelOnlyKeys.some(k => Object.prototype.hasOwnProperty.call(x,k));
+}
+function cleanLabelV32(raw={}){
+  const text=(v,max=2000)=>String(v??'').slice(0,max);
+  const num=(v,f)=>{const n=Number(v);return Number.isFinite(n)?n:f};
+  return {
+    id:text(raw.id,100),
+    productNumber:text(raw.productNumber ?? raw.product_number,120).trim(),
+    barcode:text(raw.barcode,160).trim(),
+    productName:text(raw.productName ?? raw.product_name,1000),
+    optionText:text(raw.optionText ?? raw.option_text,1000),
+    material:text(raw.material,1000), importer:text(raw.importer,1000), address:text(raw.address,1500), phone:text(raw.phone,300), warning:text(raw.warning,2000),
+    age:text(raw.age,500), country:text(raw.country,500),
+    labelWidth:num(raw.labelWidth ?? raw.label_width,50), labelHeight:num(raw.labelHeight ?? raw.label_height,60),
+    titleFont:num(raw.titleFont ?? raw.title_font,18), bodyFont:num(raw.bodyFont ?? raw.body_font,14), barcodeHeight:num(raw.barcodeHeight ?? raw.barcode_height,16),
+    barcodeTextFont:num(raw.barcodeTextFont ?? raw.barcode_text_font,12), madeInFont:num(raw.madeInFont ?? raw.made_in_font,8),
+    createdAt:text(raw.createdAt ?? raw.created_at,100), updatedAt:text(raw.updatedAt ?? raw.updated_at,100)
+  };
+}
+function readActualLabelFileV32(filePath){
+  return rawArrayV32(filePath).filter(looksLikeActualSavedLabelV32).map(cleanLabelV32);
+}
+function writeLabelFileV32(filePath,arr){
+  ensureSharedLabelDirV32(filePath);
   const tmp=`${filePath}.tmp-${process.pid}-${Date.now()}`;
   fs.writeFileSync(tmp,JSON.stringify(arr,null,2),'utf8');
   fs.renameSync(tmp,filePath);
 }
-function requireLabelEditKeyV31(req,res,next){
+function requireLabelEditKeyV32(req,res,next){
   if(!LABEL_EDIT_KEY) return next();
   const supplied=String(req.get('x-label-edit-key')||'').trim();
   if(supplied!==LABEL_EDIT_KEY) return res.status(403).json({ok:false,code:'EDIT_KEY_REQUIRED',error:'공용 라벨 관리코드가 필요합니다.'});
   next();
 }
-function cleanLabelV31(raw={}){
-  const text=(v,max=2000)=>String(v??'').slice(0,max);
-  const num=(v,f)=>{const n=Number(v);return Number.isFinite(n)?n:f};
-  return {
-    id:text(raw.id,100), productNumber:text(raw.productNumber,120).trim(), barcode:text(raw.barcode,160).trim(),
-    productName:text(raw.productName,1000), optionText:text(raw.optionText,1000), material:text(raw.material,1000),
-    importer:text(raw.importer,1000), address:text(raw.address,1500), phone:text(raw.phone,300), warning:text(raw.warning,2000),
-    age:text(raw.age,500), country:text(raw.country,500), labelWidth:num(raw.labelWidth,50), labelHeight:num(raw.labelHeight,60),
-    titleFont:num(raw.titleFont,18), bodyFont:num(raw.bodyFont,14), barcodeHeight:num(raw.barcodeHeight,16),
-    barcodeTextFont:num(raw.barcodeTextFont,12), madeInFont:num(raw.madeInFont,8),
-    createdAt:text(raw.createdAt,100), updatedAt:text(raw.updatedAt,100)
-  };
+function labelIdentityV32(x){
+  const bc=String(x.barcode||'').trim().toUpperCase();
+  if(bc) return `B:${bc}`;
+  const pn=String(x.productNumber||'').trim();
+  return pn?`P:${pn}`:'';
 }
-function labelKeyV31(x){ return String(x.barcode||'').trim().toUpperCase() || ('PN:'+String(x.productNumber||'').trim()); }
-function upsertLocalLabelV31(labels,raw){
-  const item=cleanLabelV31(raw); if(!item.barcode&&!item.productNumber) throw new Error('바코드 또는 상품번호가 필요합니다.');
+function mergeLabelsV32(groups){
+  const map=new Map();
+  for(const arr of groups){
+    for(const raw of (Array.isArray(arr)?arr:[])){
+      const x=cleanLabelV32(raw), key=labelIdentityV32(x);
+      if(!key) continue;
+      const old=map.get(key);
+      if(!old || String(x.updatedAt||'') >= String(old.updatedAt||'')) map.set(key,x);
+    }
+  }
+  return [...map.values()].sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
+}
+function upsertLocalLabelV32(labels,raw){
+  const item=cleanLabelV32(raw); if(!item.barcode&&!item.productNumber) throw new Error('바코드 또는 상품번호가 필요합니다.');
   let idx=-1;
   if(item.id) idx=labels.findIndex(x=>String(x.id||'')===item.id);
   if(idx<0&&item.barcode) idx=labels.findIndex(x=>String(x.barcode||'').trim().toUpperCase()===item.barcode.toUpperCase());
@@ -841,8 +880,31 @@ function upsertLocalLabelV31(labels,raw){
   if(idx>=0){ item.id=labels[idx].id||item.id||`lbl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`; labels[idx]={...labels[idx],...item,updatedAt:now}; return labels[idx]; }
   item.id=item.id||`lbl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`; item.createdAt=item.createdAt||now; item.updatedAt=now; labels.push(item); return item;
 }
-function toDbLabelV31(x){
-  const c=cleanLabelV31(x); return {
+function localLabelCandidatesV32(){
+  const c=[
+    process.env.SHARED_LABELS_PATH || '',
+    SHARED_LABELS_PATH,
+    path.join(__dirname,'data','shared-barcode','labels.json'),
+    path.join(__dirname,'shared-barcode','labels.json'),
+    path.join(__dirname,'data','shared-labels.json'),
+    path.join(__dirname,'shared-labels.json'),
+    path.join(path.dirname(COUPANG_SHARED_DIR),'shared-barcode','labels.json'),
+    path.join(path.dirname(COUPANG_SHARED_DIR),'shared-labels.json'),
+    path.join(COUPANG_SHARED_DIR,'shared-barcode','labels.json')
+  ].filter(Boolean).map(p=>path.resolve(p));
+  return [...new Set(c)];
+}
+function localLabelSourcesV32(){
+  return localLabelCandidatesV32().map((filePath,i)=>({filePath,labels:readActualLabelFileV32(filePath),index:i})).filter(x=>x.labels.length>0);
+}
+function bestLocalLabelStoreV32(){
+  const sources=localLabelSourcesV32().sort((a,b)=>b.labels.length-a.labels.length || a.index-b.index);
+  if(sources.length) return sources[0];
+  return {filePath:path.resolve(SHARED_LABELS_PATH),labels:[],index:999};
+}
+
+function toDbLabelV32(x){
+  const c=cleanLabelV32(x); return {
     product_number:c.productNumber, barcode:c.barcode, product_name:c.productName, option_text:c.optionText,
     material:c.material, importer:c.importer, address:c.address, phone:c.phone, warning:c.warning, age:c.age, country:c.country,
     label_width:c.labelWidth, label_height:c.labelHeight, title_font:c.titleFont, body_font:c.bodyFont,
@@ -850,83 +912,130 @@ function toDbLabelV31(x){
     updated_at:new Date().toISOString()
   };
 }
-function fromDbLabelV31(r={}){ return {
-  id:r.id||'', productNumber:r.product_number||'', barcode:r.barcode||'', productName:r.product_name||'', optionText:r.option_text||'',
-  material:r.material||'', importer:r.importer||'', address:r.address||'', phone:r.phone||'', warning:r.warning||'', age:r.age||'', country:r.country||'',
-  labelWidth:Number(r.label_width??50), labelHeight:Number(r.label_height??60), titleFont:Number(r.title_font??18), bodyFont:Number(r.body_font??14),
-  barcodeHeight:Number(r.barcode_height??16), barcodeTextFont:Number(r.barcode_text_font??12), madeInFont:Number(r.made_in_font??8),
-  createdAt:r.created_at||'', updatedAt:r.updated_at||''
-}; }
-async function supabaseV31(pathname,opts={}){
+function fromDbLabelV32(r={}){ return cleanLabelV32(r); }
+async function supabaseV32(pathname,opts={}){
   const headers={apikey:SUPABASE_SERVICE_KEY,Authorization:`Bearer ${SUPABASE_SERVICE_KEY}`,'Content-Type':'application/json',...(opts.headers||{})};
   const r=await fetch(`${SUPABASE_URL}/rest/v1/${pathname}`,{...opts,headers});
   const text=await r.text(); let data=null; try{data=text?JSON.parse(text):null}catch(_){data=text}
   if(!r.ok) throw new Error(`Supabase ${r.status}: ${typeof data==='string'?data:(data?.message||JSON.stringify(data))}`);
-  return {data,headers:r.headers,status:r.status};
+  return {data,status:r.status};
 }
-async function listSupabaseLabelsV31(){
-  const q='shared_labels?select=*&order=updated_at.desc&limit=20000';
-  const {data}=await supabaseV31(q,{method:'GET'}); return (Array.isArray(data)?data:[]).map(fromDbLabelV31);
+async function listSupabaseLabelsV32(){
+  const {data}=await supabaseV32('shared_labels?select=*&order=updated_at.desc&limit=20000',{method:'GET'});
+  return (Array.isArray(data)?data:[]).map(fromDbLabelV32);
 }
-async function findSupabaseLabelV31(item){
+async function findSupabaseLabelV32(item){
   if(item.id && /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(item.id)){
-    const {data}=await supabaseV31(`shared_labels?select=*&id=eq.${encodeURIComponent(item.id)}&limit=1`,{method:'GET'}); if(data?.[0])return data[0];
+    const {data}=await supabaseV32(`shared_labels?select=*&id=eq.${encodeURIComponent(item.id)}&limit=1`,{method:'GET'}); if(data?.[0])return data[0];
   }
-  if(item.barcode){ const {data}=await supabaseV31(`shared_labels?select=*&barcode=eq.${encodeURIComponent(item.barcode)}&limit=1`,{method:'GET'}); if(data?.[0])return data[0]; }
-  if(item.productNumber){ const {data}=await supabaseV31(`shared_labels?select=*&product_number=eq.${encodeURIComponent(item.productNumber)}&limit=1`,{method:'GET'}); if(data?.[0])return data[0]; }
+  if(item.barcode){ const {data}=await supabaseV32(`shared_labels?select=*&barcode=eq.${encodeURIComponent(item.barcode)}&limit=1`,{method:'GET'}); if(data?.[0])return data[0]; }
+  if(item.productNumber){ const {data}=await supabaseV32(`shared_labels?select=*&product_number=eq.${encodeURIComponent(item.productNumber)}&limit=1`,{method:'GET'}); if(data?.[0])return data[0]; }
   return null;
 }
-async function upsertSupabaseLabelV31(raw){
-  const item=cleanLabelV31(raw); if(!item.barcode&&!item.productNumber)throw new Error('바코드 또는 상품번호가 필요합니다.');
-  const existing=await findSupabaseLabelV31(item); const row=toDbLabelV31(item);
+async function upsertSupabaseLabelV32(raw){
+  const item=cleanLabelV32(raw); if(!item.barcode&&!item.productNumber)throw new Error('바코드 또는 상품번호가 필요합니다.');
+  const existing=await findSupabaseLabelV32(item), row=toDbLabelV32(item);
   if(existing?.id){
-    const {data}=await supabaseV31(`shared_labels?id=eq.${encodeURIComponent(existing.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify(row)});
-    return fromDbLabelV31(data?.[0]||{...existing,...row});
+    const {data}=await supabaseV32(`shared_labels?id=eq.${encodeURIComponent(existing.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify(row)});
+    return fromDbLabelV32(data?.[0]||{...existing,...row});
   }
-  const {data}=await supabaseV31('shared_labels',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify(row)});
-  return fromDbLabelV31(data?.[0]||row);
+  const {data}=await supabaseV32('shared_labels',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify(row)});
+  return fromDbLabelV32(data?.[0]||row);
 }
 
-app.get('/api/shared-labels', async (req,res)=>{
+async function resolveSharedLabelsV32(){
+  let supabaseError='';
+  if(SUPABASE_LABELS_ENABLED){
+    try{
+      const labels=await listSupabaseLabelsV32();
+      if(labels.length) return {labels,storage:'supabase',permanent:true,supabaseConfigured:true,supabaseError:'',localFallback:false};
+    }catch(err){ supabaseError=err.message; console.warn('[공용 라벨] Supabase 조회 실패, 기존 라벨 파일 확인:',err.message); }
+  }
+  const sources=localLabelSourcesV32();
+  const labels=mergeLabelsV32(sources.map(s=>s.labels));
+  return {labels,storage:labels.length?'existing-label-file':'empty',permanent:false,supabaseConfigured:SUPABASE_LABELS_ENABLED,supabaseError,localFallback:labels.length>0};
+}
+
+app.get('/api/shared-labels',async(req,res)=>{
   try{
-    const labels=SUPABASE_LABELS_ENABLED ? await listSupabaseLabelsV31() : readSharedArrayV31(SHARED_LABELS_PATH).sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
-    res.set('Cache-Control','no-store'); res.json({ok:true,labels,count:labels.length,editKeyRequired:!!LABEL_EDIT_KEY,permanent:SUPABASE_LABELS_ENABLED,storage:SUPABASE_LABELS_ENABLED?'supabase':'server-json'});
-  }catch(err){ console.error('[공용 라벨] 조회 실패',err); res.status(500).json({ok:false,error:err.message,storage:SUPABASE_LABELS_ENABLED?'supabase':'server-json'}); }
+    const result=await resolveSharedLabelsV32();
+    res.set('Cache-Control','no-store');
+    res.json({ok:true,labels:result.labels,count:result.labels.length,editKeyRequired:!!LABEL_EDIT_KEY,permanent:result.permanent,storage:result.storage,supabaseConfigured:result.supabaseConfigured,localFallback:result.localFallback});
+  }catch(err){console.error('[공용 라벨] 조회 실패',err);res.status(500).json({ok:false,error:err.message})}
 });
-app.post('/api/shared-labels',requireLabelEditKeyV31,async(req,res)=>{
+
+app.get('/api/shared-labels-status',async(req,res)=>{
   try{
-    let label,count;
-    if(SUPABASE_LABELS_ENABLED){ label=await upsertSupabaseLabelV31(req.body||{}); count=(await listSupabaseLabelsV31()).length; }
-    else{ const labels=readSharedArrayV31(SHARED_LABELS_PATH); label=upsertLocalLabelV31(labels,req.body||{}); writeSharedArrayV31(SHARED_LABELS_PATH,labels); count=labels.length; }
-    res.json({ok:true,label,count,permanent:SUPABASE_LABELS_ENABLED});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.delete('/api/shared-labels/:id',requireLabelEditKeyV31,async(req,res)=>{
-  try{
-    const id=String(req.params.id||'');
-    if(SUPABASE_LABELS_ENABLED){ await supabaseV31(`shared_labels?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{Prefer:'return=minimal'}}); const count=(await listSupabaseLabelsV31()).length; return res.json({ok:true,count}); }
-    const labels=readSharedArrayV31(SHARED_LABELS_PATH),next=labels.filter(x=>String(x.id||'')!==id); if(next.length===labels.length)return res.status(404).json({ok:false,error:'삭제할 공용 라벨을 찾지 못했습니다.'}); writeSharedArrayV31(SHARED_LABELS_PATH,next); res.json({ok:true,count:next.length});
+    let supabaseCount=null,supabaseError='';
+    if(SUPABASE_LABELS_ENABLED){try{supabaseCount=(await listSupabaseLabelsV32()).length}catch(err){supabaseError=err.message}}
+    const sources=localLabelCandidatesV32().map((p,i)=>({name:`라벨저장소${i+1}`,exists:fs.existsSync(p),count:readActualLabelFileV32(p).length})).filter(x=>x.exists||x.count);
+    const resolved=await resolveSharedLabelsV32();
+    res.set('Cache-Control','no-store');
+    res.json({ok:true,count:resolved.labels.length,storage:resolved.storage,permanent:resolved.permanent,supabaseConfigured:SUPABASE_LABELS_ENABLED,supabaseCount,supabaseError,localSources:sources});
   }catch(err){res.status(500).json({ok:false,error:err.message})}
 });
-app.get('/api/shared-labels-backup',async(req,res)=>{
-  try{ const labels=SUPABASE_LABELS_ENABLED?await listSupabaseLabelsV31():readSharedArrayV31(SHARED_LABELS_PATH); const payload=JSON.stringify({exportedAt:new Date().toISOString(),storage:SUPABASE_LABELS_ENABLED?'supabase':'server-json',labels},null,2); const ymd=new Date().toISOString().slice(0,10).replace(/-/g,''); res.set('Content-Type','application/json; charset=utf-8'); res.set('Content-Disposition',`attachment; filename="shared-labels-${ymd}.json"`); res.send(payload); }catch(err){res.status(500).json({ok:false,error:err.message})}
-});
-app.post('/api/shared-labels-restore',requireLabelEditKeyV31,async(req,res)=>{
-  try{ const incoming=Array.isArray(req.body)?req.body:req.body?.labels; if(!Array.isArray(incoming)||!incoming.length)return res.status(400).json({ok:false,error:'복원할 라벨 데이터가 없습니다.'}); let restored=0;
-    if(SUPABASE_LABELS_ENABLED){ for(const raw of incoming.slice(0,20000)){try{await upsertSupabaseLabelV31(raw);restored++}catch(e){console.warn('[라벨 복원]',e.message)}} const count=(await listSupabaseLabelsV31()).length; return res.json({ok:true,restored,count,permanent:true}); }
-    const labels=readSharedArrayV31(SHARED_LABELS_PATH); for(const raw of incoming.slice(0,20000)){try{upsertLocalLabelV31(labels,raw);restored++}catch(_){}} writeSharedArrayV31(SHARED_LABELS_PATH,labels); res.json({ok:true,restored,count:labels.length,permanent:false});
+
+app.post('/api/shared-labels',requireLabelEditKeyV32,async(req,res)=>{
+  try{
+    let label,count,storage,permanent=false;
+    if(SUPABASE_LABELS_ENABLED){
+      try{ label=await upsertSupabaseLabelV32(req.body||{}); count=(await listSupabaseLabelsV32()).length; storage='supabase'; permanent=true; return res.json({ok:true,label,count,storage,permanent}); }
+      catch(err){ console.warn('[공용 라벨] Supabase 저장 실패, 기존 라벨 파일에 저장:',err.message); }
+    }
+    const store=bestLocalLabelStoreV32(), labels=store.labels.slice(); label=upsertLocalLabelV32(labels,req.body||{}); writeLabelFileV32(store.filePath,labels); count=labels.length; storage='existing-label-file';
+    res.json({ok:true,label,count,storage,permanent});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
 
-// 상품 기준목록은 라벨과 완전히 분리합니다.
-app.get('/api/product-catalog', (req,res)=>{
-  const barcode=String(req.query.barcode||'').trim().toUpperCase(); if(!barcode)return res.status(400).json({ok:false,error:'barcode가 필요합니다.'});
-  const items=readSharedArrayV31(PRODUCT_CATALOG_PATH); const item=items.find(x=>String(x.barcode||'').trim().toUpperCase()===barcode)||null; res.set('Cache-Control','no-store');res.json({ok:true,item});
+app.delete('/api/shared-labels/:id',requireLabelEditKeyV32,async(req,res)=>{
+  try{
+    const id=String(req.params.id||'');
+    if(SUPABASE_LABELS_ENABLED){
+      try{
+        const current=await listSupabaseLabelsV32();
+        if(current.length){await supabaseV32(`shared_labels?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{Prefer:'return=minimal'}});return res.json({ok:true,count:(await listSupabaseLabelsV32()).length,storage:'supabase'})}
+      }catch(err){console.warn('[공용 라벨] Supabase 삭제 경로 사용 불가:',err.message)}
+    }
+    let removed=false,total=0;
+    for(const src of localLabelSourcesV32()){
+      const next=src.labels.filter(x=>String(x.id||'')!==id);
+      if(next.length<src.labels.length){writeLabelFileV32(src.filePath,next);removed=true}
+      total+=next.length;
+    }
+    if(!removed)return res.status(404).json({ok:false,error:'삭제할 공용 라벨을 찾지 못했습니다.'});
+    res.json({ok:true,count:total,storage:'existing-label-file'});
+  }catch(err){res.status(500).json({ok:false,error:err.message})}
 });
-app.get('/api/product-catalog-status',(req,res)=>{const items=readSharedArrayV31(PRODUCT_CATALOG_PATH);res.set('Cache-Control','no-store');res.json({ok:true,count:items.length,permanent:false,storage:'server-json'})});
-app.post('/api/product-catalog/import',requireLabelEditKeyV31,(req,res)=>{
-  try{const incoming=req.body?.items;if(!Array.isArray(incoming))return res.status(400).json({ok:false,error:'items 배열이 필요합니다.'});const items=readSharedArrayV31(PRODUCT_CATALOG_PATH),map=new Map(items.map(x=>[String(x.barcode||'').trim().toUpperCase(),x]));let imported=0;for(const raw of incoming.slice(0,5000)){const barcode=String(raw?.barcode||'').trim().toUpperCase();if(!barcode)continue;map.set(barcode,{...(map.get(barcode)||{}),productNumber:String(raw?.productNumber||''),barcode,productName:String(raw?.productName||''),source:String(raw?.source||req.body?.source||''),updatedAt:new Date().toISOString()});imported++}const next=[...map.values()];writeSharedArrayV31(PRODUCT_CATALOG_PATH,next);res.json({ok:true,imported,count:next.length})}catch(err){res.status(400).json({ok:false,error:err.message})}
+
+app.get('/api/shared-labels-backup',async(req,res)=>{
+  try{
+    const result=await resolveSharedLabelsV32();
+    const payload=JSON.stringify({exportedAt:new Date().toISOString(),storage:result.storage,labels:result.labels},null,2),ymd=new Date().toISOString().slice(0,10).replace(/-/g,'');
+    res.set('Content-Type','application/json; charset=utf-8');res.set('Content-Disposition',`attachment; filename="shared-labels-${ymd}.json"`);res.send(payload);
+  }catch(err){res.status(500).json({ok:false,error:err.message})}
 });
+
+app.post('/api/shared-labels-restore',requireLabelEditKeyV32,async(req,res)=>{
+  try{
+    const incoming=Array.isArray(req.body)?req.body:req.body?.labels;
+    if(!Array.isArray(incoming)||!incoming.length)return res.status(400).json({ok:false,error:'복원할 라벨 데이터가 없습니다.'});
+    const valid=incoming.filter(looksLikeActualSavedLabelV32); if(!valid.length)return res.status(400).json({ok:false,error:'실제 라벨 저장 데이터가 없습니다. 상품 기준정보는 라벨로 복원하지 않습니다.'});
+    let restored=0;
+    if(SUPABASE_LABELS_ENABLED){
+      try{for(const raw of valid.slice(0,20000)){try{await upsertSupabaseLabelV32(raw);restored++}catch(e){console.warn('[라벨 복원]',e.message)}}return res.json({ok:true,restored,count:(await listSupabaseLabelsV32()).length,permanent:true,storage:'supabase'})}catch(err){console.warn('[공용 라벨] Supabase 복원 실패, 로컬 라벨 저장소 사용:',err.message)}
+    }
+    const store=bestLocalLabelStoreV32(),labels=store.labels.slice();for(const raw of valid.slice(0,20000)){try{upsertLocalLabelV32(labels,raw);restored++}catch(_){}}writeLabelFileV32(store.filePath,labels);res.json({ok:true,restored,count:labels.length,permanent:false,storage:'existing-label-file'});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+
+// 상품 기준목록은 라벨과 완전히 분리합니다. 라벨 복구에는 사용하지 않습니다.
+function readCatalogV32(){
+  try{if(!fs.existsSync(PRODUCT_CATALOG_PATH))return[];const p=JSON.parse(fs.readFileSync(PRODUCT_CATALOG_PATH,'utf8')||'[]');return Array.isArray(p)?p:(Array.isArray(p?.items)?p.items:[])}catch(_){return[]}
+}
+function writeCatalogV32(arr){ensureSharedLabelDirV32(PRODUCT_CATALOG_PATH);const t=`${PRODUCT_CATALOG_PATH}.tmp-${process.pid}-${Date.now()}`;fs.writeFileSync(t,JSON.stringify(arr,null,2),'utf8');fs.renameSync(t,PRODUCT_CATALOG_PATH)}
+app.get('/api/product-catalog',(req,res)=>{const barcode=String(req.query.barcode||'').trim().toUpperCase();if(!barcode)return res.status(400).json({ok:false,error:'barcode가 필요합니다.'});const items=readCatalogV32();const item=items.find(x=>String(x.barcode||'').trim().toUpperCase()===barcode)||null;res.set('Cache-Control','no-store');res.json({ok:true,item})});
+app.get('/api/product-catalog-status',(req,res)=>{const items=readCatalogV32();res.set('Cache-Control','no-store');res.json({ok:true,count:items.length,permanent:false,storage:'server-json'})});
+app.post('/api/product-catalog/import',requireLabelEditKeyV32,(req,res)=>{try{const incoming=req.body?.items;if(!Array.isArray(incoming))return res.status(400).json({ok:false,error:'items 배열이 필요합니다.'});const items=readCatalogV32(),map=new Map(items.map(x=>[String(x.barcode||'').trim().toUpperCase(),x]));let imported=0;for(const raw of incoming.slice(0,5000)){const barcode=String(raw?.barcode||'').trim().toUpperCase();if(!barcode)continue;map.set(barcode,{...(map.get(barcode)||{}),productNumber:String(raw?.productNumber||''),barcode,productName:String(raw?.productName||''),source:String(raw?.source||req.body?.source||''),updatedAt:new Date().toISOString()});imported++}const next=[...map.values()];writeCatalogV32(next);res.json({ok:true,imported,count:next.length})}catch(err){res.status(400).json({ok:false,error:err.message})}});
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, keyConfigured: !!UNIPASS_KEY, aiConfigured: !!ANTHROPIC_KEY });
