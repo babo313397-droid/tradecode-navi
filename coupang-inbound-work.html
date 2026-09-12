@@ -3087,5 +3087,302 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 // ===== /v33 =====
 </script>
 
+
+<script id="v34-box-start-number-and-large-capture">
+// ===== v34: box start number + compact missing ranges + 2x larger capture =====
+(function(){
+  let boxStartNoV34=1;
+  function normText(v){return String(v??'').trim();}
+  function parsePositiveIntV34(v, fallback=1){
+    const n=parseInt(String(v??'').replace(/[^0-9]/g,''),10);
+    return Number.isFinite(n)&&n>0?n:fallback;
+  }
+  function getBoxStartNoV34(){return Math.max(1, parsePositiveIntV34(boxStartNoV34,1));}
+  window.getBoxStartNoV34=getBoxStartNoV34;
+
+  function ensureStartNoControlV34(){
+    const top=document.querySelector('#palletInline .pallet-inline-top');
+    const oldBtn=document.getElementById('inlineResetBtn');
+    if(!top)return null;
+    let wrap=document.getElementById('inlineStartBoxNoWrap');
+    if(!wrap){
+      wrap=document.createElement('label');
+      wrap.id='inlineStartBoxNoWrap';
+      wrap.className='inline-startno-wrap';
+      wrap.innerHTML='박스 시작번호<input id="inlineStartBoxNo" type="number" min="1" step="1" placeholder="1 또는 301">';
+      if(oldBtn) oldBtn.replaceWith(wrap); else top.appendChild(wrap);
+      const input=wrap.querySelector('input');
+      input.addEventListener('input',()=>setBoxStartNoV34(input.value,{save:true,rerender:true}));
+      input.addEventListener('change',()=>setBoxStartNoV34(input.value,{save:true,rerender:true}));
+    }
+    const input=document.getElementById('inlineStartBoxNo');
+    if(input && String(input.value||'')!==String(getBoxStartNoV34())) input.value=String(getBoxStartNoV34());
+    return wrap;
+  }
+
+  function updateInlineBoxNoPlaceholderV34(){
+    const input=document.getElementById('inlineBoxNo');
+    if(!input) return;
+    const start=getBoxStartNoV34();
+    input.placeholder=`비우면 자동 (${start}번부터)`;
+  }
+
+  function setBoxStartNoV34(v,{save=true,rerender=true}={}){
+    boxStartNoV34=parsePositiveIntV34(v,1);
+    const input=document.getElementById('inlineStartBoxNo');
+    if(input && String(input.value||'')!==String(boxStartNoV34)) input.value=String(boxStartNoV34);
+    updateInlineBoxNoPlaceholderV34();
+    try{
+      if(boxDraft && boxDraft.mode==='new' && !normText(boxDraft.boxNo)){
+        const ws=(typeof currentWorkSheet==='function' && currentWorkSheet()) || (workbook?.getWorksheet?.(boxDraft.sheetName));
+        if(ws && typeof ensurePalletState==='function' && typeof nextAutoBoxNo==='function') boxDraft.autoStart=nextAutoBoxNo(ensurePalletState(ws));
+      }
+    }catch(_){ }
+    if(rerender){
+      try{ if(typeof renderInlineDraft==='function' && document.getElementById('palletInline')?.style.display!=='none' && boxDraft) renderInlineDraft(); }catch(_){ }
+      try{ updateMissingBoxAlertV34(); }catch(_){ }
+    }
+    if(save && typeof schedulePersistentState==='function' && workbook) schedulePersistentState(60);
+  }
+  window.setBoxStartNoV34=setBoxStartNoV34;
+
+  const prevPersistentStatePayload=(typeof persistentStatePayload==='function')?persistentStatePayload:null;
+  if(prevPersistentStatePayload){
+    persistentStatePayload=function(){
+      const payload=prevPersistentStatePayload();
+      payload.boxStartNoV34=getBoxStartNoV34();
+      return payload;
+    };
+  }
+  const prevApplyRecoveredState=(typeof applyRecoveredState==='function')?applyRecoveredState:null;
+  if(prevApplyRecoveredState){
+    applyRecoveredState=function(saved){
+      const ret=prevApplyRecoveredState.apply(this,arguments);
+      setBoxStartNoV34(saved?.boxStartNoV34||1,{save:false,rerender:true});
+      ensureStartNoControlV34();
+      return ret;
+    };
+  }
+  const prevClearWorkspaceForProjectV18=(typeof clearWorkspaceForProjectV18==='function')?clearWorkspaceForProjectV18:null;
+  if(prevClearWorkspaceForProjectV18){
+    clearWorkspaceForProjectV18=function(){
+      const ret=prevClearWorkspaceForProjectV18.apply(this,arguments);
+      setBoxStartNoV34(1,{save:false,rerender:false});
+      ensureStartNoControlV34();
+      return ret;
+    };
+  }
+
+  const prevNextAutoBoxNo=(typeof nextAutoBoxNo==='function')?nextAutoBoxNo:null;
+  if(prevNextAutoBoxNo){
+    nextAutoBoxNo=function(state){
+      let max=getBoxStartNoV34()-1;
+      for(const g of (state?.completed||[])){
+        const nums=String(g?.boxNo||'').match(/\d+/g)||[];
+        for(const x of nums){ const n=Number(x)||0; if(n>max) max=n; }
+      }
+      return max+1;
+    };
+  }
+
+  function v34AddBoxLabelToSet(raw,set){
+    const text=String(raw??'').trim();
+    if(!text) return;
+    const re=/(\d+)\s*(?:~|-|–|—|~~|〜)\s*(\d+)|(\d+)/g;
+    let m;
+    while((m=re.exec(text))){
+      if(m[1]&&m[2]){
+        let a=Number(m[1]), b=Number(m[2]);
+        if(!Number.isFinite(a)||!Number.isFinite(b)) continue;
+        if(a>b){const t=a;a=b;b=t;}
+        if(b-a>10000) b=a+10000;
+        for(let n=a;n<=b;n++) if(n>0) set.add(n);
+      }else if(m[3]){
+        const n=Number(m[3]); if(Number.isFinite(n)&&n>0) set.add(n);
+      }
+    }
+  }
+  function v34CollectUsedBoxNumbers(){
+    const used=new Set();
+    let sheets=[];
+    try{ sheets=(typeof visibleWorkSheets==='function')?visibleWorkSheets():((workbook?.worksheets)||[]); }catch(_){ sheets=(workbook?.worksheets)||[]; }
+    for(const ws of sheets){
+      try{
+        if(typeof isPackWorkSheet==='function' && !isPackWorkSheet(ws)) continue;
+        const st=(typeof palletStates!=='undefined' && palletStates?.get)?palletStates.get(ws.name):null;
+        if(st && Array.isArray(st.completed)){
+          for(const g of st.completed) v34AddBoxLabelToSet(g?.boxNo,used);
+          continue;
+        }
+        const start=(typeof generationStartRow==='function')?generationStartRow(ws):1;
+        const end=Math.max(start, Number(ws?.rowCount)||start);
+        for(let r=start;r<=end;r++){
+          let value='';
+          try{ value=(typeof displayText==='function')?displayText(ws.getRow(r).getCell(16)):ws.getRow(r).getCell(16).value; }catch(_){ value=''; }
+          if(value!==null && value!==undefined && String(value).trim()) v34AddBoxLabelToSet(value,used);
+        }
+      }catch(e){ console.warn('[v34 박스번호 확인]',ws?.name,e); }
+    }
+    return used;
+  }
+  function v34MissingList(){
+    const used=v34CollectUsedBoxNumbers();
+    if(!used.size) return [];
+    let max=0; for(const n of used) if(n>max) max=n;
+    const start=getBoxStartNoV34();
+    if(max<start) return [];
+    const missing=[];
+    for(let n=start;n<=max;n++) if(!used.has(n)) missing.push(n);
+    return missing;
+  }
+  function v34CompressRanges(list){
+    if(!list.length) return [];
+    const ranges=[];
+    let s=list[0], prev=list[0];
+    for(let i=1;i<list.length;i++){
+      const cur=list[i];
+      if(cur===prev+1){ prev=cur; continue; }
+      ranges.push(s===prev?String(s):`${s}~${prev}`);
+      s=prev=cur;
+    }
+    ranges.push(s===prev?String(s):`${s}~${prev}`);
+    return ranges;
+  }
+  function v34FormatMissing(list){
+    if(!list.length) return '';
+    const ranges=v34CompressRanges(list);
+    const limit=18;
+    const shown=ranges.slice(0,limit).join(', ');
+    const extra=ranges.length>limit?` 외 ${ranges.length-limit}구간`:'';
+    return `박스번호 누락: ${shown}${extra}`;
+  }
+  function updateMissingBoxAlertV34(){
+    const el=document.getElementById('missingBoxNosV33'); if(!el) return;
+    try{
+      const missing=v34MissingList();
+      if(!missing.length){ el.textContent=''; el.style.display='none'; el.title='현재 선적 작업의 박스번호 누락이 없습니다.'; return; }
+      const ranges=v34CompressRanges(missing);
+      el.textContent=v34FormatMissing(missing);
+      el.style.display='inline';
+      el.title=`현재 선적 작업 전체 누락 박스번호 (${missing.length}개): ${ranges.join(', ')}`;
+    }catch(e){ console.warn('[v34 누락 박스번호 표시]',e); el.style.display='none'; }
+  }
+  window.updateMissingBoxAlertV34=updateMissingBoxAlertV34;
+  window.updateMissingBoxAlertV33=updateMissingBoxAlertV34;
+
+  const prevRenderInlineDraft=(typeof renderInlineDraft==='function')?renderInlineDraft:null;
+  if(prevRenderInlineDraft){
+    renderInlineDraft=function(){
+      const ret=prevRenderInlineDraft.apply(this,arguments);
+      ensureStartNoControlV34();
+      updateInlineBoxNoPlaceholderV34();
+      return ret;
+    };
+  }
+  const prevRenderSheet=(typeof renderSheet==='function')?renderSheet:null;
+  if(prevRenderSheet){
+    renderSheet=function(){
+      const ret=prevRenderSheet.apply(this,arguments);
+      ensureStartNoControlV34();
+      updateInlineBoxNoPlaceholderV34();
+      requestAnimationFrame(updateMissingBoxAlertV34);
+      return ret;
+    };
+  }
+  const prevSwitchSheet=(typeof switchSheet==='function')?switchSheet:null;
+  if(prevSwitchSheet){
+    switchSheet=function(){
+      const ret=prevSwitchSheet.apply(this,arguments);
+      ensureStartNoControlV34();
+      updateInlineBoxNoPlaceholderV34();
+      requestAnimationFrame(updateMissingBoxAlertV34);
+      return ret;
+    };
+  }
+  const prevLoadSourceFile=(typeof loadSourceFile==='function')?loadSourceFile:null;
+  if(prevLoadSourceFile){
+    loadSourceFile=async function(){
+      const ret=await prevLoadSourceFile.apply(this,arguments);
+      ensureStartNoControlV34();
+      updateInlineBoxNoPlaceholderV34();
+      requestAnimationFrame(updateMissingBoxAlertV34);
+      return ret;
+    };
+  }
+
+  const prevShowCompletionCapture=(typeof showCompletionCapture==='function')?showCompletionCapture:null;
+  if(prevShowCompletionCapture){
+    showCompletionCapture=function(ws,group){
+      const modal=inlineEl('shareCaptureModal'),preview=inlineEl('shareCapturePreview'),img=inlineEl('shareCaptureImage'),msg=inlineEl('shareCaptureMsg'),title=inlineEl('shareCaptureTitle');
+      if(!modal||!preview) return;
+      if(typeof buildGroupCaptureTable!=='function') return prevShowCompletionCapture.apply(this,arguments);
+      if(shareCaptureObjectUrl){ URL.revokeObjectURL(shareCaptureObjectUrl); shareCaptureObjectUrl=''; }
+      shareCaptureBlob=null;
+      if(img){ img.style.display='none'; img.removeAttribute('src'); }
+      const mini=buildGroupCaptureTable(group); shareCaptureTable=mini;
+      if(title) title.textContent=`${ws.name} · 박스 ${group.boxNo} · ${group.size} · ${group.weight}kg`;
+      preview.innerHTML='';
+      preview.style.width=''; preview.style.height=''; preview.style.overflow='visible';
+      if(mini){
+        const scale=2;
+        mini.style.transform=`scale(${scale})`;
+        mini.style.transformOrigin='top left';
+        mini.style.boxShadow='none';
+        preview.appendChild(mini);
+        requestAnimationFrame(()=>{
+          const w=Math.ceil(mini.scrollWidth*scale);
+          const h=Math.ceil(mini.scrollHeight*scale);
+          preview.style.width=w+'px';
+          preview.style.height=h+'px';
+        });
+      }
+      if(msg) msg.textContent=mini?'완료한 박스 행을 2배 크게 표시했습니다. 이미지 복사를 누르면 PNG로 변환해 복사합니다.':'완료 행 미리보기를 만들지 못했습니다.';
+      modal.classList.add('show'); modal.setAttribute('aria-hidden','false');
+    };
+  }
+
+  const prevEnsureShareCaptureBlob=(typeof ensureShareCaptureBlob==='function')?ensureShareCaptureBlob:null;
+  if(prevEnsureShareCaptureBlob){
+    ensureShareCaptureBlob=async function(){
+      if(shareCaptureBlob) return shareCaptureBlob;
+      if(!shareCaptureTable) throw new Error('preview unavailable');
+      if(typeof html2canvas!=='function') throw new Error('capture library unavailable');
+      const stage=document.createElement('div');
+      stage.className='share-capture-stage';
+      stage.style.cssText+=';padding:0;background:#fff;';
+      const table=shareCaptureTable.cloneNode(true);
+      table.style.transform='none'; table.style.transformOrigin='top left';
+      stage.appendChild(table); document.body.appendChild(stage);
+      try{
+        const width=Math.ceil(table.scrollWidth), height=Math.ceil(table.scrollHeight);
+        const scale=Math.max(2, (window.devicePixelRatio||1)*2);
+        const canvas=await html2canvas(table,{backgroundColor:'#ffffff',scale,useCORS:false,logging:false,width,height,windowWidth:width,windowHeight:height,scrollX:0,scrollY:0});
+        shareCaptureBlob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+        if(!shareCaptureBlob) throw new Error('png creation failed');
+        return shareCaptureBlob;
+      } finally { stage.remove(); }
+    };
+  }
+
+  const style=document.createElement('style');
+  style.textContent=`
+    #missingBoxNosV33{font-size:11px!important;margin-left:10px;max-width:calc(100vw - 420px);overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+    .inline-startno-wrap{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#234534;white-space:nowrap}
+    .inline-startno-wrap input{width:92px;height:30px;border:1px solid #9bb3a1;border-radius:4px;padding:0 8px;font:inherit;background:#fff}
+    .share-dialog{width:min(98vw,1700px)!important}
+    .share-body{padding:14px!important}
+    .share-preview-wrap{padding:10px;overflow:auto}
+    #shareCapturePreview{transform:none!important;transform-origin:top left;display:block}
+  `;
+  document.head.appendChild(style);
+
+  ensureStartNoControlV34();
+  updateInlineBoxNoPlaceholderV34();
+  setInterval(updateMissingBoxAlertV34,500);
+  requestAnimationFrame(updateMissingBoxAlertV34);
+})();
+// ===== /v34 =====
+</script>
+
 </body>
 </html>
