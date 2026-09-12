@@ -31,7 +31,7 @@ const { getExchangeRate } = require('./lib/exchangeRate');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '20kb' })); // 댓글 등 POST/PUT/DELETE 본문(JSON) 파싱용
+app.use(express.json({ limit: '5mb' })); // 공용 라벨/상품목록/댓글 등 JSON 파싱용
 app.use(express.static(path.join(__dirname)));
 
 const PORT = process.env.PORT || 4000;
@@ -776,9 +776,212 @@ app.get('/coupang-inbound-work', (req, res) => {
   res.sendFile(path.join(__dirname, 'coupang-inbound-work.html'));
 });
 
+
+// =====================================================================
+// 공용 바코드 라벨 보관함 + 공용 상품 기준목록
+// barcode-label.html 이 사용하는 API. 서버 JSON 파일에 저장하여 모든 PC가 공유합니다.
+// =====================================================================
+const SHARED_LABEL_DIR = process.env.SHARED_LABEL_DIR || path.join(path.dirname(COUPANG_SHARED_DIR), 'shared-barcode');
+const SHARED_LABELS_PATH = path.join(SHARED_LABEL_DIR, 'labels.json');
+const PRODUCT_CATALOG_PATH = path.join(SHARED_LABEL_DIR, 'product-catalog.json');
+const LABEL_EDIT_KEY = String(process.env.SHARED_LABEL_EDIT_KEY || process.env.LABEL_EDIT_KEY || '').trim();
+
+function ensureSharedLabelDir() {
+  fs.mkdirSync(SHARED_LABEL_DIR, { recursive: true });
+}
+function readSharedArray(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return [];
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8') || '[]');
+    return Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.items) ? parsed.items : []);
+  } catch (err) {
+    console.error('[공용 라벨] 파일 읽기 실패:', filePath, err.message);
+    return [];
+  }
+}
+function writeSharedArray(filePath, arr) {
+  ensureSharedLabelDir();
+  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, JSON.stringify(arr, null, 2), 'utf8');
+  fs.renameSync(tmp, filePath);
+}
+function requireLabelEditKey(req, res, next) {
+  if (!LABEL_EDIT_KEY) return next();
+  const supplied = String(req.get('x-label-edit-key') || '').trim();
+  if (supplied !== LABEL_EDIT_KEY) {
+    return res.status(403).json({ ok: false, code: 'EDIT_KEY_REQUIRED', error: '공용 라벨 관리코드가 필요합니다.' });
+  }
+  next();
+}
+function cleanLabelPayload(raw = {}) {
+  const text = (v, max = 1000) => String(v ?? '').slice(0, max);
+  const num = (v, fallback = 0) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  return {
+    id: text(raw.id, 100),
+    productNumber: text(raw.productNumber, 120).trim(),
+    barcode: text(raw.barcode, 160).trim(),
+    productName: text(raw.productName, 1000),
+    optionText: text(raw.optionText, 1000),
+    material: text(raw.material, 1000),
+    importer: text(raw.importer, 1000),
+    address: text(raw.address, 1500),
+    phone: text(raw.phone, 300),
+    warning: text(raw.warning, 2000),
+    age: text(raw.age, 500),
+    country: text(raw.country, 500),
+    labelWidth: num(raw.labelWidth, 50),
+    labelHeight: num(raw.labelHeight, 60),
+    titleFont: num(raw.titleFont, 18),
+    bodyFont: num(raw.bodyFont, 14),
+    barcodeHeight: num(raw.barcodeHeight, 16),
+    barcodeTextFont: num(raw.barcodeTextFont, 12),
+    madeInFont: num(raw.madeInFont, 8),
+    updatedAt: text(raw.updatedAt, 100) || new Date().toISOString()
+  };
+}
+function labelMatchIndex(labels, item) {
+  if (item.id) {
+    const i = labels.findIndex(x => String(x.id || '') === item.id);
+    if (i >= 0) return i;
+  }
+  const bc = String(item.barcode || '').trim().toUpperCase();
+  if (bc) {
+    const i = labels.findIndex(x => String(x.barcode || '').trim().toUpperCase() === bc);
+    if (i >= 0) return i;
+  }
+  const pn = String(item.productNumber || '').trim();
+  if (pn) return labels.findIndex(x => String(x.productNumber || '').trim() === pn);
+  return -1;
+}
+function upsertSharedLabel(labels, raw) {
+  const item = cleanLabelPayload(raw);
+  if (!item.barcode && !item.productNumber) throw new Error('바코드 또는 상품번호가 필요합니다.');
+  const idx = labelMatchIndex(labels, item);
+  if (idx >= 0) {
+    item.id = labels[idx].id || item.id || `lbl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    labels[idx] = { ...labels[idx], ...item, updatedAt: new Date().toISOString() };
+    return labels[idx];
+  }
+  item.id = item.id || `lbl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  item.createdAt = new Date().toISOString();
+  item.updatedAt = new Date().toISOString();
+  labels.push(item);
+  return item;
+}
+
+app.get('/api/shared-labels', (req, res) => {
+  ensureSharedLabelDir();
+  const labels = readSharedArray(SHARED_LABELS_PATH)
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, labels, count: labels.length, editKeyRequired: !!LABEL_EDIT_KEY, permanent: false, storage: 'server-json' });
+});
+
+app.post('/api/shared-labels', requireLabelEditKey, (req, res) => {
+  try {
+    const labels = readSharedArray(SHARED_LABELS_PATH);
+    const label = upsertSharedLabel(labels, req.body || {});
+    writeSharedArray(SHARED_LABELS_PATH, labels);
+    res.json({ ok: true, label, count: labels.length });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+app.delete('/api/shared-labels/:id', requireLabelEditKey, (req, res) => {
+  try {
+    const id = String(req.params.id || '');
+    const labels = readSharedArray(SHARED_LABELS_PATH);
+    const next = labels.filter(x => String(x.id || '') !== id);
+    if (next.length === labels.length) return res.status(404).json({ ok: false, error: '삭제할 공용 라벨을 찾지 못했습니다.' });
+    writeSharedArray(SHARED_LABELS_PATH, next);
+    res.json({ ok: true, count: next.length });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/shared-labels-backup', (req, res) => {
+  const labels = readSharedArray(SHARED_LABELS_PATH);
+  const payload = JSON.stringify({ exportedAt: new Date().toISOString(), labels }, null, 2);
+  const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  res.set('Content-Type', 'application/json; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="shared-labels-${ymd}.json"`);
+  res.send(payload);
+});
+
+app.post('/api/shared-labels-restore', requireLabelEditKey, (req, res) => {
+  try {
+    const incoming = Array.isArray(req.body) ? req.body : req.body?.labels;
+    if (!Array.isArray(incoming) || !incoming.length) return res.status(400).json({ ok: false, error: '복원할 라벨 데이터가 없습니다.' });
+    const labels = readSharedArray(SHARED_LABELS_PATH);
+    let restored = 0;
+    for (const raw of incoming.slice(0, 20000)) {
+      try { upsertSharedLabel(labels, raw); restored++; } catch (_) {}
+    }
+    writeSharedArray(SHARED_LABELS_PATH, labels);
+    res.json({ ok: true, restored, count: labels.length });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+// 바코드 자동매칭용 공용 상품 기준목록
+function cleanCatalogItem(raw = {}) {
+  return {
+    productNumber: String(raw.productNumber ?? '').slice(0, 120).trim(),
+    barcode: String(raw.barcode ?? '').slice(0, 160).trim().toUpperCase(),
+    productName: String(raw.productName ?? '').slice(0, 1500),
+    source: String(raw.source ?? '').slice(0, 500),
+    updatedAt: new Date().toISOString()
+  };
+}
+app.get('/api/product-catalog', (req, res) => {
+  const barcode = String(req.query.barcode || '').trim().toUpperCase();
+  if (!barcode) return res.status(400).json({ ok: false, error: 'barcode가 필요합니다.' });
+  const items = readSharedArray(PRODUCT_CATALOG_PATH);
+  const item = items.find(x => String(x.barcode || '').trim().toUpperCase() === barcode) || null;
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, item });
+});
+app.get('/api/product-catalog-status', (req, res) => {
+  const items = readSharedArray(PRODUCT_CATALOG_PATH);
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, count: items.length, permanent: false, storage: 'server-json' });
+});
+app.post('/api/product-catalog/import', requireLabelEditKey, (req, res) => {
+  try {
+    const incoming = req.body?.items;
+    if (!Array.isArray(incoming)) return res.status(400).json({ ok: false, error: 'items 배열이 필요합니다.' });
+    const items = readSharedArray(PRODUCT_CATALOG_PATH);
+    const map = new Map(items.map(x => [String(x.barcode || '').trim().toUpperCase(), x]));
+    let imported = 0;
+    for (const raw of incoming.slice(0, 5000)) {
+      const item = cleanCatalogItem({ ...raw, source: raw?.source || req.body?.source || '' });
+      if (!item.barcode) continue;
+      map.set(item.barcode, { ...(map.get(item.barcode) || {}), ...item });
+      imported++;
+    }
+    const next = [...map.values()];
+    writeSharedArray(PRODUCT_CATALOG_PATH, next);
+    res.json({ ok: true, imported, count: next.length });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, keyConfigured: !!UNIPASS_KEY, aiConfigured: !!ANTHROPIC_KEY });
 });
+
+// /api 오타/미구현 주소가 HTML로 내려가 JSON 파싱 오류가 나지 않도록 항상 JSON 404 반환
+app.use('/api', (req, res) => {
+  res.status(404).json({ ok: false, error: `지원하지 않는 API입니다: ${req.method} ${req.originalUrl}` });
+});
+
 
   // =========================================================
 // SEO용 개별 계산기 URL
