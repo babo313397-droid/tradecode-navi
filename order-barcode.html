@@ -86,16 +86,16 @@ td.name{min-width:310px}
   <button class="nav-btn" onclick="location.href='/hs-code'">📊 TradeCode Navi 관세율 계산</button>
   <button class="nav-btn" onclick="location.href='/coupang-margin'">🚀 로켓배송 원가&amp;마진률 계산</button>
   <button class="nav-btn" onclick="location.href='/logistics-cost'">🚚 물류비 계산기</button>
-  <button class="nav-btn" onclick="location.href='/barcode-label.html?v=42'">🏷️ 바코드 라벨 생성기</button>
-  <button class="nav-btn active" onclick="location.href='/order-barcode.html?v=42'">📦 발주 바코드 출력</button>
-  <button class="nav-btn" onclick="location.href='/shipment-list-builder.html?v=42'">📋 선적 리스트 작성</button>
+  <button class="nav-btn" onclick="location.href='/barcode-label.html?v=43'">🏷️ 바코드 라벨 생성기</button>
+  <button class="nav-btn active" onclick="location.href='/order-barcode.html?v=43'">📦 발주 바코드 출력</button>
+  <button class="nav-btn" onclick="location.href='/shipment-list-builder.html?v=43'">📋 선적 리스트 작성</button>
   <button class="nav-btn" onclick="location.href='/detail-maker'">✨ 쿠팡 상세페이지 자동 제작</button>
-  <button class="nav-btn" onclick="location.href='/coupang-inbound-work.html?v=42'">📦 쿠팡 입고 작업</button>
+  <button class="nav-btn" onclick="location.href='/coupang-inbound-work.html?v=43'">📦 쿠팡 입고 작업</button>
 </nav>
 
 <main class="main">
   <h1>📦 발주 바코드 출력</h1>
-  <div class="sub">발주현황 엑셀을 불러오면 저장된 라벨과 자동 매칭하고, 50×30 / 50×60 용지를 따로 일괄 출력하거나 상품별로 원하는 수량만 출력할 수 있습니다.</div>
+  <div class="sub">발주현황 엑셀을 불러오면 공용 보관함에 저장된 라벨과 자동 매칭하고, 50×30 / 50×60 용지를 따로 일괄 출력하거나 상품별로 원하는 수량만 출력할 수 있습니다.</div>
 
   <section class="card">
     <div class="upload-box">
@@ -109,7 +109,7 @@ td.name{min-width:310px}
     <div class="note" style="margin-top:10px;">
       발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 저장 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.
       총 출력 장수가 1회 최대 장수를 넘으면 PDF를 여러 개로 나눠 ZIP 파일로 내려받습니다.<br>
-      <b>현재 작업은 자동 저장</b>되어 다른 메뉴를 다녀와도 그대로 복원됩니다. 새로 시작하려면 <b>초기화</b> 버튼을 누르세요.
+      <b>현재 작업은 자동 저장</b>되어 다른 메뉴를 다녀와도 그대로 복원됩니다. 공용 라벨은 페이지 진입 시 서버에서 다시 불러와 자동 재매칭합니다. 새로 시작하려면 <b>초기화</b> 버튼을 누르세요.
     </div>
     <div class="progress" id="progress"></div>
 
@@ -156,11 +156,13 @@ td.name{min-width:310px}
 
 <script>
 const MM_TO_PX=96/25.4;
-const LABEL_LIBRARY_KEY='tradecodeLabelLibraryV1';
+const LEGACY_LABEL_LIBRARY_KEY='tradecodeLabelLibraryV1';
+const SHARED_LABEL_CACHE_KEY='tradecodeSharedLabelCacheV1';
 let orderRows=[];
 let labelLibrary=[];
 let currentOrderFileName='';
 const ORDER_WORK_KEY='tradecodeOrderBarcodeWorkV42';
+let labelLibrarySource='';
 let persistTimer=null;
 
 const el=id=>document.getElementById(id);
@@ -198,7 +200,7 @@ function restoreOrderBarcodeWork(){
       label:null,size:'missing'
     }));
     if(el('maxPerFile'))el('maxPerFile').value=String(Math.max(1,Math.floor(Number(saved.maxPerFile)||100)));
-    labelLibrary=getLibrary();
+    if(!labelLibrary.length)labelLibrary=getCachedLibrary();
     rematchRows();renderRows();
     const when=saved.savedAt?new Date(saved.savedAt).toLocaleString('ko-KR'):'';
     setProgress(`✓ 이전 작업 자동 복구${currentOrderFileName?' · '+currentOrderFileName:''}${when?' · '+when:''}`);
@@ -215,18 +217,52 @@ function resetOrderBarcodeWork(){
   renderRows();setProgress('✓ 현재 발주 바코드 작업을 초기화했습니다. 공용 저장 라벨은 그대로 유지됩니다.');
 }
 
-function getLibrary(){
+function readLocalLabelArray(key){
   try{
-    const arr=JSON.parse(localStorage.getItem(LABEL_LIBRARY_KEY)||'[]');
+    const arr=JSON.parse(localStorage.getItem(key)||'[]');
     return Array.isArray(arr)?arr:[];
   }catch(e){return[]}
 }
-function reloadLibrary(){
-  labelLibrary=getLibrary();
+function getCachedLibrary(){
+  const shared=readLocalLabelArray(SHARED_LABEL_CACHE_KEY);
+  if(shared.length){labelLibrarySource='공용 라벨 캐시';return shared}
+  const legacy=readLocalLabelArray(LEGACY_LABEL_LIBRARY_KEY);
+  if(legacy.length){labelLibrarySource='기존 PC 라벨 캐시';return legacy}
+  labelLibrarySource='';
+  return [];
+}
+function saveSharedLabelCache(arr){
+  try{
+    if(Array.isArray(arr))localStorage.setItem(SHARED_LABEL_CACHE_KEY,JSON.stringify(arr));
+  }catch(e){}
+}
+async function fetchSharedLabelLibrary(silent=false){
+  const cached=getCachedLibrary();
+  try{
+    const res=await fetch('/api/shared-labels',{cache:'no-store'});
+    const contentType=(res.headers.get('content-type')||'').toLowerCase();
+    if(!contentType.includes('application/json'))throw new Error('공용 라벨 API가 JSON을 반환하지 않았습니다.');
+    const data=await res.json();
+    if(!res.ok||!data.ok)throw new Error(data.error||'공용 라벨 조회 실패');
+    const labels=Array.isArray(data.labels)?data.labels:[];
+    labelLibrary=labels;
+    labelLibrarySource='공용 라벨 서버';
+    saveSharedLabelCache(labels);
+    if(!silent)setProgress(`✓ 공용 저장 라벨 ${labels.length}개를 서버에서 불러왔습니다.`);
+    return true;
+  }catch(err){
+    console.warn('공용 라벨 서버 조회 실패',err);
+    labelLibrary=cached;
+    if(!silent)setProgress(cached.length?`⚠ 서버 연결 실패 · 이 PC의 공용 라벨 캐시 ${cached.length}개로 매칭합니다.`:'⚠ 공용 라벨을 불러오지 못했습니다.');
+    return false;
+  }
+}
+async function reloadLibrary(silent=false){
+  await fetchSharedLabelLibrary(silent);
   rematchRows();
   renderRows();
   scheduleOrderBarcodeSave();
-  setProgress(`저장 라벨 ${labelLibrary.length}개를 다시 불러왔습니다.`);
+  if(!silent)setProgress(`✓ ${labelLibrarySource||'저장 라벨'} ${labelLibrary.length}개 · 현재 발주목록 다시 매칭 완료`);
 }
 function findLabel(barcode,productNumber){
   const bc=normBc(barcode),pn=norm(productNumber);
@@ -269,7 +305,7 @@ el('orderFile').addEventListener('change',async e=>{
       label:null,
       size:'missing'
     }));
-    labelLibrary=getLibrary();
+    await fetchSharedLabelLibrary(true);
     rematchRows();
     renderRows();
     persistOrderBarcodeWork();
@@ -364,7 +400,7 @@ function updateSummary(){
 }
 function makeLabel(id){
   const r=getRow(id);if(!r)return;
-  const url='/barcode-label?'+new URLSearchParams({
+  const url='/barcode-label.html?v=43&'+new URLSearchParams({
     productNumber:r.productNumber,barcode:r.barcode,productName:r.productName
   }).toString();
   window.open(url,'_blank');
@@ -509,10 +545,29 @@ function downloadBlob(blob,name){
   a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
-labelLibrary=getLibrary();
+async function initOrderBarcodeV43(){
+  // 공용 라벨을 먼저 서버에서 읽은 뒤 저장된 발주 작업을 복원해야 라벨 없음 오판정이 생기지 않습니다.
+  labelLibrary=getCachedLibrary();
+  renderRows();
+  await fetchSharedLabelLibrary(true);
+  const restored=restoreOrderBarcodeWork();
+  if(!restored){
+    rematchRows();
+    renderRows();
+    setProgress(`✓ ${labelLibrarySource||'공용 라벨'} ${labelLibrary.length}개 준비 완료`);
+  }else{
+    setProgress(`✓ 이전 발주 작업 자동 복구 · ${labelLibrarySource||'공용 라벨'} ${labelLibrary.length}개로 재매칭 완료`);
+  }
+}
 if(el('maxPerFile'))el('maxPerFile').addEventListener('input',()=>scheduleOrderBarcodeSave());
 window.addEventListener('beforeunload',()=>{try{persistOrderBarcodeWork()}catch(e){}});
-if(!restoreOrderBarcodeWork())renderRows();
+if('BroadcastChannel' in window){
+  try{
+    const labelChannel=new BroadcastChannel('tradecode-label-library');
+    labelChannel.addEventListener('message',e=>{if(e?.data?.type==='labels-updated')reloadLibrary(true)});
+  }catch(e){}
+}
+initOrderBarcodeV43();
 </script>
 </body>
 </html>
