@@ -132,6 +132,7 @@ button,input,select{font:inherit}button{cursor:pointer}
       <button class="btn btn-soft" onclick="document.getElementById('workFile').click()">현재 작업 파일 열기</button>
       <input id="workFile" type="file" accept=".xlsx,.xlsm,.xls">
       <button class="btn btn-green" onclick="downloadCurrentWorkbook()">현재 엑셀 저장</button>
+      <button id="centerExcelSaveBtnV22" class="btn btn-soft" onclick="downloadCurrentCenterWorkbookV22()" title="현재 보고 있는 센터 시트만 별도 Excel 파일로 저장">현재 센터 엑셀 저장</button>
       <span id="fileName" class="file-name">기준 엑셀 화면을 불러오는 중…</span>
     </div>
     <div class="project-bar" id="projectBar">
@@ -2026,6 +2027,101 @@ requestAnimationFrame(()=>{
   if(note && !currentProjectIdV18) note.textContent='＋ 새 선적 작업 → 선적 엑셀 선택 → 발주서 A8에서 작업명 자동 생성';
 });
 // ===== /v20 =====
+</script>
+
+
+<script id="v22-center-excel-export">
+// ===== v22: export the currently selected center sheet as its own clean XLSX =====
+function safeCenterFileNameV22(value){
+  return String(value||'센터').replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,' ').trim()||'센터';
+}
+function updateCenterExcelButtonV22(){
+  const btn=document.getElementById('centerExcelSaveBtnV22');
+  if(!btn)return;
+  const ws=workbook?.getWorksheet(activeSheet);
+  const isCenter=!!ws && ws.name!=='발주서';
+  btn.style.display=isCenter?'inline-flex':'none';
+  if(isCenter){
+    btn.textContent=`${ws.name} 엑셀 저장`;
+    btn.title=`${ws.name} 시트만 별도 Excel 파일로 저장`;
+  }
+}
+function flattenSingleSheetFormulasV22(ws){
+  if(!ws)return;
+  const ext=getExtent(ws),maxR=Math.max(1,ext.maxR||ws.rowCount||1),maxC=Math.max(1,ext.maxC||ws.columnCount||1);
+  for(let r=1;r<=maxR;r++)for(let c=1;c<=maxC;c++){
+    const cell=ws.getRow(r).getCell(c),v=cell.value;
+    if(!v||typeof v!=='object')continue;
+    if(typeof v.formula==='string'){
+      const result=v.result;
+      cell.value=(result!==undefined&&result!==null)?result:(cell.text||'');
+    }else if(v.hyperlink&&String(v.hyperlink).startsWith('#')){
+      cell.value=String(v.text||cell.text||'');
+    }
+  }
+}
+async function syncCurrentCenterForExportV22(ws){
+  if(!ws)return;
+  try{if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13()}catch(e){}
+  if(isPackWorkSheet(ws)){
+    const state=ensurePalletState(ws);
+    if(state){
+      syncPalletState(ws,state);
+      try{dirtyPalletSheets.delete(ws.name)}catch(e){}
+      try{mergeLookupCache.delete(ws)}catch(e){}
+    }
+  }else{
+    try{recalcWorkSheet(ws)}catch(e){}
+  }
+}
+async function buildCurrentCenterWorkbookV22(ws){
+  if(!ws)throw new Error('저장할 센터 시트가 없습니다.');
+  const clean=new ExcelJS.Workbook();
+  clean.creator='Coupang Inbound Work';
+  clean.lastModifiedBy='Coupang Inbound Work';
+  clean.created=new Date();clean.modified=new Date();
+  try{clean.calcProperties.fullCalcOnLoad=true;clean.calcProperties.forceFullCalc=true;clean.calcProperties.calcMode='auto'}catch(e){}
+  const dst=clean.addWorksheet(ws.name);
+  copyWorksheetCleanV17(ws,dst);
+  // 센터 단독 파일은 다른 시트가 없으므로 외부 시트 링크/수식은 현재 표시값으로 고정한다.
+  flattenSingleSheetFormulasV22(dst);
+  clean.views=[{activeTab:0,firstSheet:0,visibility:'visible'}];
+  return clean;
+}
+async function downloadCurrentCenterWorkbookV22(){
+  const ws=workbook?.getWorksheet(activeSheet);
+  if(!ws){alert('저장할 센터 시트가 없습니다.');return;}
+  if(ws.name==='발주서'){alert('센터 탭을 선택한 뒤 「현재 센터 엑셀 저장」을 눌러 주세요.');return;}
+  setStatus(`${ws.name} 센터 엑셀을 생성하는 중…`,'busy');
+  showLoading(true,`${ws.name} 센터 Excel을 저장하는 중…`);
+  try{
+    await nextPaint();
+    await syncCurrentCenterForExportV22(ws);
+    const clean=await buildCurrentCenterWorkbookV22(ws);
+    const out=await clean.xlsx.writeBuffer();
+    const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    if(blob.size<3000)throw new Error('생성된 Excel 파일 크기가 비정상적으로 작습니다.');
+    const projectName=(typeof activeProjectV18==='function'&&activeProjectV18()?.name)||String(currentFileName||'').replace(/\.(xlsx|xlsm|xls)$/i,'')||'쿠팡선적작업';
+    const filename=`${safeCenterFileNameV22(projectName)}_${safeCenterFileNameV22(ws.name)}.xlsx`;
+    const a=document.createElement('a'),url=URL.createObjectURL(blob);
+    a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),10000);
+    setStatus(`✓ ${ws.name} 센터만 별도 Excel로 저장했습니다.`,'ok');
+  }catch(err){
+    console.error('v22 center Excel export failed',err);
+    setStatus('센터 엑셀 저장 실패: '+(err?.message||err),'bad');
+    alert('센터 엑셀 저장에 실패했습니다.\n'+(err?.message||err));
+  }finally{showLoading(false)}
+}
+
+const renderSheetBaseV22=renderSheet;
+renderSheet=function(keepScroll=false){
+  const ret=renderSheetBaseV22(keepScroll);
+  requestAnimationFrame(updateCenterExcelButtonV22);
+  return ret;
+};
+requestAnimationFrame(updateCenterExcelButtonV22);
+// ===== /v22 =====
 </script>
 
 </body>
