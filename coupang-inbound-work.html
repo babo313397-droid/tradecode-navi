@@ -1388,5 +1388,122 @@ downloadCurrentWorkbook=async function(){
 };
 </script>
 
+
+<script id="v17-clean-workbook-export">
+// ===== v17: rebuild a clean XLSX instead of serializing the live editing workbook =====
+function cleanExcelValueV17(cell){
+  const v=cell?.value;
+  if(v===null||v===undefined)return null;
+  if(v instanceof Date)return new Date(v.getTime());
+  const t=typeof v;
+  if(t==='string'||t==='number'||t==='boolean')return v;
+  if(t!=='object')return String(v);
+  try{
+    if(typeof v.formula==='string'){
+      const o={formula:String(v.formula)};
+      if(v.result===null||['string','number','boolean'].includes(typeof v.result))o.result=v.result;
+      return o;
+    }
+    if(Array.isArray(v.richText))return v.richText.map(x=>x?.text||'').join('');
+    if(v.hyperlink)return {text:String(v.text||cell.text||v.hyperlink),hyperlink:String(v.hyperlink),tooltip:v.tooltip?String(v.tooltip):undefined};
+    if(v.error)return cell.text?String(cell.text):String(v.error);
+    if(v.text!==undefined)return String(v.text??'');
+  }catch(e){}
+  return cell?.text!==undefined?String(cell.text):'';
+}
+function rangesOverlapV17(a,b){return !(a.r2<b.r1||b.r2<a.r1||a.c2<b.c1||b.c2<a.c1)}
+function safeMergesV17(ws){
+  const out=[],boxes=[];
+  for(const raw of [...((ws.model&&ws.model.merges)||[])]){
+    const p=parseRange(raw);if(!p||p.r1<1||p.c1<1||p.r2<p.r1||p.c2<p.c1)continue;
+    if(p.r1===p.r2&&p.c1===p.c2)continue;
+    if(boxes.some(b=>rangesOverlapV17(p,b)))continue;
+    boxes.push(p);out.push(raw);
+  }
+  return out;
+}
+function copyWorksheetCleanV17(src,dst){
+  try{dst.state=src.state||'visible'}catch(e){}
+  try{dst.properties=cloneObj(src.properties)||{}}catch(e){}
+  try{dst.pageSetup=cloneObj(src.pageSetup)||{}}catch(e){}
+  try{dst.headerFooter=cloneObj(src.headerFooter)||{}}catch(e){}
+  try{dst.views=cloneObj(src.views)||[]}catch(e){}
+
+  const ext=getExtent(src), maxR=Math.max(1,ext.maxR||src.rowCount||1), maxC=Math.max(1,ext.maxC||src.columnCount||1);
+  for(let c=1;c<=maxC;c++){
+    const sc=src.getColumn(c),dc=dst.getColumn(c);
+    if(Number(sc.width)>0)dc.width=Number(sc.width);
+    dc.hidden=!!sc.hidden;
+    if(sc.outlineLevel)dc.outlineLevel=sc.outlineLevel;
+    try{if(sc.style&&Object.keys(sc.style).length)dc.style=cloneObj(sc.style)}catch(e){}
+  }
+  for(let r=1;r<=maxR;r++){
+    const sr=src.getRow(r),dr=dst.getRow(r);
+    if(Number(sr.height)>0)dr.height=Number(sr.height);
+    dr.hidden=!!sr.hidden;
+    if(sr.outlineLevel)dr.outlineLevel=sr.outlineLevel;
+    for(let c=1;c<=maxC;c++){
+      const sc=sr.getCell(c),dc=dr.getCell(c);
+      if(sc.value!==null&&sc.value!==undefined)dc.value=cleanExcelValueV17(sc);
+      try{if(sc.style&&Object.keys(sc.style).length)dc.style=cloneObj(sc.style)}catch(e){}
+      try{if(sc.numFmt)dc.numFmt=sc.numFmt}catch(e){}
+      try{if(sc.alignment)dc.alignment=cloneObj(sc.alignment)}catch(e){}
+      try{if(sc.font)dc.font=cloneObj(sc.font)}catch(e){}
+      try{if(sc.fill)dc.fill=cloneObj(sc.fill)}catch(e){}
+      try{if(sc.border)dc.border=cloneObj(sc.border)}catch(e){}
+      try{if(sc.protection)dc.protection=cloneObj(sc.protection)}catch(e){}
+    }
+  }
+  for(const m of safeMergesV17(src)){try{dst.mergeCells(m)}catch(e){console.warn('skip invalid merge',src.name,m,e)}}
+
+  // Keep only simple worksheet settings that are safe in Excel. Avoid carrying stale filter/table relations.
+  try{if(src.autoFilter&&typeof src.autoFilter==='string')dst.autoFilter=src.autoFilter}catch(e){}
+  try{dst.getColumn(20).hidden=!!src.getColumn(20).hidden;dst.getColumn(21).hidden=!!src.getColumn(21).hidden;dst.getColumn(22).hidden=!!src.getColumn(22).hidden}catch(e){}
+}
+async function buildCleanWorkbookV17(){
+  const src=workbook;if(!src)throw new Error('저장할 작업 파일이 없습니다.');
+  const clean=new ExcelJS.Workbook();
+  clean.creator='Coupang Inbound Work';clean.lastModifiedBy='Coupang Inbound Work';
+  clean.created=new Date();clean.modified=new Date();
+  try{clean.calcProperties.fullCalcOnLoad=true;clean.calcProperties.forceFullCalc=true;clean.calcProperties.calcMode='auto'}catch(e){}
+  for(const sws of src.worksheets){
+    const dws=clean.addWorksheet(sws.name);
+    copyWorksheetCleanV17(sws,dws);
+  }
+  try{
+    const idx=Math.max(0,src.worksheets.findIndex(x=>x.name===activeSheet));
+    clean.views=[{activeTab:idx,firstSheet:0,visibility:'visible'}];
+  }catch(e){}
+  return clean;
+}
+async function cleanWorkbookBufferV17(){
+  await syncDirtyPalletsForSave();
+  try{if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13()}catch(e){}
+  recalcAll();
+  const clean=await buildCleanWorkbookV17();
+  const raw=await clean.xlsx.writeBuffer();
+  // Do not post-edit workbook XML with regex. A fresh ExcelJS workbook is already a complete OOXML package.
+  return raw;
+}
+downloadCurrentWorkbook=async function(){
+  if(!workbook)return;
+  setStatus('현재 작업 엑셀을 새 통합문서로 재구성하는 중…','busy');
+  showLoading(true,'손상 없는 새 Excel 파일을 만드는 중…');
+  try{
+    await nextPaint();
+    const out=await cleanWorkbookBufferV17();
+    const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    if(blob.size<5000)throw new Error('생성된 Excel 파일 크기가 비정상적으로 작습니다.');
+    const a=document.createElement('a'),url=URL.createObjectURL(blob);
+    a.href=url;a.download=(currentFileName.replace(/\.(xlsx|xlsm|xls)$/i,'')||'쿠팡입고작업')+'_현재작업.xlsx';
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+    setStatus('✓ 새 Excel 통합문서로 재구성해 저장했습니다.','ok');
+  }catch(err){
+    console.error('v17 clean export failed',err);setStatus('엑셀 저장 실패: '+(err?.message||err),'bad');
+    alert('엑셀 저장에 실패했습니다.\n'+(err?.message||err));
+  }finally{showLoading(false)}
+};
+</script>
+
 </body>
 </html>
