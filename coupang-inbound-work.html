@@ -1793,5 +1793,204 @@ async function initProjectsV18(){
 // ===== /v18 =====
 </script>
 
+
+<script id="v20-auto-project-name-manual-capture">
+// ===== v20: auto project name from 발주서!A8 + manual box capture button =====
+let newProjectFileBusyV20=false;
+let newProjectFileInputV20=null;
+
+function compactShipmentProjectNameV20(raw, fallback=''){
+  let s=String(raw||'').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
+  if(!s) s=String(fallback||'').replace(/\.(xlsx|xlsm|xls)$/i,'').trim();
+  s=s.replace(/코리아원/g,'').trim();
+
+  const ship=s.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*선적\s*(?:건)?/i);
+  const inbound=s.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일[^()]*?(?:쿠팡\s*)?입고\s*(?:건)?/i)
+             || s.match(/\(\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일[^)]*?(?:쿠팡\s*)?입고\s*(?:건)?\s*\)/i);
+  if(ship && inbound){
+    return `${Number(ship[1])}월${Number(ship[2])}일선적(${Number(inbound[1])}월${Number(inbound[2])}일 입고건)`;
+  }
+
+  // 날짜 표현을 최대한 정리한 fallback.
+  s=s.replace(/쿠팡\s*입고\s*건?/gi,'입고건')
+     .replace(/선적\s*건/gi,'선적')
+     .replace(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/g,(_,m,d)=>`${Number(m)}월${Number(d)}일`)
+     .replace(/\s*\(\s*/g,'(')
+     .replace(/\s*\)\s*/g,')')
+     .replace(/\s+/g,' ')
+     .trim();
+  return s.slice(0,120) || '새 선적 작업';
+}
+
+function projectNameFromWorkbookA8V20(fileName=''){
+  try{
+    const ws=workbook?.getWorksheet('발주서');
+    const cell=ws?.getCell('A8');
+    const raw=cell ? displayText(cell) : '';
+    return compactShipmentProjectNameV20(raw,fileName);
+  }catch(e){
+    console.warn('A8 project-name parse failed',e);
+    return compactShipmentProjectNameV20('',fileName);
+  }
+}
+
+function ensureNewProjectFileInputV20(){
+  if(newProjectFileInputV20 && document.body.contains(newProjectFileInputV20)) return newProjectFileInputV20;
+  const inp=document.createElement('input');
+  inp.type='file';
+  inp.accept='.xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+  inp.style.display='none';
+  inp.id='newProjectSourceFileV20';
+  inp.addEventListener('change',async ()=>{
+    const file=inp.files?.[0]||null;
+    inp.value='';
+    if(file) await createProjectFromShipmentFileV20(file);
+  });
+  document.body.appendChild(inp);
+  newProjectFileInputV20=inp;
+  return inp;
+}
+
+async function createProjectFromShipmentFileV20(file){
+  if(!file || newProjectFileBusyV20 || projectSwitchBusyV18) return;
+  newProjectFileBusyV20=true;
+  let createdId='';
+  try{
+    setStatus('새 선적 작업을 만드는 중…','busy');
+    if(currentProjectIdV18 && workbook){
+      clearTimeout(persistStateTimer);
+      await savePersistentState();
+      await sharedDrainStateQueue();
+    }
+
+    const tempName=`새 선적 작업 ${new Date().toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}`;
+    const r=await projectFetchV18('/projects',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:tempName})
+    });
+    if(!r.ok) throw new Error('새 작업 생성 실패 ('+r.status+')');
+    const j=await r.json();
+    createdId=j?.project?.id||'';
+    if(!createdId) throw new Error('새 작업 ID를 받지 못했습니다.');
+
+    await fetchProjectsV18();
+    projectCreatingV18=true;
+    await switchProjectV18(createdId);
+    projectCreatingV18=true;
+
+    // 선택한 원본을 새 프로젝트에 바로 로드/저장한다.
+    await loadSourceFile(file,'source');
+    if(!workbook) throw new Error('선적 엑셀을 불러오지 못했습니다.');
+
+    // 변환이 끝난 실제 발주서 A8을 기준으로 프로젝트명을 만든다.
+    const autoName=projectNameFromWorkbookA8V20(file.name);
+    const rename=await projectFetchV18('/projects/'+encodeURIComponent(createdId),{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:autoName})
+    });
+    if(!rename.ok) throw new Error('선적 작업명 자동 저장 실패 ('+rename.status+')');
+
+    await fetchProjectsV18();
+    currentProjectIdV18=createdId;
+    try{localStorage.setItem('coupangLastProjectV18',createdId)}catch(_){}
+    renderProjectSelectV18();
+    setStatus(`✓ 새 선적 작업 “${autoName}” 생성 완료 · 발주서 A8에서 작업명을 자동 추출했습니다.`,'ok');
+  }catch(e){
+    console.error(e);
+    // 파일을 전혀 못 읽은 경우 빈 임시 프로젝트는 남기지 않는다.
+    if(createdId && (!workbook || currentProjectIdV18!==createdId)){
+      try{await projectFetchV18('/projects/'+encodeURIComponent(createdId),{method:'DELETE'})}catch(_){}
+    }
+    try{await fetchProjectsV18()}catch(_){}
+    alert('새 선적 작업을 만들지 못했습니다.\n'+(e.message||e));
+    setStatus('새 선적 작업 생성 실패','bad');
+  }finally{
+    projectCreatingV18=false;
+    newProjectFileBusyV20=false;
+    showLoading(false);
+  }
+}
+
+// 기존 prompt 방식 대신 파일을 먼저 고르면 A8로 이름을 자동 생성한다.
+createProjectV18=async function(){
+  if(projectSwitchBusyV18 || newProjectFileBusyV20) return;
+  const inp=ensureNewProjectFileInputV20();
+  inp.click();
+};
+
+function captureTargetGroupV20(ws){
+  if(!ws || !isPackWorkSheet(ws)) return null;
+  const state=assignVisualRows(ws,ensurePalletState(ws));
+  let group=null;
+  const row=Number(selectedRow||0);
+  if(row>0){
+    group=(state.completed||[]).find(g=>row>=Number(g.rows?.start||0)&&row<=Number(g.rows?.end||0))||null;
+  }
+  if(!group){
+    group=[...(state.completed||[])].sort((a,b)=>Number(b.seq||0)-Number(a.seq||0))[0]||null;
+  }
+  return group;
+}
+
+function manualBoxCaptureV20(){
+  const ws=workbook?.getWorksheet(activeSheet);
+  if(!ws || !isPackWorkSheet(ws)){
+    alert('팔레트/밀크런/택배 작업 시트에서 사용할 수 있습니다.');
+    return;
+  }
+  const group=captureTargetGroupV20(ws);
+  if(!group){
+    alert('아직 완료된 박스가 없습니다.');
+    return;
+  }
+  assignVisualRows(ws,ensurePalletState(ws));
+  showCompletionCapture(ws,group);
+  setStatus(`✓ ${group.boxNo||'완료 박스'} 작업 캡처를 다시 열었습니다.`,'ok');
+}
+
+function injectManualCaptureButtonV20(){
+  const ws=workbook?.getWorksheet(activeSheet);
+  if(!ws || !isPackWorkSheet(ws)) return;
+  const host=document.getElementById('sheetHost');
+  if(!host) return;
+  const cells=[...host.querySelectorAll('td.cell')];
+  const label=cells.find(td=>{
+    if(td.dataset.captureButtonV20==='1') return true;
+    return String(td.textContent||'').replace(/\s+/g,'').includes('출고박스번호');
+  });
+  if(!label || label.querySelector('.manual-capture-btn-v20')) return;
+  label.dataset.captureButtonV20='1';
+  const wrap=document.createElement('div');
+  wrap.className='manual-capture-wrap-v20';
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.className='manual-capture-btn-v20';
+  btn.textContent='박스 작업 캡쳐';
+  btn.title='완료 박스 행을 선택한 뒤 누르면 그 박스를 캡쳐합니다. 선택하지 않으면 가장 최근 완료 박스를 캡쳐합니다.';
+  btn.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();manualBoxCaptureV20()});
+  wrap.appendChild(btn);
+  label.appendChild(wrap);
+}
+
+// fast renderer가 표를 다시 만들 때마다 캡처 버튼도 다시 붙인다.
+const renderSheetBaseV20=renderSheet;
+renderSheet=function(keepScroll=false){
+  const result=renderSheetBaseV20(keepScroll);
+  requestAnimationFrame(injectManualCaptureButtonV20);
+  return result;
+};
+
+// 현재 열린 표에도 즉시 버튼을 붙인다.
+requestAnimationFrame(()=>{
+  ensureNewProjectFileInputV20();
+  injectManualCaptureButtonV20();
+  const note=document.getElementById('projectNote');
+  if(note && !currentProjectIdV18) note.textContent='＋ 새 선적 작업 → 선적 엑셀 선택 → 발주서 A8에서 작업명 자동 생성';
+});
+// ===== /v20 =====
+</script>
+
 </body>
 </html>
