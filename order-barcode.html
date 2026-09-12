@@ -408,20 +408,114 @@ function rgbToHueClass(hex){
 }
 
 function classifyExcelFill(cell){
-  const fill=cell?.s?.fill;
-  if(!fill)return '';
-
-  const colors=[fill.fgColor,fill.bgColor].filter(Boolean);
-  for(const c of colors){
-    if(c.rgb){
-      const cls=rgbToHueClass(c.rgb);
-      if(cls)return cls;
+  // SheetJS 0.18.x는 파일에 따라 스타일을 cell.s.fill 또는 cell.s 자체에 담는 경우가 있어 둘 다 확인한다.
+  const fills=[cell?.s?.fill,cell?.s,cell?.fill,cell?.style?.fill].filter(v=>v&&typeof v==='object');
+  for(const fill of fills){
+    const colors=[fill.fgColor,fill.bgColor,fill.patternFill?.fgColor,fill.patternFill?.bgColor].filter(Boolean);
+    for(const c of colors){
+      if(c.rgb){
+        const cls=rgbToHueClass(c.rgb);
+        if(cls)return cls;
+      }
+      const idx=Number(c.indexed);
+      if([2,10].includes(idx))return 'red';
+      if([5,13].includes(idx))return 'yellow';
     }
-    const idx=Number(c.indexed);
-    if([2,10].includes(idx))return 'red';
-    if([5,13].includes(idx))return 'yellow';
   }
   return '';
+}
+
+// v45: SheetJS가 셀 채우기색을 노출하지 않는 파일도 정확히 읽기 위해
+// XLSX 내부 styles.xml + worksheet XML의 style index를 직접 확인한다.
+function xmlChildrenByLocalName(node,name){
+  return Array.from(node?.childNodes||[]).filter(n=>n.nodeType===1&&n.localName===name);
+}
+function xmlFirstByLocalName(node,name){
+  return xmlChildrenByLocalName(node,name)[0]||null;
+}
+function normalizeZipPath(base,target){
+  target=String(target||'').replace(/\\/g,'/');
+  if(target.startsWith('/'))return target.replace(/^\/+/, '');
+  const parts=(String(base||'')+'/'+target).split('/');
+  const out=[];
+  for(const part of parts){
+    if(!part||part==='.')continue;
+    if(part==='..'){out.pop();continue;}
+    out.push(part);
+  }
+  return out.join('/');
+}
+function classifyXmlColorNode(node){
+  if(!node)return '';
+  const rgb=node.getAttribute('rgb');
+  if(rgb){
+    const cls=rgbToHueClass(rgb);
+    if(cls)return cls;
+  }
+  const idx=Number(node.getAttribute('indexed'));
+  if([2,10].includes(idx))return 'red';
+  if([5,13].includes(idx))return 'yellow';
+  return '';
+}
+async function extractExcelCellColors(buf){
+  const bySheet=new Map();
+  try{
+    if(typeof JSZip==='undefined')return bySheet;
+    const zip=await JSZip.loadAsync(buf);
+    const parser=new DOMParser();
+
+    const stylesFile=zip.file('xl/styles.xml');
+    if(!stylesFile)return bySheet;
+    const stylesDoc=parser.parseFromString(await stylesFile.async('text'),'application/xml');
+    const styleSheet=stylesDoc.documentElement;
+    const fillsNode=xmlFirstByLocalName(styleSheet,'fills');
+    const cellXfsNode=xmlFirstByLocalName(styleSheet,'cellXfs');
+    const fillEls=xmlChildrenByLocalName(fillsNode,'fill');
+    const xfEls=xmlChildrenByLocalName(cellXfsNode,'xf');
+
+    const fillClasses=fillEls.map(fill=>{
+      const pattern=xmlFirstByLocalName(fill,'patternFill');
+      if(!pattern)return '';
+      const fg=xmlFirstByLocalName(pattern,'fgColor');
+      const bg=xmlFirstByLocalName(pattern,'bgColor');
+      return classifyXmlColorNode(fg)||classifyXmlColorNode(bg)||'';
+    });
+    const styleClasses=xfEls.map(xf=>fillClasses[Number(xf.getAttribute('fillId'))||0]||'');
+
+    const wbFile=zip.file('xl/workbook.xml');
+    const relFile=zip.file('xl/_rels/workbook.xml.rels');
+    if(!wbFile||!relFile)return bySheet;
+    const wbDoc=parser.parseFromString(await wbFile.async('text'),'application/xml');
+    const relDoc=parser.parseFromString(await relFile.async('text'),'application/xml');
+
+    const relMap=new Map();
+    for(const rel of Array.from(relDoc.getElementsByTagNameNS('*','Relationship'))){
+      relMap.set(rel.getAttribute('Id'),rel.getAttribute('Target'));
+    }
+
+    for(const sheet of Array.from(wbDoc.getElementsByTagNameNS('*','sheet'))){
+      const name=sheet.getAttribute('name')||'';
+      const rid=sheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id')||sheet.getAttribute('r:id')||'';
+      const target=relMap.get(rid);
+      if(!name||!target)continue;
+      const sheetPath=normalizeZipPath('xl',target);
+      const sheetFile=zip.file(sheetPath);
+      if(!sheetFile)continue;
+      const sheetDoc=parser.parseFromString(await sheetFile.async('text'),'application/xml');
+      const cellMap=new Map();
+      for(const cell of Array.from(sheetDoc.getElementsByTagNameNS('*','c'))){
+        const ref=cell.getAttribute('r')||'';
+        const styleIndex=Number(cell.getAttribute('s'))||0;
+        const cls=styleClasses[styleIndex]||'';
+        // 녹색과 무색은 웹에서 흰색이므로 저장할 필요가 없다.
+        if(ref&&(cls==='yellow'||cls==='red'))cellMap.set(ref,cls);
+      }
+      if(cellMap.size)bySheet.set(name,cellMap);
+    }
+  }catch(err){
+    console.warn('엑셀 원본 색상 직접 읽기 실패 - SheetJS 스타일 판정으로 대체',err);
+  }
+  return bySheet;
 }
 
 async function reloadLibrary(){
@@ -670,7 +764,8 @@ el('orderFile').addEventListener('change',async e=>{
     setProgress('엑셀을 읽는 중...');
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array',cellStyles:true});
-    const parsed=parseWorkbook(wb);
+    const excelCellColors=await extractExcelCellColors(buf);
+    const parsed=parseWorkbook(wb,excelCellColors);
     currentOrderFileName=file.name;
     currentOrderProgressKey=await makeOrderProgressKey(file,buf);
     const savedPrintProgress=loadPrintProgress();
@@ -704,7 +799,7 @@ el('orderFile').addEventListener('change',async e=>{
   }
 });
 
-function parseWorkbook(wb){
+function parseWorkbook(wb,excelCellColors=new Map()){
   const sheetNames=['상품목록',...wb.SheetNames.filter(n=>n!=='상품목록')];
   for(const name of sheetNames){
     const ws=wb.Sheets[name];
@@ -724,7 +819,8 @@ function parseWorkbook(wb){
           if(!pn&&!bc&&!nm)continue;
           if(!(Number(qty)>0))continue;
           const qtyCell=ws[XLSX.utils.encode_cell({r:i,c:qIdx})];
-          const orderQtyColor=classifyExcelFill(qtyCell);
+          const qtyRef=XLSX.utils.encode_cell({r:i,c:qIdx});
+          const orderQtyColor=excelCellColors.get(name)?.get(qtyRef)||classifyExcelFill(qtyCell);
           out.push({
             productNumber:pn,
             barcode:bc,
