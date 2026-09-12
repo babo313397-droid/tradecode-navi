@@ -409,7 +409,8 @@ function scrollScannedBarcodeIntoView(ws,item,barcode){
           vp.scrollTo({top,left,behavior:'smooth'});
         }
       }else rowEl.scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'});
-      setTimeout(()=>rowEl.classList.remove('scan-target-row'),1900);
+      // v35: 마지막으로 스캔한 행은 다음 바코드 스캔/화면 작업으로 교체될 때까지 유지합니다.
+      // 새 스캔 시 위에서 기존 .scan-target-row를 제거하고 새 행에 표시합니다.
     }));
   }catch(e){console.warn('barcode row scroll failed',e)}
 }
