@@ -173,6 +173,14 @@
     <button type="button" class="nav-btn" onclick="window.location.href='/order-barcode.html'">
       📦 발주 바코드 출력
     </button>
+
+    <button type="button" class="nav-btn" onclick="window.location.href='/detail-maker'">
+      ✨ 쿠팡 상세페이지 자동 제작
+    </button>
+
+    <button type="button" class="nav-btn" onclick="window.location.href='/coupang-inbound-work.html'">
+      📦 쿠팡 입고 작업
+    </button>
   </nav>
 
   <div class="barcode-main">
@@ -207,6 +215,8 @@
       <div class="grid2"><div class="field"><label for="age">사용연령</label><input id="age" value="14세 이상"></div><div class="field"><label for="country">제조국</label><input id="country" value="제조국"></div></div>
       <div class="field"><label for="barcodeValue">바코드 번호 (영문 + 숫자 가능)</label><input id="barcodeValue" value="123456789" maxlength="40"></div>
 
+      <div id="workingStateStatus" class="help" style="margin:-2px 0 10px;color:#157347;font-weight:800;">✓ 이 PC에서 마지막 작업 상태를 자동 저장합니다.</div>
+
       <div class="section-label">글자 / 바코드 크기</div>
       <div class="field"><label>제품명 글자 크기</label><div class="range-wrap"><input id="titleFont" type="range" min="5" max="28" step="0.5" value="18"><input id="titleFontNumber" type="number" min="5" max="28" step="0.5" value="18"></div></div>
       <div class="field"><label>본문 글자 크기</label><div class="range-wrap"><input id="bodyFont" type="range" min="4" max="22" step="0.5" value="14"><input id="bodyFontNumber" type="number" min="4" max="22" step="0.5" value="14"></div></div>
@@ -222,6 +232,7 @@
         <button class="btn-secondary" type="button" onclick="migrateLegacyLabels()">⬆ 이 PC 기존 라벨 공용으로 옮기기</button>
         <button class="btn-ghost" type="button" onclick="window.location.href='/api/shared-labels-backup'">⬇ 공용 라벨 백업</button>
         <button class="btn-ghost" type="button" onclick="el('sharedBackupFile').click()">⬆ 공용 라벨 백업 복원</button>
+        <button class="btn-ghost" type="button" onclick="checkSharedLabelStorageV32()">🔎 저장소 상태 확인</button>
         <input id="sharedBackupFile" type="file" accept=".json,application/json" style="display:none" onchange="restoreSharedBackup(this.files?.[0]);this.value=''">
       </div>
       <div id="labelSaveStatus" class="help" style="margin-top:7px;min-height:18px;"></div>
@@ -334,6 +345,12 @@
   const MM_TO_PX = 96 / 25.4;
   let previewMode = 'fit';
   const el = id => document.getElementById(id);
+
+  // 마지막 작업 상태 자동저장
+  const LABEL_WORKING_STATE_KEY='tradecodeBarcodeLabelWorkingStateV2';
+  let workingStateEnabled=false;
+  let workingStateSaveTimer=null;
+
   const formIds=['productNumber','labelWidth','labelHeight','productName','optionText','material','importer','address','phone','warning','age','country','barcodeValue','titleFont','titleFontNumber','bodyFont','bodyFontNumber','barcodeHeight','barcodeHeightNumber','barcodeTextFont','barcodeTextFontNumber','madeInFont','madeInFontNumber'];
   formIds.forEach(id=>el(id).addEventListener('input',()=>{syncPairs(id);updateLabel()}));
   window.addEventListener('resize',applyPreviewScale);
@@ -365,6 +382,7 @@
     }
     applyPreviewScale();
     requestAnimationFrame(checkOverflow);
+    scheduleWorkingStateSave();
   }
 
   function renderBarcode(barcodeVal,heightMm){
@@ -827,33 +845,74 @@
     return res;
   }
 
+  function isActualSavedLabelV32(x){
+    if(!x||typeof x!=='object')return false;
+    if(!normalizeBarcode(x.barcode)&&!normalizeProductNo(x.productNumber))return false;
+    const keys=['optionText','material','importer','address','phone','warning','age','country','labelWidth','labelHeight','titleFont','bodyFont','barcodeHeight','barcodeTextFont','madeInFont'];
+    return keys.some(k=>Object.prototype.hasOwnProperty.call(x,k));
+  }
+
+  function collectExactLocalLabelsV32(){
+    const merged=[],seen=new Set();
+    const add=(arr)=>{
+      if(!Array.isArray(arr))return;
+      for(const x of arr){
+        if(!isActualSavedLabelV32(x))continue;
+        const key=normalizeBarcode(x.barcode)||('PN:'+normalizeProductNo(x.productNumber));
+        if(!key||seen.has(key))continue;
+        seen.add(key);merged.push(x);
+      }
+    };
+    try{add(JSON.parse(localStorage.getItem(LABEL_LIBRARY_KEY)||'[]'))}catch(e){}
+    try{add(JSON.parse(localStorage.getItem(LEGACY_LABEL_LIBRARY_KEY)||'[]'))}catch(e){}
+    return merged;
+  }
+
+  async function checkSharedLabelStorageV32(){
+    try{
+      const res=await fetch('/api/shared-labels-status',{cache:'no-store'}),data=await res.json();
+      if(!res.ok||!data.ok)throw new Error(data.error||'저장소 상태 조회 실패');
+      const local=(data.localSources||[]).map(x=>`${x.name}: ${Number(x.count||0)}개`).join(' / ')||'기존 라벨 파일 없음';
+      const sb=data.supabaseConfigured ? `Supabase 연결됨 · ${data.supabaseCount===null?'조회 실패':Number(data.supabaseCount||0)+'개'}` : 'Supabase 환경변수 미연결';
+      alert(`공용 라벨 저장소 상태\n\n현재 표시 가능: ${Number(data.count||0)}개\n저장소: ${data.storage||'-'}\n${sb}\n${local}${data.supabaseError?`\nSupabase 오류: ${data.supabaseError}`:''}`);
+    }catch(err){alert(err?.message||'저장소 상태를 확인하지 못했습니다.')}
+  }
+
   async function fetchSharedLabels(silent=false){
     try{
+      const localProtected=collectExactLocalLabelsV32();
       const res=await fetch('/api/shared-labels',{cache:'no-store'});
       const data=await res.json();
       if(!res.ok||!data.ok) throw new Error(data.error||'공용 라벨 조회 실패');
       sharedEditKeyRequired=!!data.editKeyRequired;
-      setLabelLibrary(data.labels||[]);
+      const serverLabels=Array.isArray(data.labels)?data.labels:[];
+      if(serverLabels.length===0 && localProtected.length>0){
+        sharedLabelCache=localProtected;
+        if(!silent)setSaveStatus(`⚠ 서버 라벨은 0개지만 이 PC의 실제 저장 라벨 ${localProtected.length}개를 보호해서 표시합니다. '이 PC 기존 라벨 공용으로 옮기기'를 누르면 서버로 복원됩니다.`,false);
+        return true;
+      }
+      setLabelLibrary(serverLabels);
       if(!silent){
-        const storageText=data.permanent?'Supabase 영구 저장':'임시 저장';
+        let storageText=data.storage==='supabase'?'Supabase 영구 저장':data.storage==='existing-label-file'?'기존 서버 라벨 저장소':'서버 저장';
         setSaveStatus(`✓ 공용 라벨 ${sharedLabelCache.length}개 · ${storageText}`);
       }
       return true;
     }catch(err){
       console.error(err);
-      loadCachedSharedLabels();
-      if(!silent) setSaveStatus('공용 서버 연결 실패 · 이 PC의 최근 캐시를 표시합니다.',false);
+      const localProtected=collectExactLocalLabelsV32();
+      if(localProtected.length)sharedLabelCache=localProtected; else loadCachedSharedLabels();
+      if(!silent) setSaveStatus(`공용 서버 연결 실패 · 이 PC의 실제 저장 라벨 ${sharedLabelCache.length}개를 보호해서 표시합니다.`,false);
       return false;
     }
   }
 
   async function migrateLegacyLabels(){
-    const legacy=getLegacyLabelLibrary();
+    const legacy=collectExactLocalLabelsV32();
     if(!legacy.length){
-      alert('이 PC 브라우저에 옮길 기존 라벨이 없습니다.');
+      alert('이 PC 브라우저에 남아 있는 실제 저장 라벨이 없습니다.');
       return;
     }
-    if(!confirm(`이 PC에 저장된 기존 라벨 ${legacy.length}개를 공용 보관함으로 옮길까요?\n같은 바코드가 있으면 공용 라벨을 갱신합니다.`))return;
+    if(!confirm(`이 PC에 남아 있는 실제 저장 라벨 ${legacy.length}개를 공용 보관함으로 옮길까요?\n상품 기준목록은 포함하지 않으며, 같은 바코드가 있으면 공용 라벨을 갱신합니다.`))return;
 
     let ok=0;
     setSaveStatus(`기존 라벨 공용 이동 중... 0/${legacy.length}`);
@@ -1667,6 +1726,67 @@
     });
   }
 
+  function getWorkingState(){
+    try{
+      const raw=localStorage.getItem(LABEL_WORKING_STATE_KEY);
+      if(!raw) return null;
+      const parsed=JSON.parse(raw);
+      return parsed && typeof parsed==='object' ? parsed : null;
+    }catch(e){
+      console.warn('마지막 작업 상태 읽기 실패:',e);
+      return null;
+    }
+  }
+
+  function saveWorkingState(){
+    if(!workingStateEnabled) return;
+    try{
+      const state=captureFormState();
+      state.__savedAt=new Date().toISOString();
+      localStorage.setItem(LABEL_WORKING_STATE_KEY,JSON.stringify(state));
+
+      const status=el('workingStateStatus');
+      if(status){
+        status.textContent='✓ 마지막 작업 자동 저장됨';
+        status.style.color='#157347';
+      }
+    }catch(e){
+      console.warn('마지막 작업 상태 저장 실패:',e);
+    }
+  }
+
+  function scheduleWorkingStateSave(){
+    if(!workingStateEnabled) return;
+    clearTimeout(workingStateSaveTimer);
+    workingStateSaveTimer=setTimeout(saveWorkingState,120);
+  }
+
+  function applyWorkingState(){
+    const state=getWorkingState();
+    if(!state) return false;
+
+    let applied=false;
+    formIds.forEach(id=>{
+      if(state[id]!==undefined && el(id)){
+        el(id).value=state[id];
+        applied=true;
+      }
+    });
+
+    // range/숫자 입력값 동기화
+    ['titleFont','bodyFont','barcodeHeight','barcodeTextFont','madeInFont'].forEach(id=>{
+      const num=el(id+'Number');
+      if(el(id)&&num) el(id).value=num.value;
+    });
+
+    const status=el('workingStateStatus');
+    if(status){
+      status.textContent='✓ 이전 화면의 마지막 작업 상태를 복원했습니다.';
+      status.style.color='#157347';
+    }
+    return applied;
+  }
+
   function getUserDefaults(){
     try{
       const raw=localStorage.getItem(LABEL_DEFAULTS_KEY);
@@ -1814,6 +1934,7 @@
       if(!res.ok||!data.ok) throw new Error(data.error||'공용 라벨 저장 실패');
 
       saveUserDefaults(cfg);
+      saveWorkingState();
       await fetchSharedLabels(true);
       renderSavedLibrary();
       setSaveStatus(`✓ 공용 저장 완료 · ${cfg.labelWidth}×${cfg.labelHeight}mm · 공용 보관함 ${getLabelLibrary().length}개`);
@@ -1935,9 +2056,8 @@
   }
 
   function applyUrlPrefill(){
-    // 먼저 이 브라우저에서 마지막으로 저장한 사용자 기본 설정을 불러온다.
-    applyUserDefaults();
-
+    // 일반 진입에서는 이미 복원된 마지막 작업 상태를 그대로 유지합니다.
+    // 발주서 등에서 상품정보가 URL로 넘어온 경우에만 해당 상품을 우선 적용합니다.
     const q=new URLSearchParams(location.search);
     const productNumber=q.get('productNumber')||'';
     const barcode=q.get('barcode')||'';
@@ -1959,6 +2079,7 @@
     }else{
       updateLabel();
     }
+    saveWorkingState();
   }
 
   // ---------------------------------------------------------
@@ -1992,6 +2113,7 @@
     });
     updateLabel();
     updateUndoButton();
+    saveWorkingState();
   }
 
   function statesEqual(a,b){
@@ -2075,14 +2197,25 @@
     if(q.get('barcode')) el('barcodeValue').value=q.get('barcode');
     if(q.get('productName')) el('productName').value=q.get('productName');
     updateLabel();
+    saveWorkingState();
   }
 
   async function initializeSharedLabelPage(){
+    // 마지막 작업 상태가 있으면 그것을 최우선으로 복원합니다.
+    // 첫 실행처럼 작업 상태가 전혀 없을 때만 기존 사용자 기본값을 사용합니다.
+    const restoredLastWork=applyWorkingState();
+    if(!restoredLastWork) applyUserDefaults();
+
+    workingStateEnabled=true;
     updateLabel();
     updateUndoButton();
+
     loadCachedSharedLabels();
     await fetchSharedLabels(true);
+
+    // URL로 특정 상품을 넘겨받은 경우에는 그 상품 정보가 마지막 작업보다 우선합니다.
     applyUrlPrefill();
+
     renderSavedLibrary();
     initBarcodeImageDrop();
     loadProductCatalogStatus();
@@ -2096,6 +2229,13 @@
       }
     }catch(e){}
   }
+
+  // 다른 메뉴 이동 / 새로고침 / 탭 닫기 직전에도 마지막 입력을 즉시 저장합니다.
+  window.addEventListener('pagehide',saveWorkingState);
+  window.addEventListener('beforeunload',saveWorkingState);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='hidden') saveWorkingState();
+  });
 
   initializeSharedLabelPage();
 </script>
