@@ -2668,5 +2668,318 @@ switchSheet=function(name){const ret=switchSheetBaseV26(name);const ws=workbook?
 // ===== /v26 =====
 </script>
 
+
+<script id="v27-order-auto-rows">
+// ===== v27: Excel-like expandable blank rows on Order sheet =====
+const orderVisibleEndV27=new WeakMap();
+
+function v27LastUsedOrderRow(ws){
+  if(!ws||ws.name!=='발주서')return 0;
+  let last=8;
+  const max=Math.max(ws.rowCount||0,8);
+  // The actual order data lives in A:F. Styled blank rows must not count as used.
+  for(let r=8;r<=max;r++){
+    const row=ws.getRow(r);
+    let used=false;
+    for(let c=1;c<=6;c++){
+      if(norm(displayText(row.getCell(c)))!==''){used=true;break}
+    }
+    if(used)last=r;
+  }
+  return last;
+}
+function v27EnsureOrderBlankRows(ws,count=40){
+  if(!ws||ws.name!=='발주서')return;
+  const last=v27LastUsedOrderRow(ws), target=Math.max(last+count,50);
+  const prev=orderVisibleEndV27.get(ws)||0;
+  const begin=Math.max(8,Math.min(prev||target,target)-count-2);
+  // Style only the rows we may newly expose. v26's helper copies the exact Excel row style.
+  for(let r=Math.max(8,Math.min((ws.rowCount||0)+1,target-count));r<=target;r++)v26EnsureRowStyled(ws,r);
+  // Also make sure the complete trailing range is styled if rowCount does not advance on style-only rows.
+  for(let r=Math.max(8,last+1);r<=target;r++)v26EnsureRowStyled(ws,r);
+  orderVisibleEndV27.set(ws,target);
+}
+
+const getExtentBaseV27=getExtent;
+getExtent=function(ws){
+  const ext=getExtentBaseV27(ws);
+  if(ws?.name==='발주서'){
+    v27EnsureOrderBlankRows(ws,40);
+    ext.maxR=Math.max(ext.maxR,orderVisibleEndV27.get(ws)||0);
+  }
+  return ext;
+};
+
+// Ensure blank rows exist before rendering and after every manual edit/paste.
+const renderSheetBaseV27=renderSheet;
+renderSheet=function(keepScroll=false){
+  const ws=workbook?.getWorksheet(activeSheet);
+  if(ws?.name==='발주서')v27EnsureOrderBlankRows(ws,40);
+  return renderSheetBaseV27(keepScroll);
+};
+
+const v26AfterManualChangeBaseV27=v26AfterManualChange;
+v26AfterManualChange=function(ws,message){
+  if(ws?.name==='발주서')v27EnsureOrderBlankRows(ws,40);
+  return v26AfterManualChangeBaseV27(ws,message);
+};
+
+// When an Order cell edit is committed near the bottom, immediately prepare more rows.
+const beginCellEditBaseV27=beginCellEdit;
+beginCellEdit=function(td,cell,ws,r,c){
+  const ret=beginCellEditBaseV27(td,cell,ws,r,c);
+  if(ws?.name==='발주서'){
+    const grow=()=>{
+      try{
+        const last=v27LastUsedOrderRow(ws),end=orderVisibleEndV27.get(ws)||0;
+        if(last>=end-10){v27EnsureOrderBlankRows(ws,40);requestAnimationFrame(()=>renderSheet(true));}
+      }catch(e){console.warn('v27 order row grow',e)}
+    };
+    td?.addEventListener?.('blur',grow,{once:true});
+  }
+  return ret;
+};
+
+const switchSheetBaseV27=switchSheet;
+switchSheet=function(name){
+  const ws=workbook?.getWorksheet(name);
+  if(ws?.name==='발주서')v27EnsureOrderBlankRows(ws,40);
+  const ret=switchSheetBaseV27(name);
+  if(ws?.name==='발주서')setStatus('발주서 편집 가능 · 맨 아래에도 빈 행이 계속 생성됩니다 · 직접 타이핑 또는 Excel 여러 줄 Ctrl+V 붙여넣기','ok');
+  return ret;
+};
+
+// Newly loaded/recovered workbooks should also expose trailing blank Order rows immediately.
+const loadSourceFileBaseV27=loadSourceFile;
+loadSourceFile=async function(file,mode='source'){
+  const ret=await loadSourceFileBaseV27(file,mode);
+  const ws=workbook?.getWorksheet('발주서');if(ws){orderVisibleEndV27.delete(ws);v27EnsureOrderBlankRows(ws,40);if(activeSheet==='발주서')renderSheet(true)}
+  return ret;
+};
+
+const applyRecoveredStateBaseV27=applyRecoveredState;
+applyRecoveredState=function(saved){
+  const ret=applyRecoveredStateBaseV27(saved);
+  const ws=workbook?.getWorksheet('발주서');if(ws){orderVisibleEndV27.delete(ws);v27EnsureOrderBlankRows(ws,40)}
+  return ret;
+};
+// ===== /v27 =====
+</script>
+
+
+<script id="v28-all-sheet-edit-undo">
+// ===== v28: all sheets editable + Excel-like trailing rows + Undo =====
+const undoStackV28=[];
+const V28_UNDO_LIMIT=80;
+const visibleEndV28=new WeakMap();
+
+function v28CloneValue(v){return cloneObj(v)}
+function v28SetUndoEnabled(){
+  const b=document.getElementById('undoBtnV28');
+  if(b){b.disabled=!undoStackV28.length;b.style.opacity=undoStackV28.length?'1':'.45';b.title=undoStackV28.length?`되돌리기 (${undoStackV28.length})`:'되돌릴 작업이 없습니다';}
+}
+function v28PushUndo(entry){
+  if(!entry||!entry.changes?.length)return;
+  undoStackV28.push(entry);
+  if(undoStackV28.length>V28_UNDO_LIMIT)undoStackV28.shift();
+  v28SetUndoEnabled();
+}
+function v28ClearUndo(){undoStackV28.length=0;v28SetUndoEnabled()}
+function v28PostCellMutation(ws,message=''){
+  if(!ws)return;
+  if(isPackWorkSheet(ws)){
+    palletStates.delete(ws.name);
+    try{dirtyPalletSheets?.delete?.(ws.name)}catch(_){}
+    try{ensurePalletState(ws);recalcWorkSheet(ws)}catch(e){console.warn('v28 pack rebuild',e)}
+  }
+  try{recalcDashboard(workbook)}catch(e){}
+  v28EnsureTrailingRows(ws,40);
+  schedulePersistentState(60);scheduleWorkbookSnapshot(700);
+  renderTabs();renderSheet(true);
+  if(message)setStatus(message,'ok');
+}
+async function undoV28(){
+  if(!undoStackV28.length){setStatus('되돌릴 작업이 없습니다.','busy');return}
+  const item=undoStackV28.pop();v28SetUndoEnabled();
+  const ws=workbook?.getWorksheet(item.sheetName);
+  if(!ws){setStatus('되돌릴 시트를 찾지 못했습니다.','bad');return}
+  if(isPackWorkSheet(ws))try{v26SyncPackStateBeforeManualEdit(ws)}catch(_){}
+  for(const ch of item.changes){
+    const cell=ws.getRow(ch.r).getCell(ch.c);
+    cell.value=v28CloneValue(ch.before);
+  }
+  activeSheet=ws.name;
+  v28PostCellMutation(ws,`↶ 되돌리기 완료 · ${item.label||'이전 수정'}을 취소했습니다.`);
+}
+window.undoV28=undoV28;
+
+// Insert the Undo button next to the Excel save controls.
+(function v28InstallUndoButton(){
+  if(document.getElementById('undoBtnV28'))return;
+  const anchor=document.getElementById('centerExcelSaveBtnV22')||document.querySelector('.toolbar-top .btn-green');
+  if(!anchor)return;
+  const b=document.createElement('button');b.id='undoBtnV28';b.type='button';b.className='btn btn-soft';b.textContent='↶ 되돌리기';b.onclick=undoV28;b.disabled=true;b.style.opacity='.45';
+  anchor.insertAdjacentElement('afterend',b);v28SetUndoEnabled();
+})();
+
+// Every visible worksheet can be edited like a spreadsheet. Formula/hyperlink cells can also be overwritten deliberately.
+v26IsFormulaCell=function(){return false};
+v26CanBulkEdit=function(ws){return !!ws&&!/^__WEBTPL_/.test(String(ws.name||''))};
+v26EditableArea=function(ws,r,c,cell){
+  if(!ws||/^__WEBTPL_/.test(String(ws.name||'')))return false;
+  const max=v26MaxCols(ws);return r>=1&&c>=1&&c<=max;
+};
+isEditableCell=function(ws,r,c,cell){return v26EditableArea(ws,r,c,cell)};
+
+function v28LastUsedRow(ws){
+  if(!ws)return 1;
+  const maxC=v26MaxCols(ws),max=Math.max(1,Math.min(Math.max(ws.rowCount||1,visibleEndV28.get(ws)||0),6000));
+  for(let r=max;r>=1;r--){
+    const row=ws.getRow(r);let used=false;
+    for(let c=1;c<=maxC;c++){
+      const v=row.getCell(c).value;
+      if(v!==null&&v!==undefined&&v!==''){used=true;break}
+    }
+    if(used)return r;
+  }
+  return 1;
+}
+function v28EnsureTrailingRows(ws,count=40){
+  if(!ws||/^__WEBTPL_/.test(String(ws.name||'')))return;
+  const maxC=v26MaxCols(ws),last=v28LastUsedRow(ws),target=Math.min(6000,Math.max(last+count,50));
+  let template=v26StyleTemplateRow(ws);
+  if(template<1)template=1;
+  const src=ws.getRow(template);
+  for(let r=Math.max(1,last+1);r<=target;r++){
+    const row=ws.getRow(r);
+    let styled=false;for(let c=1;c<=Math.min(5,maxC);c++)if(Object.keys(row.getCell(c).style||{}).length){styled=true;break}
+    if(!styled){
+      try{row.height=src.height}catch(_){}
+      for(let c=1;c<=maxC;c++)try{row.getCell(c).style=cloneObj(src.getCell(c).style||{})}catch(_){}
+    }
+  }
+  visibleEndV28.set(ws,target);
+}
+const getExtentBaseV28=getExtent;
+getExtent=function(ws){
+  const ext=getExtentBaseV28(ws);
+  if(ws&&!/^__WEBTPL_/.test(String(ws.name||''))){v28EnsureTrailingRows(ws,40);ext.maxR=Math.max(ext.maxR,visibleEndV28.get(ws)||0)}
+  return ext;
+};
+
+// Make fast pallet/milkrun/parcel header + visual cells editable too.
+renderHeaderRowsHtml=function(ws,start,maxC){
+  const merges=buildMergeMap(ws);let h='';
+  for(let r=1;r<start;r++){
+    const row=ws.getRow(r);if(row.hidden)continue;
+    h+=`<tr style="height:${pxFromPoints(row.height)}px"><th class="row-number">${r}</th>`;
+    for(let c=1;c<=maxC;c++){
+      if(ws.getColumn(c).hidden)continue;const key=`${r}:${c}`;if(merges.covered.has(key))continue;
+      const cell=row.getCell(c),mg=merges.starts.get(key);let span='';if(mg){if(mg.rowspan>1)span+=` rowspan="${mg.rowspan}"`;if(mg.colspan>1)span+=` colspan="${mg.colspan}"`}
+      h+=`<td class="cell editable" data-editable="1" data-r="${r}" data-c="${c}" data-addr="${excelCol(c)}${r}"${span} style="${escAttr(cellCss(cell))}">${escHtml(displayText(cell))}</td>`;
+    }
+    h+='</tr>';
+  }
+  return h;
+};
+const palletVisualCellHtmlBaseV28=palletVisualCellHtml;
+palletVisualCellHtml=function(ws,r,c,item,value,extra='',span=''){
+  const base=ws.getRow(generationStartRow(ws)).getCell(c),css=cellCss(base)+(extra?';'+extra:'');
+  return `<td class="cell editable" data-editable="1" data-r="${r}" data-c="${c}" data-addr="${excelCol(c)}${r}"${span} style="${escAttr(css)}">${escHtml(value??'')}</td>`;
+};
+function v28AppendPackBlankRows(ws,count=40){
+  if(!ws||!isPackWorkSheet(ws))return;
+  const tbody=document.querySelector('#sheetHost table.sheet-table tbody');if(!tbody||tbody.querySelector('tr.v28-pack-blank'))return;
+  const state=ensurePalletState(ws),start=generationStartRow(ws),used=(state.completed||[]).reduce((a,g)=>a+(g.items||[]).length,0)+(state.incomplete||[]).length;
+  const first=start+used,maxC=v26MaxCols(ws),template=ws.getRow(start);
+  v28EnsureTrailingRows(ws,40);
+  for(let i=0;i<count;i++){
+    const r=first+i;
+    const tr=document.createElement('tr');tr.className='v28-pack-blank';tr.style.height=pxFromPoints(template.height)+'px';
+    const th=document.createElement('th');th.className='row-number data-row';th.dataset.rowNo=String(r);th.textContent=String(r);tr.appendChild(th);
+    for(let c=1;c<=maxC;c++){
+      if(ws.getColumn(c).hidden)continue;
+      const td=document.createElement('td');td.className='cell editable';td.dataset.editable='1';td.dataset.r=String(r);td.dataset.c=String(c);td.dataset.addr=`${excelCol(c)}${r}`;td.style.cssText=cellCss(template.getCell(c));td.textContent=displayText(ws.getRow(r).getCell(c));tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+}
+const renderSheetBaseV28=renderSheet;
+renderSheet=function(keepScroll=false){
+  const ws=workbook?.getWorksheet(activeSheet);if(ws)v28EnsureTrailingRows(ws,40);
+  const ret=renderSheetBaseV28(keepScroll);
+  if(ws&&isPackWorkSheet(ws))requestAnimationFrame(()=>v28AppendPackBlankRows(ws,40));
+  return ret;
+};
+
+// Single-cell editor with undo recording.
+beginCellEdit=function(td,cell,ws,r,c){
+  if(!td||td.classList.contains('editing'))return;
+  if(isPackWorkSheet(ws))try{v26SyncPackStateBeforeManualEdit(ws)}catch(_){}
+  const originalText=displayText(cell),originalValue=v28CloneValue(cell.value);
+  td.classList.add('editing');td.contentEditable='true';td.spellcheck=false;td.focus();
+  const range=document.createRange();range.selectNodeContents(td);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
+  let done=false;
+  const finish=(commit)=>{
+    if(done)return;done=true;td.removeEventListener('blur',onBlur);td.removeEventListener('keydown',onKey);td.contentEditable='false';td.classList.remove('editing');
+    if(commit){
+      const newVal=coerceValue(td.innerText,cell,c);cell.value=newVal;
+      const changed=JSON.stringify(v28CloneValue(originalValue))!==JSON.stringify(v28CloneValue(cell.value));
+      if(changed)v28PushUndo({sheetName:ws.name,label:`${cell.address} 셀 수정`,changes:[{r,c,before:originalValue,after:v28CloneValue(cell.value)}]});
+      v28PostCellMutation(ws,changed?`✓ ${cell.address} 셀을 수정했습니다. · Ctrl+Z로 되돌릴 수 있습니다.`:'');
+    }else td.textContent=originalText;
+  };
+  const onBlur=()=>finish(true),onKey=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}else if(e.key==='Tab'){e.preventDefault();finish(true)}};
+  td.addEventListener('blur',onBlur);td.addEventListener('keydown',onKey);
+};
+
+// Multi-cell paste is one undo step.
+v26PasteMatrix=async function(text){
+  const ws=workbook?.getWorksheet(activeSheet),pos=v26ParseAddr(selectedCell);if(!ws||!pos||!v26CanBulkEdit(ws))return false;
+  const matrix=v26ClipboardMatrix(text);if(!matrix.length)return false;
+  if(isPackWorkSheet(ws))try{v26SyncPackStateBeforeManualEdit(ws)}catch(_){}
+  const maxC=v26MaxCols(ws),limitR=6000,changes=[];
+  for(let i=0;i<matrix.length;i++){
+    const r=pos.r+i;if(r>limitR)break;v28EnsureTrailingRows(ws,40);
+    for(let j=0;j<matrix[i].length;j++){
+      const c=pos.c+j;if(c>maxC)break;const cell=ws.getRow(r).getCell(c),before=v28CloneValue(cell.value),raw=matrix[i][j];
+      cell.value=raw===''?null:coerceValue(raw,cell,c);const after=v28CloneValue(cell.value);
+      if(JSON.stringify(before)!==JSON.stringify(after))changes.push({r,c,before,after});
+    }
+  }
+  if(!changes.length)return false;
+  v28PushUndo({sheetName:ws.name,label:`${matrix.length}줄 붙여넣기`,changes});
+  v28PostCellMutation(ws,`✓ ${matrix.length}줄을 ${selectedCell}부터 붙여넣었습니다. · Ctrl+Z로 되돌릴 수 있습니다.`);return true;
+};
+
+// Delete/Backspace clears the selected cell and is undoable. Ctrl+Z triggers app undo after an edit is committed.
+window.addEventListener('keydown',e=>{
+  const tag=document.activeElement?.tagName||'';
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&String(e.key).toLowerCase()==='z'){
+    if(document.activeElement?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(tag))return;
+    e.preventDefault();undoV28();return;
+  }
+  if(!['Delete','Backspace'].includes(e.key)||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(document.activeElement?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(tag))return;
+  const ws=workbook?.getWorksheet(activeSheet),pos=v26ParseAddr(selectedCell);if(!ws||!pos||!v26CanBulkEdit(ws))return;
+  const cell=ws.getRow(pos.r).getCell(pos.c),before=v28CloneValue(cell.value);if(before===null||before===undefined||before==='')return;
+  if(isPackWorkSheet(ws))try{v26SyncPackStateBeforeManualEdit(ws)}catch(_){}
+  e.preventDefault();cell.value=null;v28PushUndo({sheetName:ws.name,label:`${selectedCell} 내용 삭제`,changes:[{r:pos.r,c:pos.c,before,after:null}]});v28PostCellMutation(ws,`✓ ${selectedCell} 내용을 지웠습니다. · Ctrl+Z로 되돌릴 수 있습니다.`);
+},true);
+
+// Clear undo history when a different shipment/project/file is loaded.
+const loadSourceFileBaseV28=loadSourceFile;
+loadSourceFile=async function(file,mode='source'){v28ClearUndo();const ret=await loadSourceFileBaseV28(file,mode);const ws=workbook?.getWorksheet(activeSheet);if(ws)v28EnsureTrailingRows(ws,40);return ret};
+if(typeof switchProjectV18==='function'){
+  const switchProjectBaseV28=switchProjectV18;
+  switchProjectV18=async function(id){if(id&&id!==currentProjectIdV18)v28ClearUndo();return await switchProjectBaseV28(id)};
+}
+const switchSheetBaseV28=switchSheet;
+switchSheet=function(name){const ret=switchSheetBaseV28(name);const ws=workbook?.getWorksheet(name);if(ws)setStatus(`${ws.name} 편집 가능 · 클릭 후 타이핑 / 더블클릭 / Delete / Excel Ctrl+V · Ctrl+Z 또는 '되돌리기' 버튼 지원`,'ok');return ret};
+
+// Make sure the initial active sheet is extended and the button reflects history state.
+requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v28EnsureTrailingRows(ws,40);renderSheet(true)}v28SetUndoEnabled()});
+// ===== /v28 =====
+</script>
 </body>
 </html>
