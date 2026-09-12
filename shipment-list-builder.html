@@ -28,11 +28,11 @@
   <a class="nav-btn" href="/">📊 TradeCode Navi 관세율 계산</a>
   <a class="nav-btn" href="/coupang-margin">🚀 로켓배송 원가&amp;마진률 계산</a>
   <a class="nav-btn" href="/logistics-cost">🚚 물류비 계산기</a>
-  <a class="nav-btn" href="/barcode-label.html">🏷️ 바코드 라벨 생성기</a>
+  <a class="nav-btn" href="/barcode-label.html?v=39">🏷️ 바코드 라벨 생성기</a>
   <a class="nav-btn" href="/order-barcode.html">📦 발주 바코드 출력</a>
-  <a class="nav-btn active" href="/shipment-list-builder.html">📋 선적 리스트 작성</a>
+  <a class="nav-btn active" href="/shipment-list-builder.html?v=39">📋 선적 리스트 작성</a>
   <a class="nav-btn" href="/detail-maker">✨ 쿠팡 상세페이지 자동 제작</a>
-  <a class="nav-btn" href="/coupang-inbound-work.html">📦 쿠팡 입고 작업</a>
+  <a class="nav-btn" href="/coupang-inbound-work.html?v=39">📦 쿠팡 입고 작업</a>
 </nav>
 <main class="main">
   <div class="head"><h1>선적 리스트 작성</h1><span class="sub">동일 상품 · 동일 센터 발주수량 자동 합산</span></div>
@@ -105,10 +105,23 @@ function normalizeCompany(title){const t=norm(title);if(/봄날애/.test(t))retu
 function baseCenter(center){return norm(center).replace(/\s*(팔레트|밀크런)\s*/gi,' ').replace(/\s+/g,' ').trim()}
 function centerKey(company,center){return `${company}|${compact(baseCenter(center))}`}
 function centerLabel(company,center){const base=baseCenter(center),rule=centerRules.get(centerKey(company,center));const type=rule?.type||'parcel';return type==='pallet'?`${base} 팔레트`:type==='milkrun'?`${base} 밀크런`:base}
-function hslToHex(h,s,l){s/=100;l/=100;const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2;let r=0,g=0,b=0;if(h<60){r=c;g=x}else if(h<120){r=x;g=c}else if(h<180){g=c;b=x}else if(h<240){g=x;b=c}else if(h<300){r=x;b=c}else{r=c;b=x}const hx=v=>Math.round((v+m)*255).toString(16).padStart(2,'0').toUpperCase();return hx(r)+hx(g)+hx(b)}
-function autoCenterColor(key){let hash=2166136261;for(const ch of String(key)){hash^=ch.charCodeAt(0);hash=Math.imul(hash,16777619)>>>0}const hue=hash%360,sat=50+((hash>>>8)%12),light=80+((hash>>>16)%7);return hslToHex(hue,sat,light)}
+// v39: 센터 구분색은 같은 파일 안에서 서로 확연히 다르게 보이도록 고대비 팔레트를 순차 배정합니다.
+// 업체+센터 조합은 한 파일 안에서 항상 같은 색을 사용하며, 사용자가 색을 지정할 필요가 없습니다.
+const CENTER_COLOR_PALETTE_V39=[
+  'FFD166','7BDFF2','F7A072','B8E986','CDB4DB','FF8FAB','90DBF4','F6BD60',
+  '84DCC6','BDE0FE','E4C1F9','FFB4A2','A8DADC','CDE77F','F4ACB7','9BF6FF',
+  'CAFFBF','FDFFB6','BDB2FF','FFC6FF','A0C4FF','D4A373','80ED99','F1C0E8',
+  '98F5E1','FEE440','B9FBC0','CFBAF0','FFA69E','ADE8F4','C1FBA4','FEC89A'
+];
 function centerColor(company,center){const key=centerKey(company,center);return centerColors.get(key)||'E8EEF3'}
-function assignCenterColors(){centerColors=new Map();for(const [key] of centerRules)centerColors.set(key,autoCenterColor(key))}
+function assignCenterColors(){
+  centerColors=new Map();
+  let i=0;
+  for(const [key] of centerRules){
+    centerColors.set(key,CENTER_COLOR_PALETTE_V39[i%CENTER_COLOR_PALETTE_V39.length]);
+    i++;
+  }
+}
 function setStatus(text,kind=''){const s=$('status');s.textContent=text;s.className='status '+kind}
 function isShipmentTitle(a,b,c,d,e){const t=norm(a);return !!t && /선적(?:건)?/.test(t) && (!norm(b)&&!norm(c)&&!norm(d)&&!norm(e)||/\d+월/.test(t))}
 function rowTemplate(ws,rowNo){const row=ws.getRow(rowNo);return {height:row.height,cells:Array.from({length:7},(_,i)=>({style:clone(row.getCell(i+1).style),numFmt:row.getCell(i+1).numFmt,alignment:clone(row.getCell(i+1).alignment)}))}}
