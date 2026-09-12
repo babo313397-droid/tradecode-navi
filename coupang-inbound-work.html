@@ -106,6 +106,9 @@ button,input,select{font:inherit}button{cursor:pointer}
 .project-bar .project-note{font-size:10px;color:#607168;margin-left:4px;white-space:nowrap}
 @media(max-width:1050px){.project-bar select{min-width:190px;max-width:300px}.project-bar .project-note{width:100%;margin-left:0}}
 
+
+.scan-target-row{animation:scanTargetFlash 1.8s ease-out 1;outline:3px solid #ffb300;outline-offset:-3px}
+@keyframes scanTargetFlash{0%{background:#fff59d}35%{background:#fff176}100%{background:transparent}}
 </style>
 </head>
 <body>
@@ -376,6 +379,39 @@ function scanBarcodeInline(barcode){
   if(boxDraft.mode==='edit'&&boxDraft.sheetName!==ws.name)boxDraft=newDraft(ws);
   addDraftBarcodeInline(barcode);focusInlineScan();
 }
+function scrollScannedBarcodeIntoView(ws,item,barcode){
+  if(!ws||!item)return;
+  try{
+    const state=assignVisualRows(ws,ensurePalletState(ws));
+    let targetRow=Number(item._visualRow||0);
+    if(!targetRow){
+      const hit=state.incomplete.find(x=>x===item||itemIdentity(x)===itemIdentity(item));
+      targetRow=Number(hit?._visualRow||0);
+    }
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      let rowEl=targetRow?document.querySelector(`#sheetHost td.cell[data-r="${targetRow}"][data-c="3"]`)?.closest('tr'):null;
+      if(!rowEl){
+        const cells=[...document.querySelectorAll('#sheetHost td.cell[data-c="3"]')];
+        const cell=cells.find(td=>norm(td.textContent)===norm(barcode));
+        rowEl=cell?.closest('tr')||null;
+      }
+      if(!rowEl)return;
+      document.querySelector('#sheetHost .scan-target-row')?.classList.remove('scan-target-row');
+      rowEl.classList.add('scan-target-row');
+      const vp=$('sheetViewport');
+      if(vp){
+        const top=Math.max(0,rowEl.offsetTop-(vp.clientHeight-rowEl.offsetHeight)/2);
+        vp.scrollTo({top,behavior:'smooth'});
+        const bc=rowEl.querySelector('td.cell[data-c="3"]');
+        if(bc){
+          const left=Math.max(0,bc.offsetLeft-Math.max(20,(vp.clientWidth-bc.offsetWidth)/2));
+          vp.scrollTo({top,left,behavior:'smooth'});
+        }
+      }else rowEl.scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'});
+      setTimeout(()=>rowEl.classList.remove('scan-target-row'),1900);
+    }));
+  }catch(e){console.warn('barcode row scroll failed',e)}
+}
 function addDraftBarcodeInline(barcode){
   if(!boxDraft)return;barcode=norm(barcode);
   const ws=workbook.getWorksheet(boxDraft.sheetName),state=ensurePalletState(ws);let src=null,oldItem=null;
@@ -388,7 +424,7 @@ function addDraftBarcodeInline(barcode){
   const exists=boxDraft.items.find(i=>norm(i.barcode)===barcode);
   if(exists){setStatus('이미 이 박스에 추가된 상품입니다. 아래 수량칸을 수정하세요.','busy');renderInlineDraft();return}
   boxDraft.items.push({sourceId:src.id,productNumber:cloneObj(src.productNumber),productName:src.productName,barcode:src.barcode,center:src.center,centerFill:cloneObj(src.centerFill),centerFont:cloneObj(src.centerFont),order:src.order,availableQty:Number(src.remainingQty||src.totalQty||0),perBoxQty:Number(oldItem?.perBoxQty ?? src.remainingQty ?? src.totalQty ?? 1)});
-  renderInlineDraft();schedulePersistentState(120);setStatus(`✓ ${barcode} 추가 · 같은 박스 상품은 계속 스캔하세요.`,'ok')
+  renderInlineDraft();schedulePersistentState(120);setStatus(`✓ ${barcode} 추가 · 같은 박스 상품은 계속 스캔하세요.`,'ok');scrollScannedBarcodeIntoView(ws,src,barcode)
 }
 function validateInlineDraft(){
   pullInlineDraft();if(!boxDraft?.items.length)return '바코드를 한 개 이상 스캔해 주세요.';
