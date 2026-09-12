@@ -147,7 +147,7 @@ button,input,select{font:inherit}button{cursor:pointer}
   </section>
 
   <section class="excel-shell">
-    <div class="excel-caption"><b id="activeSheetName">발주서</b><span id="sheetInfo">Excel 시트 보기</span><span id="scanReady" style="display:none;font-size:9.5px;color:#217346;font-weight:900">바코드 스캔 대기</span><span class="edit-hint">팔레트/밀크런/택배: 아래 작업바에서 바로 스캔 · 완료행 번호 우클릭 → 수정/취소</span></div>
+    <div class="excel-caption"><b id="activeSheetName">발주서</b><span id="sheetInfo">Excel 시트 보기</span><span id="scanReady" style="display:none;font-size:9.5px;color:#217346;font-weight:900">바코드 스캔 대기</span><span id="missingBoxNosV33" style="display:none;font-size:10px;color:#d00000;font-weight:900;white-space:nowrap" title="현재 선적 작업 전체에서 완료된 박스번호를 기준으로 누락 번호를 표시합니다."></span><span class="edit-hint">팔레트/밀크런/택배: 아래 작업바에서 바로 스캔 · 완료행 번호 우클릭 → 수정/취소</span></div>
     <div id="palletInline" class="pallet-inline" style="display:none">
       <div class="pallet-inline-top">
         <div class="inline-mode"><b id="inlineModeTitle">새 박스 작업</b><span id="inlineSheetLabel"></span></div>
@@ -2981,5 +2981,111 @@ switchSheet=function(name){const ret=switchSheetBaseV28(name);const ws=workbook?
 requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v28EnsureTrailingRows(ws,40);renderSheet(true)}v28SetUndoEnabled()});
 // ===== /v28 =====
 </script>
+
+<script>
+// ===== v33 missing physical box number alert =====
+// Uses the physical '박스번호' (column P / group.boxNo), across every active work tab in the current shipment.
+// Product-catalog, barcode-label storage, and server APIs are intentionally untouched.
+(function(){
+  function v33AddBoxLabelToSet(label,set){
+    const text=String(label??'').trim();
+    if(!text)return;
+    // Supports 12, 12~13, 12-13, 12～13 and comma/space separated values.
+    const re=/(\d+)\s*(?:~|～|－|-|–|—)\s*(\d+)|(\d+)/g;
+    let m;
+    while((m=re.exec(text))){
+      if(m[1]&&m[2]){
+        let a=Number(m[1]),b=Number(m[2]);
+        if(!Number.isFinite(a)||!Number.isFinite(b))continue;
+        if(a>b){const t=a;a=b;b=t}
+        // Protect the UI from a malformed enormous range.
+        if(b-a>10000)b=a+10000;
+        for(let n=a;n<=b;n++)if(n>0)set.add(n);
+      }else{
+        const n=Number(m[3]);if(Number.isFinite(n)&&n>0)set.add(n);
+      }
+    }
+  }
+
+  function v33CollectUsedBoxNumbers(){
+    const used=new Set();
+    if(!window.workbook && typeof workbook==='undefined')return used;
+    let sheets=[];
+    try{
+      sheets=(typeof visibleWorkSheets==='function')?visibleWorkSheets():((workbook?.worksheets)||[]);
+    }catch(_){sheets=(workbook?.worksheets)||[]}
+    for(const ws of sheets){
+      try{
+        if(typeof isPackWorkSheet==='function'&&!isPackWorkSheet(ws))continue;
+        // Prefer live in-memory packing state so a just-completed box is reflected immediately.
+        const st=(typeof palletStates!=='undefined'&&palletStates?.get)?palletStates.get(ws.name):null;
+        if(st&&Array.isArray(st.completed)){
+          for(const g of st.completed)v33AddBoxLabelToSet(g?.boxNo,used);
+          continue;
+        }
+        // Untouched tabs may not have an in-memory state yet. Read their visible P-column box numbers directly.
+        const start=(typeof generationStartRow==='function')?generationStartRow(ws):1;
+        const end=Math.max(start,Number(ws?.rowCount)||start);
+        for(let r=start;r<=end;r++){
+          let value='';
+          try{value=(typeof displayText==='function')?displayText(ws.getRow(r).getCell(16)):ws.getRow(r).getCell(16).value}catch(_){value=''}
+          if(value!==null&&value!==undefined&&String(value).trim())v33AddBoxLabelToSet(value,used);
+        }
+      }catch(e){console.warn('[v33 박스번호 확인]',ws?.name,e)}
+    }
+    return used;
+  }
+
+  function v33MissingList(){
+    const used=v33CollectUsedBoxNumbers();
+    if(!used.size)return [];
+    let max=0;for(const n of used)if(n>max)max=n;
+    const missing=[];
+    // A normal shipment starts at 1. Only numbers up to the highest completed box are considered missing.
+    for(let n=1;n<=max;n++)if(!used.has(n))missing.push(n);
+    return missing;
+  }
+
+  function v33FormatMissing(list){
+    if(!list.length)return '';
+    // Keep the caption usable even if an old job has a very long gap.
+    const limit=80;
+    const shown=list.slice(0,limit).join(', ');
+    const extra=list.length>limit?` 외 ${list.length-limit}개`:'';
+    return `박스번호 누락: ${shown}${extra}`;
+  }
+
+  function updateMissingBoxAlertV33(){
+    const el=document.getElementById('missingBoxNosV33');if(!el)return;
+    try{
+      const missing=v33MissingList();
+      if(!missing.length){el.textContent='';el.style.display='none';el.title='현재 선적 작업의 박스번호 누락이 없습니다.';return}
+      el.textContent=v33FormatMissing(missing);
+      el.style.display='inline';
+      el.title=`현재 선적 작업 전체 누락 박스번호 (${missing.length}개): ${missing.join(', ')}`;
+    }catch(e){console.warn('[v33 누락 박스번호 표시]',e);el.style.display='none'}
+  }
+  window.updateMissingBoxAlertV33=updateMissingBoxAlertV33;
+
+  // Hook the final renderSheet implementation (after v28 wrappers) so completion/edit/cancel/switch all refresh immediately.
+  if(typeof renderSheet==='function'){
+    const renderSheetBaseV33=renderSheet;
+    renderSheet=function(...args){
+      const ret=renderSheetBaseV33.apply(this,args);
+      requestAnimationFrame(updateMissingBoxAlertV33);
+      return ret;
+    };
+  }
+  if(typeof switchSheet==='function'){
+    const switchSheetBaseV33=switchSheet;
+    switchSheet=function(...args){const ret=switchSheetBaseV33.apply(this,args);requestAnimationFrame(updateMissingBoxAlertV33);return ret};
+  }
+  // Other-PC sync or delayed saves can update state outside a direct render path, so keep the small caption fresh.
+  setInterval(updateMissingBoxAlertV33,1500);
+  requestAnimationFrame(updateMissingBoxAlertV33);
+})();
+// ===== /v33 =====
+</script>
+
 </body>
 </html>
