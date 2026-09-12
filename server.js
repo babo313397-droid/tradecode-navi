@@ -789,6 +789,71 @@ const LABEL_EDIT_KEY = String(process.env.SHARED_LABEL_EDIT_KEY || process.env.L
 function ensureSharedLabelDir() {
   fs.mkdirSync(SHARED_LABEL_DIR, { recursive: true });
 }
+
+// v30: 이전 공용 라벨 저장 파일 자동 탐색/복구
+function looksLikeLabelArray(value) {
+  const arr = Array.isArray(value) ? value : (Array.isArray(value?.labels) ? value.labels : (Array.isArray(value?.items) ? value.items : null));
+  if (!arr || !arr.length) return null;
+  const sample = arr.slice(0, 20);
+  const hits = sample.filter(x => x && typeof x === 'object' && (x.barcode || x.productNumber || x.productName)).length;
+  return hits ? arr : null;
+}
+function legacyLabelSearchRoots() {
+  const roots = [
+    __dirname,
+    path.join(__dirname, 'data'),
+    path.dirname(COUPANG_SHARED_DIR),
+    COUPANG_SHARED_DIR,
+    process.env.SHARED_LABEL_DIR || ''
+  ].filter(Boolean);
+  return [...new Set(roots.map(x => path.resolve(x)))];
+}
+function scanLegacyLabelFiles() {
+  const current = path.resolve(SHARED_LABELS_PATH);
+  const found = [];
+  const seen = new Set();
+  const walk = (dir, depth=0) => {
+    if (depth > 3 || !dir || !fs.existsSync(dir)) return;
+    let entries=[]; try { entries=fs.readdirSync(dir,{withFileTypes:true}); } catch { return; }
+    for (const ent of entries) {
+      const fp=path.join(dir,ent.name);
+      if (ent.isDirectory()) {
+        if (/node_modules|\.git|projects$/i.test(ent.name)) continue;
+        walk(fp,depth+1); continue;
+      }
+      if (!ent.isFile() || !/\.json$/i.test(ent.name)) continue;
+      if (!/(label|barcode|라벨)/i.test(ent.name) && !/(shared|data)/i.test(path.basename(dir))) continue;
+      const abs=path.resolve(fp); if(abs===current || seen.has(abs)) continue; seen.add(abs);
+      try {
+        const st=fs.statSync(abs); if(st.size<=2 || st.size>15*1024*1024) continue;
+        const parsed=JSON.parse(fs.readFileSync(abs,'utf8'));
+        const arr=looksLikeLabelArray(parsed);
+        if(arr) found.push({path:abs,count:arr.length,labels:arr});
+      } catch {}
+    }
+  };
+  for(const root of legacyLabelSearchRoots()) walk(root,0);
+  return found;
+}
+function mergeLabelArrays(base, incoming) {
+  const out=Array.isArray(base)?[...base]:[];
+  for(const raw of (incoming||[])) {
+    try { upsertSharedLabel(out, raw); } catch {}
+  }
+  return out;
+}
+function autoRecoverLegacyLabelsIfNeeded() {
+  ensureSharedLabelDir();
+  let current = readSharedArray(SHARED_LABELS_PATH);
+  const found = scanLegacyLabelFiles();
+  if (!current.length && found.length) {
+    let merged=[];
+    for(const f of found) merged=mergeLabelArrays(merged,f.labels);
+    if(merged.length){ writeSharedArray(SHARED_LABELS_PATH,merged); current=merged; console.log(`[공용 라벨] 이전 저장파일에서 ${merged.length}개 자동 복구`); }
+  }
+  return {labels:current, found:found.map(x=>({path:x.path,count:x.count}))};
+}
+
 function readSharedArray(filePath) {
   try {
     if (!fs.existsSync(filePath)) return [];
@@ -873,11 +938,18 @@ function upsertSharedLabel(labels, raw) {
 }
 
 app.get('/api/shared-labels', (req, res) => {
-  ensureSharedLabelDir();
-  const labels = readSharedArray(SHARED_LABELS_PATH)
-    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  const recovered = autoRecoverLegacyLabelsIfNeeded();
+  const labels = recovered.labels.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
   res.set('Cache-Control', 'no-store');
-  res.json({ ok: true, labels, count: labels.length, editKeyRequired: !!LABEL_EDIT_KEY, permanent: false, storage: 'server-json' });
+  res.json({ ok: true, labels, count: labels.length, editKeyRequired: !!LABEL_EDIT_KEY, permanent: false, storage: 'server-json', legacySources: recovered.found.length });
+});
+
+app.get('/api/shared-labels-recovery-scan', (req,res)=>{
+  try{
+    const recovered=autoRecoverLegacyLabelsIfNeeded();
+    res.set('Cache-Control','no-store');
+    res.json({ok:true,count:recovered.labels.length,sources:recovered.found});
+  }catch(err){res.status(500).json({ok:false,error:err.message})}
 });
 
 app.post('/api/shared-labels', requireLabelEditKey, (req, res) => {
