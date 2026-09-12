@@ -2225,6 +2225,250 @@ window.addEventListener('drop',e=>{
 },{capture:true});
 window.addEventListener('keydown',e=>{if(newProjectDropOpenV23&&e.key==='Escape')closeNewProjectDropV23();});
 // ===== /v23 =====
+
+
+// ===== v24 dynamic-center generation =====
+// Each new shipment now creates work sheets only for centers that actually exist in the uploaded source.
+function v24CenterKey(center){return norm(center).replace(/\s+/g,'').toLowerCase()}
+function v24CompanyKey(company){const c=norm(company);if(/봄날애/.test(c))return '봄날애';if(/차통/.test(c))return '차통';if(/코리아원/.test(c))return '코리아원';return c||'코리아원'}
+function v24CenterText(center){return norm(center).replace(/\s+/g,' ').trim()}
+function v24SheetSpec(company,center){
+  const comp=v24CompanyKey(company), raw=v24CenterText(center), compact=v24CenterKey(center);
+  let kind=/팔레트|밀크런/i.test(raw)?'pallet':'parcel';
+  // These two are fixed pallet/milk-run centers even when the source occasionally omits the word.
+  if(/인천14/.test(compact)||/인천47/.test(compact))kind='pallet';
+  let name='';
+  if(comp==='코리아원'){
+    if(/^인천14(?:팔레트)?$/.test(compact))name='인천 14팔레트';
+    else if(/^인천47(?:밀크런)?$/.test(compact))name='인천47 밀크런';
+    else if(/^안성5$/.test(compact))name='안성 5';
+    else if(/^안성8$/.test(compact))name='안성 8';
+    else name=raw;
+  }else if(comp==='봄날애') name=`봄날애 ${raw}`;
+  else if(comp==='차통') name=`차통 ${raw}`;
+  else name=`${comp} ${raw}`;
+  return {name:safeSheetName(name),kind,company:comp,center:raw};
+}
+function makeSheetName(company,center){return v24SheetSpec(company,center).name}
+
+function visibleWorksheets(){
+  if(!workbook)return[];
+  const all=workbook.worksheets.filter(ws=>!isEmptyReserve(ws)&&!/^__WEBTPL_/.test(ws.name));
+  const order=all.find(ws=>ws.name==='발주서');
+  const works=all.filter(ws=>ws.name!=='발주서');
+  const pallets=works.filter(ws=>sheetKind(ws)==='pallet');
+  const parcels=works.filter(ws=>sheetKind(ws)!=='pallet');
+  return [...(order?[order]:[]),...pallets,...parcels];
+}
+function visibleWorkSheets(){return visibleWorksheets().filter(ws=>ws.name!=='발주서')}
+function renderTabs(){
+  const host=$('sheetTabs');host.innerHTML='';
+  const left=document.createElement('button');left.className='sheet-nav-arrow';left.textContent='◀';left.onclick=()=>host.scrollBy({left:-320,behavior:'smooth'});host.appendChild(left);
+  const sheets=visibleWorksheets(),order=sheets.find(ws=>ws.name==='발주서'),works=sheets.filter(ws=>ws.name!=='발주서'),pallets=works.filter(ws=>sheetKind(ws)==='pallet'),parcels=works.filter(ws=>sheetKind(ws)!=='pallet');
+  if(order)host.appendChild(makeTabButton(order));
+  pallets.forEach(ws=>host.appendChild(makeTabButton(ws)));
+  host.appendChild(makeAddTab('pallet'));
+  parcels.forEach(ws=>host.appendChild(makeTabButton(ws)));
+  host.appendChild(makeAddTab('parcel'));
+  const right=document.createElement('button');right.className='sheet-nav-arrow';right.textContent='▶';right.onclick=()=>host.scrollBy({left:320,behavior:'smooth'});host.appendChild(right);
+}
+
+async function generateFromRaw(sections){
+  const wb=await takeTemplateWorkbook(),order=wb.getWorksheet('발주서');
+  const orderTitleSpec=styleRowFrom(order,8,1,6),orderDataSpec=styleRowFrom(order,9,1,6),orderRows=order.rowCount;
+  unmergeDataArea(order,8);
+  for(let r=8;r<=orderRows;r++){const row=order.getRow(r);for(let c=1;c<=35;c++)row.getCell(c).value=null}
+
+  let writeRow=8;const allItems=[];
+  for(const sec of sections){
+    const tr=order.getRow(writeRow);applyStyleSpecFast(tr,orderTitleSpec);tr.getCell(1).value=sec.title;
+    try{order.mergeCells(writeRow,1,writeRow,6)}catch(e){}
+    writeRow++;
+    for(const it of sec.items){
+      const rr=order.getRow(writeRow);applyStyleSpecFast(rr,orderDataSpec);
+      rr.getCell(1).value=it.productNumber;rr.getCell(2).value=it.productName;rr.getCell(3).value=it.barcode;rr.getCell(4).value=it.center;
+      if(it.centerFill)rr.getCell(4).fill=cloneObj(it.centerFill);
+      if(it.centerFont)rr.getCell(4).font={...cloneObj(rr.getCell(4).font),color:cloneObj(it.centerFont.color)};
+      rr.getCell(5).value=it.qty;rr.getCell(6).value=null;applySourceFonts(rr,it);
+      it._company=sec.company;allItems.push(it);writeRow++;
+    }
+  }
+
+  const palletEx=wb.getWorksheet('인천 14팔레트')||templateFor(wb,'pallet');
+  const parcelEx=wb.getWorksheet('안성 5')||templateFor(wb,'parcel');
+  if(!palletEx||!parcelEx)throw new Error('팔레트/택배 기준 시트 템플릿을 찾지 못했습니다.');
+  const palletSpec=styleRowFrom(palletEx,generationStartRow(palletEx),1,19),parcelSpec=styleRowFrom(parcelEx,generationStartRow(parcelEx),1,19);
+
+  // Build one destination sheet per center, in the order each center first appears in the source.
+  const groups=new Map();let sourceOrder=0;
+  for(const it of allItems){
+    const spec=v24SheetSpec(it._company,it.center),key=`${v24CompanyKey(it._company)}|${v24CenterKey(it.center)}`;
+    if(!groups.has(key))groups.set(key,{...spec,items:[],sourceOrder:sourceOrder++});
+    groups.get(key).items.push(it);
+  }
+
+  const desiredNames=new Set(),sheetItems=[];
+  for(const group of groups.values()){
+    let name=group.name;
+    // Avoid accidental name collisions between two genuinely different center groups.
+    if(desiredNames.has(name)){
+      const base=name;let i=2;while(desiredNames.has(name))name=safeSheetName(`${base} ${i++}`);
+    }
+    desiredNames.add(name);group.name=name;
+    let ws=wb.getWorksheet(name);
+    if(ws&&RESERVE_NAMES.test(ws.name))ws=null;
+    if(!ws)ws=cloneTemplateSheet(wb,group.kind,name);
+    ws._webKind=group.kind;ws._webSourceOrder=group.sourceOrder;
+    const start=generationStartRow(ws);unmergeDataArea(ws,start);
+    const clearTo=Math.max(ws.rowCount,start+group.items.length+20);
+    for(let r=start;r<=clearTo;r++)for(let c=1;c<=22;c++)ws.getRow(r).getCell(c).value=null;
+    ws.getCell('E3').value=0;ws.getCell('G3').value=0;ws.getCell('K3').value=0;ws.getCell('A1').value=name;
+    sheetItems.push({ws,group});
+  }
+
+  // Remove every old fixed work sheet that is not used by this shipment.
+  // Reserve template sheets stay hidden so the +팔레트/+택배 buttons can still create extra work later.
+  for(const ws of [...wb.worksheets]){
+    if(ws.name==='발주서'||RESERVE_NAMES.test(ws.name)||/^__WEBTPL_/.test(ws.name))continue;
+    if(!desiredNames.has(ws.name))try{wb.removeWorksheet(ws.id)}catch(e){console.warn('unused sheet remove failed',ws.name,e)}
+  }
+
+  for(const {ws,group} of sheetItems){
+    const kind=group.kind,start=generationStartRow(ws);let rr=start;
+    for(const it of group.items){
+      const row=ws.getRow(rr++);applyStyleSpecFast(row,kind==='pallet'?palletSpec:parcelSpec);
+      row.getCell(1).value=it.productNumber;row.getCell(2).value=it.productName;row.getCell(3).value=it.barcode;row.getCell(4).value=centerDisplay(it._company,it.center);
+      if(it.centerFill)row.getCell(4).fill=cloneObj(it.centerFill);
+      if(it.centerFont)row.getCell(4).font={...cloneObj(row.getCell(4).font),color:cloneObj(it.centerFont.color)};
+      row.getCell(5).value=it.qty;applySourceFonts(row,it);it._sheet=ws.name;
+    }
+    const incomplete=group.items.map((it,k)=>({id:`${ws.name}:${start+k}:${norm(it.barcode)||norm(it.productNumber)}`,productNumber:cloneObj(it.productNumber),productName:it.productName,barcode:it.barcode,center:centerDisplay(it._company,it.center),qty:Number(it.qty)||0,remainingQty:Number(it.qty)||0,centerFill:cloneObj(it.centerFill),centerFont:cloneObj(it.centerFont),order:start+k}));
+    palletStates.set(ws.name,assignVisualRows(ws,{completed:[],incomplete,nextSeq:1,templateRow:start,nextItemId:1}));
+  }
+
+  prepareWorkbookForWeb(wb);
+  const old=workbook;workbook=wb;
+  try{visibleWorkSheets().forEach(recalcWorkSheet);recalcDashboard(wb)}finally{workbook=old}
+  return wb;
+}
+// ===== end v24 dynamic-center generation =====
+</script>
+
+
+<script id="v25-sheet-order">
+// ===== v25: fixed company/work-type sheet order =====
+// Order: KoreaOne pallet -> KoreaOne milkrun -> Bomnalae pallet -> Bomnalae milkrun
+//        -> Chatong pallet -> Chatong milkrun -> KoreaOne parcel -> Bomnalae parcel -> Chatong parcel.
+function v25CompanyOfWorksheet(ws){
+  if(!ws)return '기타';
+  const meta=String(ws._webCompany||'').trim();
+  if(meta){
+    if(/봄날애/.test(meta))return '봄날애';
+    if(/차통/.test(meta))return '차통';
+    if(/코리아원/.test(meta))return '코리아원';
+  }
+  const n=String(ws.name||'');
+  if(/^봄날애\s*/.test(n))return '봄날애';
+  if(/^(?:차통익스프레스|차통)\s*/.test(n))return '차통';
+  // Dynamic sheets without a company prefix are KoreaOne sheets by design.
+  return '코리아원';
+}
+function v25WorkTypeOfWorksheet(ws){
+  if(!ws)return 'parcel';
+  const n=String(ws.name||'');
+  if(sheetKind(ws)!=='pallet')return 'parcel';
+  if(/밀크런/i.test(n))return 'milkrun';
+  return 'pallet';
+}
+function v25GroupRank(ws){
+  const company=v25CompanyOfWorksheet(ws),type=v25WorkTypeOfWorksheet(ws);
+  const cr=company==='코리아원'?0:company==='봄날애'?1:company==='차통'?2:3;
+  if(type==='parcel')return cr<3?6+cr:99;
+  if(cr<3)return cr*2+(type==='milkrun'?1:0);
+  return 90+(type==='milkrun'?1:0);
+}
+function v25SortedWorkSheets(){
+  if(!workbook)return [];
+  const arr=workbook.worksheets.filter(ws=>ws.name!=='발주서'&&!isEmptyReserve(ws)&&!/^__WEBTPL_/.test(ws.name));
+  const originalIndex=new Map(workbook.worksheets.map((ws,i)=>[ws,i]));
+  return arr.slice().sort((a,b)=>{
+    const ra=v25GroupRank(a),rb=v25GroupRank(b);
+    if(ra!==rb)return ra-rb;
+    const sa=Number.isFinite(Number(a._webSourceOrder))?Number(a._webSourceOrder):originalIndex.get(a)??9999;
+    const sb=Number.isFinite(Number(b._webSourceOrder))?Number(b._webSourceOrder):originalIndex.get(b)??9999;
+    return sa-sb;
+  });
+}
+visibleWorksheets=function(){
+  if(!workbook)return [];
+  const order=workbook.getWorksheet('발주서');
+  return [...(order?[order]:[]),...v25SortedWorkSheets()];
+};
+visibleWorkSheets=function(){return v25SortedWorkSheets()};
+renderTabs=function(){
+  const host=$('sheetTabs');if(!host)return;host.innerHTML='';
+  const left=document.createElement('button');left.className='sheet-nav-arrow';left.textContent='◀';left.onclick=()=>host.scrollBy({left:-320,behavior:'smooth'});host.appendChild(left);
+  const order=workbook?.getWorksheet('발주서');
+  if(order)host.appendChild(makeTabButton(order));
+  const works=v25SortedWorkSheets();
+  let addedPalletButton=false;
+  for(const ws of works){
+    // Put the +pallet button after all pallet/milkrun groups and immediately before parcels.
+    if(!addedPalletButton && v25WorkTypeOfWorksheet(ws)==='parcel'){
+      host.appendChild(makeAddTab('pallet'));addedPalletButton=true;
+    }
+    host.appendChild(makeTabButton(ws));
+  }
+  if(!addedPalletButton)host.appendChild(makeAddTab('pallet'));
+  host.appendChild(makeAddTab('parcel'));
+  const right=document.createElement('button');right.className='sheet-nav-arrow';right.textContent='▶';right.onclick=()=>host.scrollBy({left:320,behavior:'smooth'});host.appendChild(right);
+};
+
+// Make newly generated sheets carry persistent-in-memory metadata for stable ordering during this session.
+const _v25SheetSpecBase=v24SheetSpec;
+v24SheetSpec=function(company,center){
+  const spec=_v25SheetSpecBase(company,center);
+  spec.workType=spec.kind==='pallet'&&/밀크런/i.test(String(spec.name||spec.center||''))?'milkrun':(spec.kind==='pallet'?'pallet':'parcel');
+  return spec;
+};
+
+// Full workbook export must follow the same visible sheet order as the website.
+buildCleanWorkbookV17=async function(){
+  const src=workbook;if(!src)throw new Error('저장할 작업 파일이 없습니다.');
+  const clean=new ExcelJS.Workbook();
+  clean.creator='Coupang Inbound Work';clean.lastModifiedBy='Coupang Inbound Work';clean.created=new Date();clean.modified=new Date();
+  try{clean.calcProperties.fullCalcOnLoad=true;clean.calcProperties.forceFullCalc=true;clean.calcProperties.calcMode='auto'}catch(e){}
+  const orderedVisible=visibleWorksheets();
+  const visibleSet=new Set(orderedVisible);
+  const hiddenRest=src.worksheets.filter(ws=>!visibleSet.has(ws));
+  for(const sws of [...orderedVisible,...hiddenRest]){
+    const dws=clean.addWorksheet(sws.name);
+    copyWorksheetCleanV17(sws,dws);
+    try{dws.state=sws.state}catch(e){}
+  }
+  try{
+    const names=[...orderedVisible,...hiddenRest].map(x=>x.name);
+    const idx=Math.max(0,names.indexOf(activeSheet));
+    clean.views=[{activeTab:idx,firstSheet:0,visibility:'visible'}];
+  }catch(e){}
+  return clean;
+};
+
+// After generation, attach company/type metadata to the created sheets. This does not alter workbook data.
+const _v25GenerateBase=generateFromRaw;
+generateFromRaw=async function(sections){
+  const wb=await _v25GenerateBase(sections);
+  try{
+    for(const ws of wb.worksheets){
+      if(ws.name==='발주서'||RESERVE_NAMES.test(ws.name)||/^__WEBTPL_/.test(ws.name))continue;
+      const n=String(ws.name||'');
+      ws._webCompany=/^봄날애\s*/.test(n)?'봄날애':/^(?:차통익스프레스|차통)\s*/.test(n)?'차통':'코리아원';
+      ws._webWorkType=sheetKind(ws)!=='pallet'?'parcel':(/밀크런/i.test(n)?'milkrun':'pallet');
+    }
+  }catch(e){console.warn('v25 sheet metadata',e)}
+  return wb;
+};
+// ===== /v25 =====
 </script>
 
 </body>
