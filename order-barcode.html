@@ -11,7 +11,6 @@
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.6/qz-tray.js"></script>
 
 <style>
 :root{
@@ -45,18 +44,6 @@ h1{margin:0 0 6px;color:var(--navy-dark);font-size:27px}
 .btn-sm{padding:7px 9px;font-size:12px}
 .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .toolbar-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.print-settings{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-top:12px}
-.setting-box{border:1px solid var(--line);border-radius:10px;padding:10px;background:#f8fafc}
-.setting-box label{display:block;font-size:11.5px;color:var(--muted);font-weight:800;margin-bottom:5px}
-.setting-box input,.setting-box select{width:100%;padding:8px;border:1px solid #cbd5df;border-radius:7px;background:#fff}
-.mode-choice{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.mode-choice label{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:#fff;font-size:13px;font-weight:800;cursor:pointer}
-.mode-choice input{margin:0}
-.sheet-only.hidden{display:none}
-.thermal-connect{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border:1px solid #d4e0ea;border-radius:10px;background:#f7fbff}
-.thermal-connect select{min-width:220px;padding:8px;border:1px solid #cbd5df;border-radius:7px;background:#fff}
-.thermal-status{font-size:11.5px;font-weight:800;color:var(--muted)}.thermal-status.ok{color:var(--good)}.thermal-status.bad{color:var(--bad)}
-@media(max-width:1100px){.print-settings{grid-template-columns:repeat(2,minmax(150px,1fr))}}
 .summary{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-top:14px}
 .kpi{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:12px}
 .kpi .lab{font-size:12px;color:var(--muted)}
@@ -72,33 +59,22 @@ td.name{min-width:310px}
 .badge.ok{background:#e8f7ef;color:var(--good)}
 .badge.missing{background:#fff0f0;color:var(--bad)}
 .badge.other{background:#fff6df;color:var(--warn)}
-.order-qty-yellow{background:#ffe79a!important;color:#5f4600!important;}
-.order-qty-red{background:#ffd1d1!important;color:#8f1f1f!important;}
-.printed-count{
-  display:inline-flex;align-items:center;justify-content:center;
-  min-width:48px;height:32px;padding:0 8px;border:1px solid #d7e0e8;
-  border-radius:8px;background:#fff;color:#263b4d;font-weight:900;
-}
-.printed-count.done{
-  background:#dff5e6;border-color:#b9e2c6;color:#16723e;
-}
-
 .note{font-size:12px;color:var(--muted);line-height:1.6}
 .progress{font-size:12.5px;color:var(--blue);font-weight:700;min-height:18px;margin-top:8px}
 .size30{background:#f0f8ff}
 .size60{background:#f8f4ff}
 #renderStage{position:fixed;left:-100000px;top:0;opacity:0;pointer-events:none}
-.render-label{background:#fff;color:#000;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-start;text-align:center;padding:2.5mm 3.5mm 3mm;font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;font-synthesis:weight;text-rendering:geometricPrecision;-webkit-font-smoothing:auto}
-.render-title{font-weight:900;line-height:1.12;white-space:pre-wrap;overflow-wrap:anywhere;color:#000;text-shadow:0 0 .32px #000}
-.render-option{font-weight:900;line-height:1.12;margin-top:0;white-space:pre-wrap;overflow-wrap:anywhere;color:#000;text-shadow:0 0 .32px #000}
-.render-info,.render-warning{margin-top:0;line-height:1.12;white-space:pre-wrap;overflow-wrap:anywhere;font-weight:800;color:#000;text-shadow:0 0 .28px #000}
-.render-age{margin-top:0;line-height:1.12;font-weight:900;white-space:pre-wrap;color:#000;text-shadow:0 0 .32px #000}
-.render-barcode{margin-top:1.2mm;padding-top:0;width:100%}
+.render-label{background:#fff;color:#000;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-start;text-align:center;padding:2.5mm 3.5mm 3mm;font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif}
+.render-title{font-weight:900;line-height:1.18;white-space:pre-wrap;overflow-wrap:anywhere}
+.render-option{font-weight:800;line-height:1.18;margin-top:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.render-info,.render-warning{margin-top:0;line-height:1.18;white-space:pre-wrap;overflow-wrap:anywhere}
+.render-age{margin-top:0;line-height:1.18;font-weight:700;white-space:pre-wrap}
+.render-barcode{margin-top:0;padding-top:0;width:100%}
 .render-barcode svg{display:block;width:100%;max-width:100%;margin:0 auto}
-.render-barcode-text{font-family:Arial,Helvetica,sans-serif;font-weight:800;line-height:1;margin-top:1.2mm;white-space:nowrap;color:#000;text-shadow:0 0 .25px #000}
-.render-made{font-family:Arial Black,Arial,Helvetica,sans-serif;font-weight:900;line-height:1;margin-top:0;color:#000;white-space:nowrap;text-shadow:0 0 .35px #000}
+.render-barcode-text{font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1;margin-top:0;white-space:nowrap}
+.render-made{font-family:Arial,Helvetica,sans-serif;font-weight:400;line-height:1;margin-top:0;color:#333;white-space:nowrap}
 @media(max-width:900px){
-  .app-shell{flex-direction:column}.sidebar{width:100%;height:auto;position:relative;display:flex;gap:8px;flex-wrap:wrap}.side-brand{margin:0}.nav-section-label{display:none}.nav-btn{width:auto;margin:0}.main{padding:14px}.summary{grid-template-columns:1fr 1fr}.print-settings{grid-template-columns:1fr}
+  .app-shell{flex-direction:column}.sidebar{width:100%;height:auto;position:relative;display:flex;gap:8px;flex-wrap:wrap}.side-brand{margin:0}.nav-section-label{display:none}.nav-btn{width:auto;margin:0}.main{padding:14px}.summary{grid-template-columns:1fr 1fr}
 }
 </style>
 </head>
@@ -110,54 +86,28 @@ td.name{min-width:310px}
   <button class="nav-btn" onclick="location.href='/hs-code'">📊 TradeCode Navi 관세율 계산</button>
   <button class="nav-btn" onclick="location.href='/coupang-margin'">🚀 로켓배송 원가&amp;마진률 계산</button>
   <button class="nav-btn" onclick="location.href='/logistics-cost'">🚚 물류비 계산기</button>
-  <button class="nav-btn" onclick="location.href='/barcode-label.html'">🏷️ 바코드 라벨 생성기</button>
-  <button class="nav-btn active" onclick="location.href='/order-barcode.html'">📦 발주 바코드 출력</button>
+  <button class="nav-btn" onclick="location.href='/barcode-label.html?v=39'">🏷️ 바코드 라벨 생성기</button>
+  <button class="nav-btn active" onclick="location.href='/order-barcode.html?v=39'">📦 발주 바코드 출력</button>
+  <button class="nav-btn" onclick="location.href='/shipment-list-builder.html?v=39'">📋 선적 리스트 작성</button>
   <button class="nav-btn" onclick="location.href='/detail-maker'">✨ 쿠팡 상세페이지 자동 제작</button>
-  <button class="nav-btn" onclick="location.href='/coupang-inbound-work.html'">📦 쿠팡 입고 작업</button>
+  <button class="nav-btn" onclick="location.href='/coupang-inbound-work.html?v=39'">📦 쿠팡 입고 작업</button>
 </nav>
 
 <main class="main">
   <h1>📦 발주 바코드 출력</h1>
-  <div class="sub">발주현황 엑셀을 불러오면 공용 보관함의 라벨과 자동 매칭하고, 50×30 / 50×60 용지를 따로 일괄 출력하거나 상품별로 원하는 수량만 출력할 수 있습니다.</div>
+  <div class="sub">발주현황 엑셀을 불러오면 저장된 라벨과 자동 매칭하고, 50×30 / 50×60 용지를 따로 일괄 출력하거나 상품별로 원하는 수량만 출력할 수 있습니다.</div>
 
   <section class="card">
     <div class="upload-box">
       <input class="file-input" id="orderFile" type="file" accept=".xlsx,.xls">
-      <button class="btn btn-secondary" type="button" onclick="window.location.href='/barcode-upload-template.xlsx'">⬇ 바코드 업로드 파일 양식 다운로드</button>
-      <button class="btn btn-secondary" type="button" onclick="reloadLibrary()">🔄 공용 라벨 새로고침</button>
+      <button class="btn btn-secondary" onclick="reloadLibrary()">🔄 저장 라벨 다시 불러오기</button>
       <label style="font-size:13px;font-weight:700;">1회 최대 출력 장수
         <input id="maxPerFile" type="number" min="1" max="1000" value="100" style="width:80px;padding:8px;border:1px solid #cbd5df;border-radius:7px;margin-left:6px;">
       </label>
     </div>
-
-    <div style="margin-top:14px;font-size:13px;font-weight:900;color:var(--navy-dark);">프린터 출력 방식</div>
-    <div class="mode-choice" style="margin-top:8px;">
-      <label><input type="radio" name="printMethod" value="continuous" checked onchange="togglePrintMethod()"> ① 1열 연속 라벨 프린터</label>
-      <label><input type="radio" name="printMethod" value="sheet" onchange="togglePrintMethod()"> ② 다열 라벨 용지</label>
-    </div>
-    <div id="thermalConnectBox" class="thermal-connect">
-      <button class="btn btn-secondary btn-sm" type="button" onclick="connectThermalPrinter()">🔌 Xprinter 연결</button>
-      <select id="thermalPrinterSelect" onchange="saveThermalPrinterChoice()"><option value="">감열프린터를 연결해 주세요</option></select>
-      <label style="font-size:12px;font-weight:800;">라벨 간격(mm) <input id="thermalGapMm" type="number" min="0" max="10" step="0.5" value="2" style="width:66px;padding:7px;border:1px solid #cbd5df;border-radius:7px;"></label>
-      <span id="thermalStatus" class="thermal-status">QZ Tray 설치 후 Xprinter와 직접 통신합니다.</span>
-      <a href="https://qz.io/download/" target="_blank" rel="noopener" style="font-size:12px;font-weight:800;">QZ Tray 설치</a>
-    </div>
-
-    <div id="sheetSettings" class="print-settings sheet-only hidden">
-      <div class="setting-box"><label>용지 가로 (mm)</label><input id="sheetPaperWidth" type="number" min="50" value="210"></div>
-      <div class="setting-box"><label>용지 세로 (mm)</label><input id="sheetPaperHeight" type="number" min="50" value="297"></div>
-      <div class="setting-box"><label>가로 라벨 개수(열)</label><input id="sheetColumns" type="number" min="1" max="10" value="4"></div>
-      <div class="setting-box"><label>세로 라벨 개수(행) · 0=자동</label><input id="sheetRows" type="number" min="0" max="30" value="0"></div>
-      <div class="setting-box"><label>좌우 여백 (mm)</label><input id="sheetMarginX" type="number" min="0" step="0.5" value="5"></div>
-      <div class="setting-box"><label>상하 여백 (mm)</label><input id="sheetMarginY" type="number" min="0" step="0.5" value="5"></div>
-      <div class="setting-box"><label>가로 간격 (mm)</label><input id="sheetGapX" type="number" min="0" step="0.5" value="0"></div>
-      <div class="setting-box"><label>세로 간격 (mm)</label><input id="sheetGapY" type="number" min="0" step="0.5" value="0"></div>
-    </div>
-
     <div class="note" style="margin-top:10px;">
-      발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 공용 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.<br>
-      ① 연속 출력은 라벨 1장씩 이어서 출력합니다. ② 다열 라벨 용지는 A4 등 한 장의 용지에 여러 라벨을 가로·세로로 배치합니다. PDF 버튼은 파일 저장, 프린터 버튼은 브라우저 인쇄창을 바로 엽니다.<br>
-      엑셀의 <b>발주수량 셀 실제 채우기색</b>을 직접 읽어 노란색/빨간색이면 웹 표에도 표시합니다. 초록색은 기존처럼 흰색으로 표시합니다. <b>현재 출력매수</b>는 같은 발주 파일을 다시 불러와도 이 브라우저에서 기억하며, 발주수량 이상 출력되면 초록색으로 표시합니다.
+      발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 저장 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.
+      총 출력 장수가 1회 최대 장수를 넘으면 PDF를 여러 개로 나눠 ZIP 파일로 내려받습니다.
     </div>
     <div class="progress" id="progress"></div>
 
@@ -165,53 +115,35 @@ td.name{min-width:310px}
       <div class="kpi"><div class="lab">발주 품목</div><div class="num" id="kpiItems">0</div></div>
       <div class="kpi"><div class="lab">50×30 출력 장수</div><div class="num" id="kpi30">0</div></div>
       <div class="kpi"><div class="lab">50×60 출력 장수</div><div class="num" id="kpi60">0</div></div>
-      <div class="kpi"><div class="lab">공용 라벨 미저장</div><div class="num" id="kpiMissing">0</div></div>
+      <div class="kpi"><div class="lab">라벨 미저장</div><div class="num" id="kpiMissing">0</div></div>
     </div>
   </section>
 
   <section class="card">
     <div class="toolbar">
       <div class="toolbar-group">
-        <button class="btn btn-gold" onclick="batchPrint('50x30')">📄 50×30 PDF</button>
-        <button class="btn btn-primary" onclick="batchDirectPrint('50x30')">🖨 50×30 Xprinter</button>
-        <button class="btn btn-gold" onclick="batchPrint('50x60')">📄 50×60 PDF</button>
-        <button class="btn btn-primary" onclick="batchDirectPrint('50x60')">🖨 50×60 Xprinter</button>
-        <button class="btn btn-secondary" onclick="batchPrint('selected')">📄 선택 품목 PDF</button>
-        <button class="btn btn-primary" onclick="batchDirectPrint('selected')">🖨 선택 품목 Xprinter</button>
+        <button class="btn btn-gold" onclick="batchPrint('50x30')">🖨 50×30 일괄 출력</button>
+        <button class="btn btn-gold" onclick="batchPrint('50x60')">🖨 50×60 일괄 출력</button>
+        <button class="btn btn-primary" onclick="batchPrint('selected')">☑ 선택 품목 출력</button>
       </div>
       <div class="toolbar-group">
-        <button class="btn btn-secondary btn-sm" onclick="setSizeChecks('50x30')">50×30 선택</button>
-        <button class="btn btn-secondary btn-sm" onclick="setSizeChecks('50x60')">50×60 선택</button>
         <button class="btn btn-secondary btn-sm" onclick="setAllChecks(true)">전체 선택</button>
         <button class="btn btn-secondary btn-sm" onclick="setAllChecks(false)">전체 해제</button>
-        <button class="btn btn-ghost btn-sm" onclick="resetPrintProgress()">현재 파일 출력기록 초기화</button>
       </div>
     </div>
   </section>
 
-  <section class="card" style="padding:14px 14px 0;">
-    <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:12px;">
-      <div style="position:relative;width:min(420px,100%);">
-        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:16px;pointer-events:none;">🔍</span>
-        <input
-          id="orderSearch"
-          type="text"
-          placeholder="상품명 또는 바코드 검색"
-          oninput="renderRows()"
-          style="width:100%;padding:10px 12px 10px 38px;border:1px solid #cbd5df;border-radius:9px;background:#fff;"
-        >
-      </div>
-    </div>
+  <section class="card" style="padding:0;">
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>선택</th><th>상품번호</th><th>바코드</th><th>상품명</th>
-            <th>발주수량</th><th>라벨규격</th><th>현재 출력매수</th><th>출력수량</th><th>저장상태</th><th>상품별 출력</th>
+            <th>발주수량</th><th>라벨규격</th><th>출력수량</th><th>저장상태</th><th>상품별 출력</th>
           </tr>
         </thead>
         <tbody id="rowsBody">
-          <tr><td colspan="10" class="center" style="padding:30px;color:#667381;">발주현황 엑셀을 선택해 주세요.</td></tr>
+          <tr><td colspan="9" class="center" style="padding:30px;color:#667381;">발주현황 엑셀을 선택해 주세요.</td></tr>
         </tbody>
       </table>
     </div>
@@ -222,11 +154,9 @@ td.name{min-width:310px}
 
 <script>
 const MM_TO_PX=96/25.4;
-const LABEL_LIBRARY_KEY='tradecodeSharedLabelCacheV1';
+const LABEL_LIBRARY_KEY='tradecodeLabelLibraryV1';
 let orderRows=[];
 let labelLibrary=[];
-let currentOrderProgressKey='';
-const PRINT_PROGRESS_PREFIX='tradecodeOrderPrintProgressV1:';
 
 const el=id=>document.getElementById(id);
 const norm=v=>String(v??'').trim();
@@ -238,248 +168,11 @@ function getLibrary(){
     return Array.isArray(arr)?arr:[];
   }catch(e){return[]}
 }
-
-function setLibraryCache(arr){
-  labelLibrary=Array.isArray(arr)?arr:[];
-  try{localStorage.setItem(LABEL_LIBRARY_KEY,JSON.stringify(labelLibrary))}catch(e){}
-}
-
-
-async function makeOrderProgressKey(file,buf){
-  try{
-    if(window.crypto?.subtle){
-      const hash=await crypto.subtle.digest('SHA-256',buf.slice(0));
-      const hex=[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('');
-      return PRINT_PROGRESS_PREFIX+hex;
-    }
-  }catch(e){}
-  return PRINT_PROGRESS_PREFIX+[file?.name||'',file?.size||0,file?.lastModified||0].join('|');
-}
-
-function loadPrintProgress(){
-  if(!currentOrderProgressKey)return {};
-  try{
-    const obj=JSON.parse(localStorage.getItem(currentOrderProgressKey)||'{}');
-    return obj&&typeof obj==='object'?obj:{};
-  }catch(e){return {}}
-}
-
-function savePrintProgress(){
-  if(!currentOrderProgressKey)return;
-  const data={};
-  orderRows.forEach(r=>{
-    data[String(r.id)]=Math.max(0,Math.floor(Number(r.printedQty)||0));
-  });
-  try{
-    localStorage.setItem(currentOrderProgressKey,JSON.stringify(data));
-  }catch(e){}
-}
-
-function markPrintedItems(items){
-  (items||[]).forEach(it=>{
-    const r=it?.row;
-    if(!r)return;
-    const qty=Math.max(0,Math.floor(Number(it.qty)||0));
-    r.printedQty=Math.max(0,Math.floor(Number(r.printedQty)||0))+qty;
-    r.printQty=Math.max(0,Math.floor(Number(r.orderQty)||0)-r.printedQty);
-  });
-  savePrintProgress();
+function reloadLibrary(){
+  labelLibrary=getLibrary();
+  rematchRows();
   renderRows();
-}
-
-function resetPrintProgress(){
-  if(!orderRows.length)return;
-  if(!confirm('현재 불러온 발주 파일의 출력기록을 모두 0으로 초기화할까요?'))return;
-  orderRows.forEach(r=>{
-    r.printedQty=0;
-    r.printQty=Math.max(0,Math.floor(Number(r.orderQty)||0));
-  });
-  if(currentOrderProgressKey){
-    try{localStorage.removeItem(currentOrderProgressKey)}catch(e){}
-  }
-  renderRows();
-  setProgress('✓ 현재 발주 파일의 출력기록을 초기화했습니다.');
-}
-
-function rgbToHueClass(hex){
-  let s=String(hex||'').replace('#','').toUpperCase();
-  if(s.length===8)s=s.slice(2);
-  if(!/^[0-9A-F]{6}$/.test(s))return '';
-  const r=parseInt(s.slice(0,2),16)/255;
-  const g=parseInt(s.slice(2,4),16)/255;
-  const b=parseInt(s.slice(4,6),16)/255;
-  const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
-  const l=(max+min)/2;
-  if(d<0.045||l>0.985)return '';
-
-  let h=0;
-  if(max===r)h=60*(((g-b)/d)%6);
-  else if(max===g)h=60*((b-r)/d+2);
-  else h=60*((r-g)/d+4);
-  if(h<0)h+=360;
-
-  const sat=d/(1-Math.abs(2*l-1)||1);
-  if(sat<0.12)return '';
-
-  if(h<=22||h>=338)return 'red';
-  if(h>=34&&h<=72)return 'yellow';
-  return '';
-}
-
-function classifyExcelFill(cell){
-  const fill=cell?.s?.fill;
-  if(!fill)return '';
-
-  const colors=[fill.fgColor,fill.bgColor].filter(Boolean);
-  for(const c of colors){
-    if(c.rgb){
-      const cls=rgbToHueClass(c.rgb);
-      if(cls)return cls;
-    }
-    const idx=Number(c.indexed);
-    if([2,10].includes(idx))return 'red';
-    if([5,13].includes(idx))return 'yellow';
-  }
-  return '';
-}
-
-
-function rawColorClass(colorEl){
-  if(!colorEl)return '';
-
-  const rgb=colorEl.getAttribute('rgb');
-  if(rgb){
-    const cls=rgbToHueClass(rgb);
-    if(cls)return cls;
-  }
-
-  const indexed=Number(colorEl.getAttribute('indexed'));
-  if([2,10].includes(indexed))return 'red';
-  if([5,13].includes(indexed))return 'yellow';
-
-  return '';
-}
-
-function xmlChildrenByLocalName(parent,name){
-  if(!parent)return [];
-  return Array.from(parent.children||[]).filter(x=>x.localName===name);
-}
-
-function firstXmlChild(parent,name){
-  return xmlChildrenByLocalName(parent,name)[0]||null;
-}
-
-async function extractRawXlsxFillMap(buf){
-  const result={};
-  if(typeof JSZip==='undefined')return result;
-
-  try{
-    const zip=await JSZip.loadAsync(buf);
-
-    const stylesFile=zip.file('xl/styles.xml');
-    const workbookFile=zip.file('xl/workbook.xml');
-    const relsFile=zip.file('xl/_rels/workbook.xml.rels');
-
-    if(!stylesFile||!workbookFile||!relsFile)return result;
-
-    const parser=new DOMParser();
-    const stylesDoc=parser.parseFromString(await stylesFile.async('string'),'application/xml');
-    const workbookDoc=parser.parseFromString(await workbookFile.async('string'),'application/xml');
-    const relsDoc=parser.parseFromString(await relsFile.async('string'),'application/xml');
-
-    // fillId -> yellow / red / ''
-    const fillsNode=Array.from(stylesDoc.getElementsByTagName('*')).find(x=>x.localName==='fills');
-    const fillNodes=fillsNode?xmlChildrenByLocalName(fillsNode,'fill'):[];
-    const fillClasses=fillNodes.map(fill=>{
-      const pattern=firstXmlChild(fill,'patternFill');
-      if(!pattern)return '';
-
-      const fg=firstXmlChild(pattern,'fgColor');
-      const bg=firstXmlChild(pattern,'bgColor');
-
-      // 실사용 발주현황 파일은 fgColor에 FFFFEB9C(노랑), FFC6EFCE(초록) 등이 저장됨.
-      // 초록은 웹에서 흰색으로 유지하므로 yellow/red만 반환.
-      return rawColorClass(fg)||rawColorClass(bg)||'';
-    });
-
-    // style index(s) -> fill class
-    const cellXfsNode=Array.from(stylesDoc.getElementsByTagName('*')).find(x=>x.localName==='cellXfs');
-    const xfNodes=cellXfsNode?xmlChildrenByLocalName(cellXfsNode,'xf'):[];
-    const styleClasses=xfNodes.map(xf=>{
-      const fillId=Number(xf.getAttribute('fillId')||0);
-      return fillClasses[fillId]||'';
-    });
-
-    // relationship Id -> worksheet XML path
-    const relMap={};
-    Array.from(relsDoc.getElementsByTagName('*'))
-      .filter(x=>x.localName==='Relationship')
-      .forEach(rel=>{
-        const id=rel.getAttribute('Id');
-        let target=rel.getAttribute('Target')||'';
-        if(!id||!target)return;
-        target=target.replace(/^\/+/,'');
-        if(!target.startsWith('xl/'))target='xl/'+target.replace(/^\.\//,'');
-        relMap[id]=target;
-      });
-
-    const sheets=Array.from(workbookDoc.getElementsByTagName('*')).filter(x=>x.localName==='sheet');
-
-    for(const sheet of sheets){
-      const sheetName=sheet.getAttribute('name')||'';
-      let rid=sheet.getAttribute('r:id')||'';
-
-      if(!rid){
-        for(const attr of Array.from(sheet.attributes||[])){
-          if(attr.localName==='id'){
-            rid=attr.value;
-            break;
-          }
-        }
-      }
-
-      const path=relMap[rid];
-      const file=path?zip.file(path):null;
-      if(!sheetName||!file)continue;
-
-      const sheetDoc=parser.parseFromString(await file.async('string'),'application/xml');
-      const map={};
-
-      Array.from(sheetDoc.getElementsByTagName('*'))
-        .filter(x=>x.localName==='c')
-        .forEach(cell=>{
-          const ref=cell.getAttribute('r')||'';
-          const styleIndex=Number(cell.getAttribute('s')||0);
-          const cls=styleClasses[styleIndex]||'';
-          if(ref&&cls)map[ref]=cls;
-        });
-
-      result[sheetName]=map;
-    }
-  }catch(err){
-    console.warn('XLSX 원본 셀 색상 판독 실패:',err);
-  }
-
-  return result;
-}
-
-async function reloadLibrary(){
-  try{
-    setProgress('공용 라벨 보관함을 새로고침하는 중...');
-    const res=await fetch('/api/shared-labels',{cache:'no-store'});
-    const data=await res.json();
-    if(!res.ok||!data.ok)throw new Error(data.error||'공용 라벨 조회 실패');
-    setLibraryCache(data.labels||[]);
-    rematchRows();
-    renderRows();
-    setProgress(`✓ 공용 라벨 ${labelLibrary.length}개를 불러왔습니다.`);
-  }catch(err){
-    console.error(err);
-    setLibraryCache(getLibrary());
-    rematchRows();
-    renderRows();
-    setProgress('공용 서버 연결 실패 · 이 PC의 최근 캐시를 사용합니다.');
-  }
+  setProgress(`저장 라벨 ${labelLibrary.length}개를 다시 불러왔습니다.`);
 }
 function findLabel(barcode,productNumber){
   const bc=normBc(barcode),pn=norm(productNumber);
@@ -502,239 +195,29 @@ function sizeCode(cfg){
 }
 function setProgress(msg){el('progress').textContent=msg||''}
 
-
-const THERMAL_DPMM=8;
-const THERMAL_PRINTER_KEY='tradecodeThermalPrinterV1';
-
-function setThermalStatus(msg,type){
-  const s=el('thermalStatus');
-  if(!s)return;
-  s.textContent=msg;
-  s.classList.remove('ok','bad');
-  if(type)s.classList.add(type);
-}
-
-async function ensureQzConnected(){
-  if(typeof qz==='undefined')throw new Error('QZ Tray 연결 스크립트를 불러오지 못했습니다.');
-  if(qz.websocket.isActive())return;
-  await qz.websocket.connect({retries:2,delay:1});
-}
-
-async function connectThermalPrinter(){
-  try{
-    setThermalStatus('Windows 프린터를 찾는 중...');
-    await ensureQzConnected();
-    const printers=await qz.printers.find();
-    const select=el('thermalPrinterSelect');
-    const saved=localStorage.getItem(THERMAL_PRINTER_KEY)||'';
-    select.innerHTML='';
-
-    const preferred=printers.filter(p=>/XP[-_ ]?370B|Xprinter/i.test(String(p)));
-    const list=[...preferred,...printers.filter(p=>!preferred.includes(p))];
-
-    if(!list.length){
-      select.innerHTML='<option value="">프린터를 찾지 못했습니다</option>';
-      setThermalStatus('Windows 프린터를 찾지 못했습니다.','bad');
-      return;
-    }
-
-    list.forEach(p=>{
-      const opt=document.createElement('option');
-      opt.value=p;opt.textContent=p;select.appendChild(opt);
-    });
-
-    const choice=(saved&&list.includes(saved))?saved:(preferred[0]||list[0]);
-    select.value=choice;
-    localStorage.setItem(THERMAL_PRINTER_KEY,choice);
-    setThermalStatus(`연결됨: ${choice}`,'ok');
-  }catch(err){
-    console.error(err);
-    setThermalStatus('QZ Tray가 실행되지 않았습니다.','bad');
-    alert('Xprinter 직접 연결에 실패했습니다.\n\nQZ Tray를 설치하고 실행한 뒤 다시 [Xprinter 연결]을 눌러주세요.');
-  }
-}
-
-function saveThermalPrinterChoice(){
-  const p=el('thermalPrinterSelect')?.value||'';
-  if(p){
-    localStorage.setItem(THERMAL_PRINTER_KEY,p);
-    setThermalStatus(`선택됨: ${p}`,'ok');
-  }
-}
-
-function concatUint8(parts){
-  const total=parts.reduce((s,p)=>s+p.length,0);
-  const out=new Uint8Array(total);
-  let pos=0;
-  parts.forEach(p=>{out.set(p,pos);pos+=p.length;});
-  return out;
-}
-function textBytes(s){return new TextEncoder().encode(String(s));}
-
-async function pngDataUrlToCanvas(dataUrl){
-  return await new Promise((resolve,reject)=>{
-    const img=new Image();
-    img.onload=()=>{
-      const c=document.createElement('canvas');
-      c.width=img.naturalWidth;c.height=img.naturalHeight;
-      c.getContext('2d').drawImage(img,0,0);
-      resolve(c);
-    };
-    img.onerror=reject;
-    img.src=dataUrl;
-  });
-}
-
-function canvasToTsplBytes(sourceCanvas,wMm,hMm,copies){
-  const wDots=Math.max(8,Math.round(Number(wMm)*THERMAL_DPMM));
-  const hDots=Math.max(8,Math.round(Number(hMm)*THERMAL_DPMM));
-  const bytesPerRow=Math.ceil(wDots/8);
-
-  const c=document.createElement('canvas');
-  c.width=wDots;c.height=hDots;
-  const ctx=c.getContext('2d',{willReadFrequently:true});
-  ctx.fillStyle='#fff';ctx.fillRect(0,0,wDots,hDots);
-  ctx.imageSmoothingEnabled=true;
-  ctx.drawImage(sourceCanvas,0,0,wDots,hDots);
-
-  const img=ctx.getImageData(0,0,wDots,hDots).data;
-  // XP-370B/TSPL BITMAP 비트 극성 보정:
-  // 흰 배경은 1, 검정 인쇄 부분은 0으로 전송한다.
-  const bitmap=new Uint8Array(bytesPerRow*hDots);
-  bitmap.fill(0xFF);
-  const threshold=210;
-
-  for(let y=0;y<hDots;y++){
-    for(let x=0;x<wDots;x++){
-      const i=(y*wDots+x)*4;
-      const gray=(img[i]*299+img[i+1]*587+img[i+2]*114)/1000;
-      if(gray<threshold) bitmap[y*bytesPerRow+(x>>3)]&=~(0x80>>(x&7));
-    }
-  }
-
-  const gap=Math.max(0,Math.min(10,Number(el('thermalGapMm')?.value)||0));
-  const prefix=[
-    `SIZE ${Number(wMm)} mm,${Number(hMm)} mm\r\n`,
-    `GAP ${gap} mm,0 mm\r\n`,
-    `DIRECTION 1\r\n`,
-    `SPEED 3\r\n`,
-    `DENSITY 10\r\n`,
-    `CLS\r\n`,
-    `BITMAP 0,0,${bytesPerRow},${hDots},0,`
-  ].join('');
-  const suffix=`\r\nPRINT 1,${Math.max(1,Math.floor(Number(copies)||1))}\r\n`;
-  return concatUint8([textBytes(prefix),bitmap,textBytes(suffix)]);
-}
-
-async function sendPngToThermalPrinter(png,wMm,hMm,copies,jobName){
-  await ensureQzConnected();
-  let printer=el('thermalPrinterSelect')?.value||localStorage.getItem(THERMAL_PRINTER_KEY)||'';
-  if(!printer){
-    await connectThermalPrinter();
-    printer=el('thermalPrinterSelect')?.value||'';
-  }
-  if(!printer)throw new Error('Xprinter를 선택해 주세요.');
-
-  const canvas=await pngDataUrlToCanvas(png);
-  const raw=canvasToTsplBytes(canvas,wMm,hMm,copies);
-  const config=qz.configs.create(printer,{jobName:jobName||'TradeCode Barcode'});
-  await qz.print(config,[{type:'raw',format:'command',flavor:'hex',data:raw}]);
-}
-
-function getPrintMethod(){
-  return document.querySelector('input[name="printMethod"]:checked')?.value || 'continuous';
-}
-function togglePrintMethod(){
-  const isSheet=getPrintMethod()==='sheet';
-  el('sheetSettings').classList.toggle('hidden',!isSheet);
-  try{localStorage.setItem('tradecodePrintMethod',getPrintMethod())}catch(e){}
-}
-function restorePrintMethod(){
-  try{
-    const saved=localStorage.getItem('tradecodePrintMethod');
-    if(saved){
-      const radio=document.querySelector(`input[name="printMethod"][value="${saved}"]`);
-      if(radio) radio.checked=true;
-    }
-  }catch(e){}
-  togglePrintMethod();
-}
-function getSheetSettings(labelCfg){
-  const paperW=Math.max(50,Number(el('sheetPaperWidth').value)||210);
-  const paperH=Math.max(50,Number(el('sheetPaperHeight').value)||297);
-  const cols=Math.max(1,Math.floor(Number(el('sheetColumns').value)||1));
-  const marginX=Math.max(0,Number(el('sheetMarginX').value)||0);
-  const marginY=Math.max(0,Number(el('sheetMarginY').value)||0);
-  const gapX=Math.max(0,Number(el('sheetGapX').value)||0);
-  const gapY=Math.max(0,Number(el('sheetGapY').value)||0);
-  const labelW=Number(labelCfg.labelWidth),labelH=Number(labelCfg.labelHeight);
-
-  const usedW=marginX*2 + cols*labelW + Math.max(0,cols-1)*gapX;
-  if(usedW>paperW+0.01){
-    throw new Error(`가로 배치 초과: 현재 설정은 ${usedW.toFixed(1)}mm가 필요하지만 용지는 ${paperW}mm입니다.`);
-  }
-
-  let rows=Math.floor(Number(el('sheetRows').value)||0);
-  if(rows<=0){
-    rows=Math.floor((paperH-marginY*2+gapY)/(labelH+gapY));
-  }
-  rows=Math.max(1,rows);
-
-  const usedH=marginY*2 + rows*labelH + Math.max(0,rows-1)*gapY;
-  if(usedH>paperH+0.01){
-    throw new Error(`세로 배치 초과: 현재 설정은 ${usedH.toFixed(1)}mm가 필요하지만 용지는 ${paperH}mm입니다.`);
-  }
-  return {paperW,paperH,cols,rows,marginX,marginY,gapX,gapY,labelW,labelH,capacity:cols*rows};
-}
-
-window.addEventListener('focus',()=>{
-  if(orderRows.length) reloadLibrary();
-});
-window.addEventListener('storage',e=>{
-  if(e.key===LABEL_LIBRARY_KEY && orderRows.length) reloadLibrary();
-});
-try{
-  if('BroadcastChannel' in window){
-    const labelChannel=new BroadcastChannel('tradecode-label-library');
-    labelChannel.onmessage=()=>{
-      if(orderRows.length) reloadLibrary();
-    };
-  }
-}catch(e){}
-
 el('orderFile').addEventListener('change',async e=>{
   const file=e.target.files?.[0];
   if(!file)return;
   try{
     setProgress('엑셀을 읽는 중...');
     const buf=await file.arrayBuffer();
-    const wb=XLSX.read(buf,{type:'array',cellStyles:true});
-    const rawFillMap=await extractRawXlsxFillMap(buf);
-    const parsed=parseWorkbook(wb,rawFillMap);
-    currentOrderProgressKey=await makeOrderProgressKey(file,buf);
-    const savedPrintProgress=loadPrintProgress();
-
-    orderRows=parsed.map((r,i)=>{
-      const id=i+1;
-      const orderQty=Math.max(0,Number(r.orderQty)||0);
-      const printedQty=Math.max(0,Math.floor(Number(savedPrintProgress[String(id)])||0));
-      return {
-        id,
-        productNumber:norm(r.productNumber),
-        barcode:norm(r.barcode),
-        productName:norm(r.productName),
-        orderQty,
-        orderQtyColor:r.orderQtyColor||'',
-        printedQty,
-        printQty:Math.max(0,orderQty-printedQty),
-        checked:true,
-        label:null,
-        size:'missing'
-      };
-    });
-    await reloadLibrary();
-    restorePrintMethod();
-    setProgress(`"${file.name}"에서 ${orderRows.length}개 발주 품목을 불러왔습니다. · 공용 라벨 ${labelLibrary.length}개 매칭 확인 완료`);
+    const wb=XLSX.read(buf,{type:'array'});
+    const parsed=parseWorkbook(wb);
+    orderRows=parsed.map((r,i)=>({
+      id:i+1,
+      productNumber:norm(r.productNumber),
+      barcode:norm(r.barcode),
+      productName:norm(r.productName),
+      orderQty:Math.max(0,Number(r.orderQty)||0),
+      printQty:Math.max(0,Number(r.orderQty)||0),
+      checked:true,
+      label:null,
+      size:'missing'
+    }));
+    labelLibrary=getLibrary();
+    rematchRows();
+    renderRows();
+    setProgress(`"${file.name}"에서 ${orderRows.length}개 발주 품목을 불러왔습니다.`);
   }catch(err){
     console.error(err);
     alert('발주현황 엑셀을 읽지 못했습니다. 상품번호/바코드/상품명/발주수량 헤더가 있는지 확인해 주세요.');
@@ -742,7 +225,7 @@ el('orderFile').addEventListener('change',async e=>{
   }
 });
 
-function parseWorkbook(wb,rawFillMap={}){
+function parseWorkbook(wb){
   const sheetNames=['상품목록',...wb.SheetNames.filter(n=>n!=='상품목록')];
   for(const name of sheetNames){
     const ws=wb.Sheets[name];
@@ -761,19 +244,7 @@ function parseWorkbook(wb,rawFillMap={}){
           const pn=norm(row[pIdx]),bc=norm(row[bIdx]),nm=norm(row[nIdx]),qty=row[qIdx];
           if(!pn&&!bc&&!nm)continue;
           if(!(Number(qty)>0))continue;
-          const qtyRef=XLSX.utils.encode_cell({r:i,c:qIdx});
-          const qtyCell=ws[qtyRef];
-          const orderQtyColor=
-            rawFillMap?.[name]?.[qtyRef] ||
-            classifyExcelFill(qtyCell) ||
-            '';
-          out.push({
-            productNumber:pn,
-            barcode:bc,
-            productName:nm,
-            orderQty:Number(qty),
-            orderQtyColor
-          });
+          out.push({productNumber:pn,barcode:bc,productName:nm,orderQty:Number(qty)});
         }
         if(out.length)return out;
       }
@@ -794,28 +265,11 @@ function rematchRows(){
 
 function renderRows(){
   const body=el('rowsBody');
-  const search=String(el('orderSearch')?.value||'').trim().toLowerCase();
   if(!orderRows.length){
-    body.innerHTML='<tr><td colspan="10" class="center" style="padding:30px;color:#667381;">발주현황 엑셀을 선택해 주세요.</td></tr>';
+    body.innerHTML='<tr><td colspan="9" class="center" style="padding:30px;color:#667381;">발주현황 엑셀을 선택해 주세요.</td></tr>';
     updateSummary();return;
   }
-  const visibleRows=orderRows.filter(r=>{
-    if(!search) return true;
-    const haystack=[
-      r.productName,
-      r.barcode,
-      r.productNumber
-    ].map(v=>String(v||'').toLowerCase()).join(' ');
-    return haystack.includes(search);
-  });
-
-  if(!visibleRows.length){
-    body.innerHTML='<tr><td colspan="10" class="center" style="padding:30px;color:#667381;">검색 결과가 없습니다.</td></tr>';
-    updateSummary();
-    return;
-  }
-
-  body.innerHTML=visibleRows.map(r=>{
+  body.innerHTML=orderRows.map(r=>{
     let badge,status,sizeText,rowCls='';
     if(!r.label){badge='missing';status='라벨 없음';sizeText='-'}
     else if(r.size==='50x30'){badge='ok';status='저장됨';sizeText='50×30';rowCls='size30'}
@@ -827,15 +281,13 @@ function renderRows(){
       <td class="center">${esc(r.productNumber)}</td>
       <td>${esc(r.barcode)}</td>
       <td class="name">${esc(r.productName)}</td>
-      <td class="center ${r.orderQtyColor==='yellow'?'order-qty-yellow':r.orderQtyColor==='red'?'order-qty-red':''}"><b>${fmt(r.orderQty)}</b></td>
+      <td class="center"><b>${fmt(r.orderQty)}</b></td>
       <td class="center">${sizeText}</td>
-      <td class="center"><span class="printed-count ${Number(r.printedQty)>=Number(r.orderQty)&&Number(r.orderQty)>0?'done':''}" title="현재까지 출력한 누적 매수">${fmt(r.printedQty)}</span></td>
       <td class="center"><input class="qty" type="number" min="0" value="${r.printQty}" ${disabled?'disabled':''} onchange="changeQty(${r.id},this.value)"></td>
       <td class="center"><span class="badge ${badge}">${status}</span></td>
       <td class="center">
         ${r.label
-          ? `<button class="btn btn-secondary btn-sm" ${disabled?'disabled':''} onclick="printOne(${r.id})">PDF</button>
-             <button class="btn btn-primary btn-sm" ${disabled?'disabled':''} onclick="printOneDirect(${r.id})">Xprinter</button>`
+          ? `<button class="btn btn-primary btn-sm" ${disabled?'disabled':''} onclick="printOne(${r.id})">이 상품 출력</button>`
           : `<button class="btn btn-secondary btn-sm" onclick="makeLabel(${r.id})">라벨 만들기</button>`}
       </td>
     </tr>`
@@ -847,21 +299,7 @@ function fmt(v){return Number(v||0).toLocaleString('ko-KR')}
 function getRow(id){return orderRows.find(r=>r.id===id)}
 function toggleRow(id,checked){const r=getRow(id);if(r)r.checked=checked;updateSummary()}
 function changeQty(id,v){const r=getRow(id);if(r)r.printQty=Math.max(0,Math.floor(Number(v)||0));updateSummary()}
-function setAllChecks(v){
-  orderRows.forEach(r=>{
-    if(r.label&&['50x30','50x60'].includes(r.size)) r.checked=v;
-  });
-  renderRows();
-}
-
-function setSizeChecks(size){
-  orderRows.forEach(r=>{
-    if(r.label&&['50x30','50x60'].includes(r.size)){
-      r.checked=(r.size===size);
-    }
-  });
-  renderRows();
-}
+function setAllChecks(v){orderRows.forEach(r=>{if(r.label&&['50x30','50x60'].includes(r.size))r.checked=v});renderRows()}
 function updateSummary(){
   el('kpiItems').textContent=fmt(orderRows.length);
   el('kpi30').textContent=fmt(orderRows.filter(r=>r.checked&&r.size==='50x30').reduce((s,r)=>s+r.printQty,0));
@@ -870,7 +308,7 @@ function updateSummary(){
 }
 function makeLabel(id){
   const r=getRow(id);if(!r)return;
-  const url='/barcode-label.html?'+new URLSearchParams({
+  const url='/barcode-label?'+new URLSearchParams({
     productNumber:r.productNumber,barcode:r.barcode,productName:r.productName
   }).toString();
   window.open(url,'_blank');
@@ -919,7 +357,7 @@ async function renderLabelPng(cfg){
   const stage=el('renderStage');stage.innerHTML='';
   const node=buildLabelDom(cfg);stage.appendChild(node);
   await new Promise(r=>setTimeout(r,50));
-  const canvas=await html2canvas(node,{scale:6,backgroundColor:'#fff',logging:false,useCORS:true});
+  const canvas=await html2canvas(node,{scale:3,backgroundColor:'#fff',logging:false,useCORS:true});
   stage.innerHTML='';
   return canvas.toDataURL('image/png');
 }
@@ -930,242 +368,6 @@ async function printOne(id){
   if(!qty){alert('출력수량을 1 이상 입력해 주세요.');return}
   await generateJobs([{row:r,qty}],`${r.size}-${safeName(r.barcode||r.productNumber)}`);
 }
-
-async function printOneDirect(id){
-  const r=getRow(id);
-  if(!r||!r.label)return;
-  const qty=Math.max(0,Math.floor(r.printQty));
-  if(!qty){
-    alert('출력수량을 1 이상 입력해 주세요.');
-    return;
-  }
-  const maxPer=Math.max(1,Math.floor(Number(el('maxPerFile').value)||100));
-  if(qty>maxPer){
-    alert(`직접 프린터 인쇄는 현재 1회 최대 ${maxPer}장으로 설정되어 있습니다.\n출력수량을 줄이거나 "1회 최대 출력 장수"를 늘려주세요.`);
-    return;
-  }
-  if(!confirm(`${r.productName||r.barcode} / ${qty.toLocaleString()}장을 프린터 인쇄창으로 보낼까요?`))return;
-  await thermalDirectPrintJobs([{row:r,qty}],`${r.size}-${safeName(r.barcode||r.productNumber)}`);
-}
-
-async function batchDirectPrint(mode){
-  let rows=orderRows.filter(r=>r.checked&&r.label&&r.printQty>0);
-  if(mode==='50x30') rows=rows.filter(r=>r.size==='50x30');
-  else if(mode==='50x60') rows=rows.filter(r=>r.size==='50x60');
-  else rows=rows.filter(r=>['50x30','50x60'].includes(r.size));
-
-  if(!rows.length){
-    alert('프린터로 출력할 품목이 없습니다.');
-    return;
-  }
-
-  const sizes=[...new Set(rows.map(r=>r.size))];
-  if(sizes.length>1){
-    alert('50×30과 50×60 라벨은 한 번의 프린터 인쇄창에서 같이 출력할 수 없습니다.\n규격별 프린터 버튼을 사용해 주세요.');
-    return;
-  }
-
-  const total=rows.reduce((s,r)=>s+r.printQty,0);
-  const maxPer=Math.max(1,Math.floor(Number(el('maxPerFile').value)||100));
-  if(total>maxPer){
-    alert(`직접 프린터 인쇄는 현재 1회 최대 ${maxPer}장으로 설정되어 있습니다.\n현재 선택 수량은 ${total.toLocaleString()}장입니다.\n출력수량을 줄이거나 "1회 최대 출력 장수"를 늘려주세요.`);
-    return;
-  }
-
-  if(!confirm(`${rows.length}개 품목 / 총 ${total.toLocaleString()}장을 프린터 인쇄창으로 보낼까요?`))return;
-  await thermalDirectPrintJobs(rows.map(r=>({row:r,qty:r.printQty})),mode);
-}
-
-
-async function thermalDirectPrintJobs(items,namePrefix){
-  try{
-    // 다열 라벨 용지는 일반 프린터/브라우저 인쇄를 사용
-    if(getPrintMethod()==='sheet'){
-      return await browserDirectPrintJobs(items,namePrefix);
-    }
-
-    setProgress('Xprinter 감열 인쇄 데이터를 준비하는 중...');
-    const first=items[0].row.label;
-    const labelW=Number(first.labelWidth),labelH=Number(first.labelHeight);
-
-    for(const it of items){
-      const w=Number(it.row.label.labelWidth),h=Number(it.row.label.labelHeight);
-      if(Math.abs(w-labelW)>.2||Math.abs(h-labelH)>.2){
-        throw new Error('서로 다른 라벨 규격은 한 번에 Xprinter로 출력할 수 없습니다.');
-      }
-    }
-
-    await ensureQzConnected();
-    let printer=el('thermalPrinterSelect')?.value||localStorage.getItem(THERMAL_PRINTER_KEY)||'';
-    if(!printer){
-      await connectThermalPrinter();
-      printer=el('thermalPrinterSelect')?.value||'';
-    }
-    if(!printer)throw new Error('Xprinter를 선택해 주세요.');
-
-    for(let i=0;i<items.length;i++){
-      const it=items[i];
-      const png=await renderLabelPng(it.row.label);
-      setProgress(`Xprinter 전송 중... ${i+1}/${items.length} · ${it.row.productName||it.row.barcode}`);
-      await sendPngToThermalPrinter(
-        png,
-        Number(it.row.label.labelWidth),
-        Number(it.row.label.labelHeight),
-        Number(it.qty),
-        `TradeCode ${it.row.barcode||it.row.productNumber||i+1}`
-      );
-      markPrintedItems([{row:it.row,qty:it.qty}]);
-    }
-
-    const total=items.reduce((s,x)=>s+Number(x.qty||0),0);
-    setProgress(`✓ Xprinter 전송 완료 · 총 ${total.toLocaleString()}장 · ${printer}`);
-  }catch(err){
-    console.error(err);
-    setProgress('');
-    alert((err?.message||'Xprinter 출력에 실패했습니다.')+
-      '\n\nQZ Tray가 실행 중인지, Xprinter XP-370B가 Windows에 설치되어 있는지 확인해 주세요.');
-  }
-}
-
-async function browserDirectPrintJobs(items,namePrefix){
-  let printWin=null;
-  try{
-    setProgress('프린터 인쇄용 라벨을 준비하는 중...');
-
-    // 사용자가 클릭한 순간 팝업을 먼저 열어 팝업 차단을 줄인다.
-    printWin=window.open('','_blank','width=980,height=760');
-    if(!printWin){
-      alert('인쇄창을 열 수 없습니다. 브라우저의 팝업 차단을 허용해 주세요.');
-      setProgress('');
-      return;
-    }
-    printWin.document.write('<!doctype html><html><head><title>인쇄 준비중...</title></head><body style="font-family:sans-serif;padding:24px;">라벨을 준비하는 중입니다...</body></html>');
-    printWin.document.close();
-
-    const first=items[0].row.label;
-    const labelW=Number(first.labelWidth);
-    const labelH=Number(first.labelHeight);
-
-    for(const it of items){
-      const w=Number(it.row.label.labelWidth),h=Number(it.row.label.labelHeight);
-      if(Math.abs(w-labelW)>.2||Math.abs(h-labelH)>.2){
-        throw new Error('서로 다른 라벨 규격은 한 번에 직접 인쇄할 수 없습니다.');
-      }
-    }
-
-    const imageCache=new Map();
-    for(const it of items){
-      const key=normBc(it.row.barcode)||norm(it.row.productNumber);
-      if(!imageCache.has(key)){
-        imageCache.set(key,await renderLabelPng(it.row.label));
-      }
-    }
-
-    const printMethod=getPrintMethod();
-    let css='';
-    let body='';
-
-    if(printMethod==='continuous'){
-      css=`
-        @page{size:${labelW}mm ${labelH}mm;margin:0}
-        html,body{margin:0;padding:0;background:#fff}
-        .print-page{width:${labelW}mm;height:${labelH}mm;margin:0;padding:0;page-break-after:always;break-after:page;overflow:hidden}
-        .print-page:last-child{page-break-after:auto;break-after:auto}
-        .print-page img{display:block;width:${labelW}mm;height:${labelH}mm;margin:0;padding:0}
-      `;
-      const pages=[];
-      for(const it of items){
-        const key=normBc(it.row.barcode)||norm(it.row.productNumber);
-        const img=imageCache.get(key);
-        for(let i=0;i<it.qty;i++){
-          pages.push(`<div class="print-page"><img src="${img}"></div>`);
-        }
-      }
-      body=pages.join('');
-    }else{
-      const sheet=getSheetSettings(first);
-      css=`
-        @page{size:${sheet.paperW}mm ${sheet.paperH}mm;margin:0}
-        html,body{margin:0;padding:0;background:#fff}
-        .sheet-page{position:relative;width:${sheet.paperW}mm;height:${sheet.paperH}mm;margin:0;padding:0;page-break-after:always;break-after:page;overflow:hidden}
-        .sheet-page:last-child{page-break-after:auto;break-after:auto}
-        .sheet-page img{position:absolute;display:block;width:${sheet.labelW}mm;height:${sheet.labelH}mm;margin:0;padding:0}
-      `;
-
-      const pages=[];
-      let pageItems=[];
-      let slot=0;
-
-      function flushPage(){
-        if(!pageItems.length)return;
-        pages.push(`<div class="sheet-page">${pageItems.join('')}</div>`);
-        pageItems=[];
-        slot=0;
-      }
-
-      for(const it of items){
-        const key=normBc(it.row.barcode)||norm(it.row.productNumber);
-        const img=imageCache.get(key);
-        for(let i=0;i<it.qty;i++){
-          if(slot>=sheet.capacity) flushPage();
-          const col=slot%sheet.cols;
-          const row=Math.floor(slot/sheet.cols);
-          const x=sheet.marginX + col*(sheet.labelW+sheet.gapX);
-          const y=sheet.marginY + row*(sheet.labelH+sheet.gapY);
-          pageItems.push(`<img src="${img}" style="left:${x}mm;top:${y}mm">`);
-          slot++;
-        }
-      }
-      flushPage();
-      body=pages.join('');
-    }
-
-    printWin.document.open();
-    printWin.document.write(`<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>${String(namePrefix||'바코드 인쇄').replace(/[<>&"]/g,'')}</title>
-<style>
-${css}
-*{box-sizing:border-box}
-@media print{html,body{margin:0!important;padding:0!important}}
-</style>
-</head>
-<body>
-${body}
-<script>
-(function(){
-  var imgs=Array.from(document.images);
-  Promise.all(imgs.map(function(img){
-    if(img.complete) return Promise.resolve();
-    return new Promise(function(resolve){
-      img.onload=resolve;
-      img.onerror=resolve;
-    });
-  })).then(function(){
-    setTimeout(function(){
-      window.focus();
-      window.print();
-    },150);
-  });
-})();
-<\/script>
-</body>
-</html>`);
-    printWin.document.close();
-
-    const total=items.reduce((s,x)=>s+Number(x.qty||0),0);
-    markPrintedItems(items);
-    setProgress(`✓ 프린터 인쇄창 준비 완료 · 총 ${total.toLocaleString()}장 · 현재 출력매수에 반영`);
-  }catch(err){
-    console.error(err);
-    if(printWin && !printWin.closed) printWin.close();
-    alert(err?.message || '프린터 인쇄 준비 중 오류가 발생했습니다.');
-    setProgress('');
-  }
-}
-
 async function batchPrint(mode){
   let rows=orderRows.filter(r=>r.checked&&r.label&&r.printQty>0);
   if(mode==='50x30')rows=rows.filter(r=>r.size==='50x30');
@@ -1181,7 +383,7 @@ async function batchPrint(mode){
     }
   }
   const total=rows.reduce((s,r)=>s+r.printQty,0);
-  if(!confirm(`${rows.length}개 품목 / 총 ${total.toLocaleString()}장을 PDF로 생성할까요?`))return;
+  if(!confirm(`${rows.length}개 품목 / 총 ${total.toLocaleString()}장을 출력용 PDF로 생성할까요?`))return;
   await generateJobs(rows.map(r=>({row:r,qty:r.printQty})),mode);
 }
 async function generateJobs(items,namePrefix){
@@ -1189,95 +391,46 @@ async function generateJobs(items,namePrefix){
     setProgress('라벨 이미지를 준비하는 중...');
     const maxPer=Math.max(1,Math.floor(Number(el('maxPerFile').value)||100));
     const imageCache=new Map();
-
     for(const it of items){
       const key=normBc(it.row.barcode)||norm(it.row.productNumber);
-      if(!imageCache.has(key)) imageCache.set(key,await renderLabelPng(it.row.label));
+      if(!imageCache.has(key))imageCache.set(key,await renderLabelPng(it.row.label));
     }
 
     const chunks=[];
     let current=[],count=0;
     for(const it of items){
-      let remain=Math.max(0,Math.floor(Number(it.qty)||0));
+      let remain=it.qty;
       while(remain>0){
         const room=maxPer-count;
         const take=Math.min(remain,room);
         current.push({row:it.row,qty:take});
-        count+=take;
-        remain-=take;
-        if(count>=maxPer){
-          chunks.push(current);
-          current=[];
-          count=0;
-        }
+        count+=take;remain-=take;
+        if(count>=maxPer){chunks.push(current);current=[];count=0}
       }
     }
-    if(current.length) chunks.push(current);
+    if(current.length)chunks.push(current);
 
-    const printMethod=getPrintMethod();
     const files=[];
-
     for(let ci=0;ci<chunks.length;ci++){
       const chunk=chunks[ci];
       const first=chunk[0].row.label;
-      const labelW=Number(first.labelWidth),labelH=Number(first.labelHeight);
+      const w=Number(first.labelWidth),h=Number(first.labelHeight),orientation=w>h?'landscape':'portrait';
       const {jsPDF}=window.jspdf;
-
+      const pdf=new jsPDF({orientation,unit:'mm',format:[w,h],compress:true});
+      let page=0;
       for(const it of chunk){
-        const cw=Number(it.row.label.labelWidth),ch=Number(it.row.label.labelHeight);
-        if(Math.abs(cw-labelW)>.2||Math.abs(ch-labelH)>.2){
-          throw new Error('서로 다른 라벨 규격은 같은 PDF에 넣을 수 없습니다.');
+        const cfg=it.row.label;
+        const cw=Number(cfg.labelWidth),ch=Number(cfg.labelHeight);
+        if(Math.abs(cw-w)>.2||Math.abs(ch-h)>.2)throw new Error('mixed label sizes');
+        const key=normBc(it.row.barcode)||norm(it.row.productNumber);
+        const img=imageCache.get(key);
+        for(let i=0;i<it.qty;i++){
+          if(page>0)pdf.addPage([w,h],orientation);
+          pdf.addImage(img,'PNG',0,0,w,h);
+          page++;
         }
       }
-
-      let pdf;
-
-      if(printMethod==='continuous'){
-        const orientation=labelW>labelH?'landscape':'portrait';
-        pdf=new jsPDF({orientation,unit:'mm',format:[labelW,labelH],compress:true});
-        let page=0;
-
-        for(const it of chunk){
-          const key=normBc(it.row.barcode)||norm(it.row.productNumber);
-          const img=imageCache.get(key);
-          for(let i=0;i<it.qty;i++){
-            if(page>0) pdf.addPage([labelW,labelH],orientation);
-            pdf.addImage(img,'PNG',0,0,labelW,labelH);
-            page++;
-          }
-        }
-      }else{
-        const sheet=getSheetSettings(first);
-        const orientation=sheet.paperW>sheet.paperH?'landscape':'portrait';
-        pdf=new jsPDF({orientation,unit:'mm',format:[sheet.paperW,sheet.paperH],compress:true});
-
-        let slot=0;
-        let page=0;
-        for(const it of chunk){
-          const key=normBc(it.row.barcode)||norm(it.row.productNumber);
-          const img=imageCache.get(key);
-
-          for(let i=0;i<it.qty;i++){
-            if(slot>=sheet.capacity){
-              pdf.addPage([sheet.paperW,sheet.paperH],orientation);
-              slot=0;
-              page++;
-            }
-            const col=slot%sheet.cols;
-            const row=Math.floor(slot/sheet.cols);
-            const x=sheet.marginX + col*(sheet.labelW+sheet.gapX);
-            const y=sheet.marginY + row*(sheet.labelH+sheet.gapY);
-            pdf.addImage(img,'PNG',x,y,sheet.labelW,sheet.labelH);
-            slot++;
-          }
-        }
-      }
-
-      const methodName=printMethod==='continuous'?'1열연속':'다열라벨용지';
-      files.push({
-        name:`${safeName(namePrefix)}-${methodName}-${String(ci+1).padStart(2,'0')}.pdf`,
-        blob:pdf.output('blob')
-      });
+      files.push({name:`${safeName(namePrefix)}-${String(ci+1).padStart(2,'0')}.pdf`,blob:pdf.output('blob')});
       setProgress(`PDF 생성 중... ${ci+1}/${chunks.length}`);
     }
 
@@ -1290,25 +443,17 @@ async function generateJobs(items,namePrefix){
       const blob=await zip.generateAsync({type:'blob'});
       downloadBlob(blob,`${safeName(namePrefix)}-분할출력.zip`);
     }
-
-    const total=items.reduce((s,x)=>s+Number(x.qty||0),0);
-    markPrintedItems(items);
-    setProgress(`✓ 완료 · 총 ${total.toLocaleString()}장 / ${files.length}개 파일 · ${printMethod==='continuous'?'1열 연속':'다열 라벨 용지'} 방식 · 현재 출력매수에 반영`);
+    setProgress(`✓ 완료 · 총 ${items.reduce((s,x)=>s+x.qty,0).toLocaleString()}장 / ${files.length}개 파일`);
   }catch(err){
-    console.error(err);
-    alert(err?.message || '출력용 PDF 생성 중 오류가 발생했습니다.');
-    setProgress('');
+    console.error(err);alert('출력용 PDF 생성 중 오류가 발생했습니다.');setProgress('');
   }
 }
-
 function downloadBlob(blob,name){
   const url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
-setLibraryCache(getLibrary());
-reloadLibrary();
-restorePrintMethod();
+labelLibrary=getLibrary();
 </script>
 </body>
 </html>
