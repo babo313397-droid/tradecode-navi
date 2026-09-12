@@ -11,7 +11,7 @@
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:#13212c}button,input,select{font:inherit}button{cursor:pointer}
 .sidebar{position:fixed;left:0;top:0;bottom:0;width:258px;background:linear-gradient(180deg,var(--navy2),var(--navy));padding:22px 15px;overflow:auto;z-index:50}.side-brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;font-size:17px;margin-bottom:18px}.logo-badge{width:38px;height:38px;border-radius:10px;background:var(--gold);color:#08253f;display:grid;place-items:center;font-weight:1000}.side-brand small{font-size:11px;font-weight:500;color:#c8d4df}.nav-section-label{font-size:10.5px;color:#8fa6ba;margin:14px 8px 7px;font-weight:900;letter-spacing:.08em}.nav-btn{display:block;width:100%;text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);color:#e8eef4;border-radius:10px;padding:12px;font-size:13px;font-weight:800;margin-bottom:7px;text-decoration:none}.nav-btn:hover{background:rgba(255,255,255,.12)}.nav-btn.active{background:var(--gold);color:#08253f;border-color:var(--gold)}
 .main{margin-left:258px;min-height:100vh;padding:18px;max-width:1700px}.head{display:flex;align-items:center;gap:10px;margin-bottom:12px}.head h1{font-size:22px;color:#0b3152;margin:0}.head .sub{font-size:11px;color:#6c7b88}.panel{background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 2px 9px rgba(0,0,0,.05);margin-bottom:12px}.panel-title{padding:12px 14px;border-bottom:1px solid #e0e5e9;font-size:13px;font-weight:900;color:#173b55}.panel-body{padding:14px}
-.dropzone{border:2px dashed #77a18a;border-radius:10px;min-height:140px;display:flex;align-items:center;justify-content:center;text-align:center;background:#f8fbf9;color:#436253;transition:.15s}.dropzone.drag{background:#e8f5ed;border-color:var(--green);transform:scale(1.002)}.dropzone strong{display:block;font-size:17px;color:#185638;margin-bottom:8px}.dropzone small{font-size:11px;color:#71827a}.buttons{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.btn{border:1px solid #b8c3ca;border-radius:6px;padding:8px 12px;background:#fff;font-size:11px;font-weight:900}.btn.primary{background:#0b5f92;color:#fff;border-color:#0b5f92}.btn.green{background:var(--green);color:#fff;border-color:var(--green)}.btn:disabled{opacity:.45;cursor:not-allowed}input[type=file]{display:none}.status{font-size:11px;margin-top:9px;color:#52656f}.status.ok{color:#1d6c43}.status.bad{color:var(--red)}
+.dropzone{border:2px dashed #77a18a;border-radius:10px;min-height:140px;display:flex;align-items:center;justify-content:center;text-align:center;background:#f8fbf9;color:#436253;transition:.15s}.dropzone.drag{background:#e8f5ed;border-color:var(--green);transform:scale(1.002)}.dropzone strong{display:block;font-size:17px;color:#185638;margin-bottom:8px}.dropzone small{font-size:11px;color:#71827a}.file-chip-v41{display:inline-block;margin:3px 3px 0 0;padding:3px 7px;border-radius:999px;background:#e8f1f7;border:1px solid #b7ccda;color:#244b65;font-size:9.5px;font-weight:900}.buttons{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.btn{border:1px solid #b8c3ca;border-radius:6px;padding:8px 12px;background:#fff;font-size:11px;font-weight:900}.btn.primary{background:#0b5f92;color:#fff;border-color:#0b5f92}.btn.green{background:var(--green);color:#fff;border-color:var(--green)}.btn:disabled{opacity:.45;cursor:not-allowed}input[type=file]{display:none}.status{font-size:11px;margin-top:9px;color:#52656f}.status.ok{color:#1d6c43}.status.bad{color:var(--red)}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:9px}.kpi{border:1px solid #dce3e7;border-radius:8px;padding:12px;background:#fbfcfd}.kpi b{font-size:20px;color:#0b3152}.kpi span{display:block;font-size:10px;color:#6b7a84;margin-top:3px}.kpi.good b{color:#1d7145}
 .rules{overflow:auto}.rules table,.preview table{border-collapse:collapse;width:100%;font-size:11px}.rules th,.rules td,.preview th,.preview td{border:1px solid #d8dfe3;padding:7px 8px;text-align:left}.rules th,.preview th{background:#f2f5f7;color:#334a5a;font-weight:900;position:sticky;top:0}.rules select{width:125px;height:30px;border:1px solid #aab7bf;border-radius:5px;background:#fff;padding:0 6px;font-weight:800}.badge{display:inline-block;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:900}.badge.known{background:#e5f2e9;color:#1d6841}.badge.saved{background:#e8eef9;color:#345182}.badge.auto{background:#f3f0df;color:#715d08}
 .preview{max-height:520px;overflow:auto}.preview .section td{background:#fff200;font-weight:900;text-align:center;font-size:13px}.preview td.num{text-align:right;font-weight:800}.preview td.center{font-weight:900;color:#1d2830}.center-swatch{display:inline-block;width:16px;height:16px;border-radius:4px;border:1px solid rgba(0,0,0,.18);vertical-align:-3px;margin-right:6px}.empty{padding:30px;text-align:center;color:#75838b;font-size:12px}.warn{background:#fff7e8;border:1px solid #efd4a4;color:#6b4b12;border-radius:7px;padding:8px 10px;font-size:10px;margin-top:9px;line-height:1.5}
@@ -42,16 +42,16 @@
     <div class="panel-title">1. 원본 선적 엑셀 불러오기</div>
     <div class="panel-body">
       <div id="dropzone" class="dropzone">
-        <div><strong>원본 선적 엑셀을 여기에 끌어놓으세요</strong><small>또는 아래 ‘파일 선택’을 눌러 .xlsx / .xlsm 파일을 선택하세요.</small></div>
+        <div><strong>원본 선적 엑셀 1~3개를 여기에 끌어놓으세요</strong><small>코리아원 · 봄날애 · 차통익스프레스 파일을 한 번에 여러 개 올리거나, 한 개씩 추가로 올려도 됩니다.</small><div id="loadedFilesV41" style="margin-top:9px;font-size:10px;color:#31586f;font-weight:800"></div></div>
       </div>
       <div class="buttons">
-        <button class="btn primary" onclick="document.getElementById('fileInput').click()">파일 선택</button>
-        <input id="fileInput" type="file" accept=".xlsx,.xlsm">
+        <button class="btn primary" onclick="document.getElementById('fileInput').click()">파일 여러 개 선택</button>
+        <input id="fileInput" type="file" accept=".xlsx,.xlsm" multiple>
         <button id="downloadBtn" class="btn green" disabled onclick="downloadResult()">정리 엑셀 다운로드</button>
         <button id="resetBtn" class="btn" onclick="resetAll()">초기화</button>
       </div>
       <div id="status" class="status">정리 전 원본 파일을 불러와 주세요.</div>
-      <div class="warn">정리 기준: <b>같은 업체 + 같은 센터 + 같은 상품번호/바코드</b>인 행의 발주수량(E열)을 합산합니다. 같은 상품이라도 센터가 다르면 서로 합치지 않습니다. <b>센터 셀 색상은 업체+센터별로 자동 지정</b>됩니다.</div>
+      <div class="warn">정리 기준: <b>여러 원본 파일을 하나로 합친 뒤, 같은 업체 + 같은 센터 + 같은 상품번호/바코드</b>인 행의 발주수량(E열)을 합산합니다. 같은 상품이라도 센터가 다르면 서로 합치지 않습니다. <b>센터 셀 색상은 업체+센터별로 자동 지정</b>됩니다.</div>
       <div class="safe-note"><b>기존 파일은 변경하지 않습니다.</b> 원본 엑셀은 읽기만 하고, 정리 결과는 새 Excel 파일로 다운로드합니다. 쿠팡 입고 작업·바코드 라벨·서버 저장 데이터에도 영향을 주지 않습니다.</div>
     </div>
   </section>
@@ -258,8 +258,8 @@ async function downloadResult(){
 async function acceptFile(file){if(!file||!/\.(xlsx|xlsm)$/i.test(file.name||'')){alert('Excel .xlsx 또는 .xlsm 파일을 넣어주세요.');return}sourceFile=file;try{await parseSource(file)}catch(e){console.error(e);setStatus('파일 분석 실패: '+(e.message||e),'bad');alert('파일을 분석하지 못했습니다.\n'+(e.message||e))}}
 function resetAll(){sourceFile=null;sourceWorkbook=null;sourceSheet=null;parsedSections=[];groupedSections=[];centerRules=new Map();centerColors=new Map();centerChoiceConfirmed=false;wizardPallet=new Set();wizardMilkrun=new Set();$('centerWizard').classList.remove('show');$('fileInput').value='';$('downloadBtn').disabled=true;$('rawCount').textContent=$('resultCount').textContent=$('mergedCount').textContent=$('totalQty').textContent='0';$('rulesHost').innerHTML='<div class="empty">파일을 불러오면 감지된 업체/센터가 여기에 표시됩니다.</div>';$('previewHost').innerHTML='<div class="empty">정리 결과가 여기에 표시됩니다.</div>';setStatus('정리 전 원본 파일을 불러와 주세요.')}
 function esc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]))}function escAttr(v){return esc(v)}
-$('fileInput').addEventListener('change',e=>acceptFile(e.target.files?.[0]));
-const dz=$('dropzone');['dragenter','dragover'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.add('drag');if(e.dataTransfer)e.dataTransfer.dropEffect='copy'}));['dragleave','drop'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',e=>acceptFile([...(e.dataTransfer?.files||[])].find(f=>/\.(xlsx|xlsm)$/i.test(f.name||''))));dz.addEventListener('dblclick',()=>$('fileInput').click());
+$('fileInput').addEventListener('change',e=>{const fs=[...(e.target.files||[])];e.target.value='';if(fs.length)acceptFilesV41(fs)});
+const dz=$('dropzone');['dragenter','dragover'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.add('drag');if(e.dataTransfer)e.dataTransfer.dropEffect='copy'}));['dragleave','drop'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',e=>{const fs=[...(e.dataTransfer?.files||[])].filter(f=>/\.(xlsx|xlsm)$/i.test(f.name||''));if(fs.length)acceptFilesV41(fs);else alert('Excel .xlsx 또는 .xlsm 파일을 넣어주세요.')});dz.addEventListener('dblclick',()=>$('fileInput').click());
 </script>
 
 <script id="v40-shipment-vault-coupang-transfer">
@@ -359,6 +359,151 @@ async function initShipmentVaultV40(){
 }
 initShipmentVaultV40();
 // ===== /v40 =====
+</script>
+
+
+<script id="v41-multi-source-files">
+// ===== v41: multiple source files (KoreaOne / Bomnalae / Chatong) =====
+let inputNamesV41=[];
+let combiningV41=false;
+
+function detectCompanyV41(text){
+  const t=norm(text);
+  if(/봄날애/.test(t))return '봄날애';
+  if(/차통\s*익스프레스|차통/.test(t))return '차통익스프레스';
+  if(/코리아원/.test(t))return '코리아원';
+  return '';
+}
+function companyOrderV41(c){return c==='코리아원'?0:c==='봄날애'?1:c==='차통익스프레스'?2:9}
+function cleanFileBaseV41(name){return String(name||'').replace(/\.(xlsx|xlsm)$/i,'').trim()}
+function ensureCompanyTitleV41(company,title,fileName){
+  let t=norm(title)||cleanFileBaseV41(fileName)||`${company} 선적건`;
+  const found=detectCompanyV41(t);
+  if(!found)t=`${company} ${t}`;
+  else if(found!==company)t=t.replace(/코리아원|봄날애|차통\s*익스프레스|차통/gi,company);
+  if(!/선적/.test(t))t=`${company} ${cleanFileBaseV41(fileName).replace(/코리아원|봄날애|차통\s*익스프레스|차통/gi,'').trim()} 선적건`.replace(/\s+/g,' ').trim();
+  return t;
+}
+function renderInputNamesV41(){
+  const host=document.getElementById('loadedFilesV41');if(!host)return;
+  const names=inputNamesV41.filter(Boolean);
+  host.innerHTML=names.length?`현재 취합 파일 ${names.length}개 · `+names.map(n=>`<span class="file-chip-v41">${esc(n)}</span>`).join(''):'아직 불러온 파일이 없습니다.';
+}
+function copyTplToCellV41(tplCell,dst){
+  if(!tplCell)return;
+  try{dst.style=clone(tplCell.style)||{}}catch(_){}
+  if(tplCell.numFmt)dst.numFmt=tplCell.numFmt;
+  if(tplCell.alignment)dst.alignment=clone(tplCell.alignment);
+}
+async function extractSectionsV41(file){
+  const wb=new ExcelJS.Workbook();await wb.xlsx.load(await file.arrayBuffer());
+  const ws=wb.worksheets[0];if(!ws)throw new Error(`${file.name}: 첫 번째 시트를 찾을 수 없습니다.`);
+  let hint=detectCompanyV41(file.name);
+  if(!hint){
+    let probe='';for(let r=1;r<=Math.min(ws.rowCount,40);r++){for(let c=1;c<=Math.min(ws.columnCount||5,6);c++)probe+=' '+cellText(ws.getRow(r).getCell(c))}
+    hint=detectCompanyV41(probe);
+  }
+  if(!hint){
+    const ans=prompt(`“${file.name}”의 업체를 구분하지 못했습니다.\n코리아원 / 봄날애 / 차통익스프레스 중 하나를 입력해 주세요.`,'코리아원');
+    hint=detectCompanyV41(ans)||'코리아원';
+  }
+  const sections=[];let sec=null,currentCompany=hint;
+  for(let r=1;r<=ws.rowCount;r++){
+    const row=ws.getRow(r),a=cellText(row.getCell(1)),b=cellText(row.getCell(2)),c=cellText(row.getCell(3)),d=cellText(row.getCell(4)),eText=cellText(row.getCell(5)),q=num(row.getCell(5).value??eText);
+    if(isShipmentTitle(a,b,c,d,eText)){
+      const inTitle=detectCompanyV41(a);currentCompany=inTitle||hint||currentCompany;
+      sec={company:currentCompany,title:ensureCompanyTitleV41(currentCompany,a,file.name),titleRow:r,titleTpl:rowTemplate(ws,r),items:[],sourceName:file.name};sections.push(sec);continue;
+    }
+    if(a&&b&&c&&d&&q>0){
+      if(!sec){const a1=cellText(ws.getCell('A1'));const title=ensureCompanyTitleV41(currentCompany,/선적/.test(a1)?a1:'',file.name);sec={company:currentCompany,title,titleRow:r,titleTpl:null,items:[],sourceName:file.name};sections.push(sec)}
+      sec.items.push({sourceRow:r,productNumberValue:clone(row.getCell(1).value),productNumber:a,productNameValue:clone(row.getCell(2).value),productName:b,barcodeValue:clone(row.getCell(3).value),barcode:c,centerValue:clone(row.getCell(4).value),center:d,qty:q,rowTpl:rowTemplate(ws,r),centerStyle:clone(row.getCell(4).style),firstOrder:r,sourceName:file.name});
+    }
+  }
+  if(!sections.some(x=>x.items.length))throw new Error(`${file.name}: A~E열에서 상품번호/제품명/바코드/센터/수량 형식의 데이터를 찾지 못했습니다.`);
+  return {file,ws,sections:sections.filter(x=>x.items.length),companyHint:hint};
+}
+function mergeSectionsByCompanyV41(parts){
+  const byCompany=new Map();let seq=0;
+  for(const part of parts){
+    for(const sec of part.sections){
+      const company=sec.company||part.companyHint||'코리아원';
+      let agg=byCompany.get(company);
+      if(!agg){agg={company,title:ensureCompanyTitleV41(company,sec.title,part.file.name),titleTpl:sec.titleTpl,items:[],firstOrder:seq++};byCompany.set(company,agg)}
+      if(!agg.titleTpl&&sec.titleTpl)agg.titleTpl=sec.titleTpl;
+      for(const it of sec.items)agg.items.push(it);
+    }
+  }
+  return [...byCompany.values()].sort((a,b)=>companyOrderV41(a.company)-companyOrderV41(b.company)||a.firstOrder-b.firstOrder);
+}
+async function makeCombinedSourceV41(files){
+  const unique=[];const seen=new Set();
+  for(const f of files){
+    if(!f||!/\.(xlsx|xlsm)$/i.test(f.name||''))continue;
+    const k=`${f.name}|${f.size}|${f.lastModified||0}`;if(seen.has(k))continue;seen.add(k);unique.push(f);
+  }
+  if(!unique.length)throw new Error('Excel .xlsx 또는 .xlsm 파일을 넣어주세요.');
+  setStatus(`${unique.length}개 원본 파일을 읽고 하나의 선적 리스트로 취합하는 중…`);
+  const parts=[];for(const f of unique)parts.push(await extractSectionsV41(f));
+  const sections=mergeSectionsByCompanyV41(parts);if(!sections.length)throw new Error('취합할 상품을 찾지 못했습니다.');
+  const out=new ExcelJS.Workbook();out.creator='TradeCode Navi';out.created=new Date();out.modified=new Date();
+  const ws=out.addWorksheet(parts[0]?.ws?.name||'Sheet2');
+  const first=parts[0]?.ws;const widths=[11.2,39.9,17.4,12,9,7.4,7.7];for(let c=1;c<=7;c++)ws.getColumn(c).width=first?.getColumn(c)?.width||widths[c-1]||10;
+  let rn=1;
+  for(const sec of sections){
+    const tr=ws.getRow(rn);tr.height=sec.titleTpl?.height||33;
+    for(let c=1;c<=7;c++){const t=sec.titleTpl?.cells?.[c-1];if(t)copyTplToCellV41(t,tr.getCell(c));else fallbackTitleStyle(tr.getCell(c))}
+    tr.getCell(1).value=sec.title;try{ws.mergeCells(rn,1,rn,5)}catch(_){};rn++;
+    for(const it of sec.items){
+      const rr=ws.getRow(rn);rr.height=it.rowTpl?.height||33;
+      for(let c=1;c<=7;c++){const t=it.rowTpl?.cells?.[c-1];if(t)copyTplToCellV41(t,rr.getCell(c));else fallbackDataStyle(rr.getCell(c))}
+      rr.getCell(1).value=clone(it.productNumberValue)??it.productNumber;rr.getCell(2).value=clone(it.productNameValue)??it.productName;rr.getCell(3).value=clone(it.barcodeValue)??it.barcode;rr.getCell(4).value=baseCenter(it.center);if(it.centerStyle)rr.getCell(4).style=clone(it.centerStyle);rr.getCell(5).value=Number(it.qty)||0;rr.getCell(6).value=null;rr.getCell(7).value=null;rn++;
+    }
+  }
+  const buf=await out.xlsx.writeBuffer();
+  const companyNames=sections.map(s=>s.company);const label=companyNames.length>=3?'3사업체_통합선적':companyNames.join('_')+'_통합선적';
+  const outName=unique.length===1?unique[0].name:`${label}.xlsx`;const file=new File([buf],outName,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',lastModified:Date.now()});
+  return {file,parts,sections,originalNames:unique.map(f=>f.name)};
+}
+function openWizardWithPreservedV41(types){
+  wizardPallet=new Set();wizardMilkrun=new Set();
+  for(const [k,r] of centerRules){const t=types?.[k];if(t==='pallet')wizardPallet.add(k);else if(t==='milkrun')wizardMilkrun.add(k)}
+  wizardStage='pallet';centerChoiceConfirmed=false;$('downloadBtn').disabled=true;
+  const m=$('centerWizard');m.classList.add('show');m.setAttribute('aria-hidden','false');renderWizard();
+}
+async function acceptFilesV41(newFiles){
+  if(combiningV41)return;
+  let fresh=[...(newFiles||[])].filter(f=>/\.(xlsx|xlsm)$/i.test(f.name||''));fresh=fresh.filter(f=>!inputNamesV41.includes(f.name));if(!fresh.length)return alert('추가할 새 Excel 파일이 없습니다. 이미 올린 같은 이름의 파일은 중복 합산을 막기 위해 제외했습니다.');
+  combiningV41=true;
+  try{
+    const oldTypes=centerTypesSnapshotV40();
+    // 현재 리스트가 있으면 그 통합 원본에 새 파일을 추가합니다. 새 선적건은 '초기화' 후 올리면 됩니다.
+    const inputs=(sourceFile&&groupedSections?.length)?[sourceFile,...fresh]:fresh;
+    const combined=await makeCombinedSourceV41(inputs);
+    const wasExisting=!!(sourceFile&&groupedSections?.length&&activeDraftIdV40);
+    sourceFile=combined.file;inputNamesV41=(inputNamesV41.length?inputNamesV41:[]).concat(fresh.map(f=>f.name));
+    inputNamesV41=[...new Set(inputNamesV41)];renderInputNamesV41();
+    await parseSourceBaseV40(combined.file);
+    document.getElementById('centerWizard')?.classList.remove('show');
+    if(!wasExisting){activeDraftIdV40=newDraftIdV40();selectedDraftIdV40=activeDraftIdV40}
+    openWizardWithPreservedV41(oldTypes);
+    await persistCurrentDraftV40({manual:false}).catch(e=>console.warn('v41 autosave failed',e));
+    setSendEnabledV40();
+    setStatus(`✓ 원본 ${inputNamesV41.length}개 취합 완료 · 센터 구분을 확인해 주세요.`, 'ok');
+  }catch(e){console.error(e);setStatus('파일 취합 실패: '+(e.message||e),'bad');alert('원본 파일을 취합하지 못했습니다.\n'+(e.message||e))}
+  finally{combiningV41=false}
+}
+
+// v40 보관함에 원본 파일명 목록도 같이 저장합니다. 실제 복구 데이터는 기존 통합 Excel blob을 그대로 사용합니다.
+const persistCurrentDraftBaseV41=persistCurrentDraftV40;
+persistCurrentDraftV40=async function(opts={}){
+  const row=await persistCurrentDraftBaseV41(opts);if(row){row.inputNamesV41=[...inputNamesV41];await vaultPutV40(row).catch(()=>{});}return row;
+};
+const applyDraftBaseV41=applyDraftV40;
+applyDraftV40=async function(d){inputNamesV41=Array.isArray(d?.inputNamesV41)&&d.inputNamesV41.length?[...d.inputNamesV41]:[d?.fileName||'통합 선적 리스트'];const ret=await applyDraftBaseV41(d);renderInputNamesV41();return ret};
+const resetAllBaseV41=resetAll;
+resetAll=function(){resetAllBaseV41();inputNamesV41=[];renderInputNamesV41()};
+renderInputNamesV41();
+// ===== /v41 =====
 </script>
 
 </body>
