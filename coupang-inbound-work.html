@@ -93,6 +93,19 @@ button,input,select{font:inherit}button{cursor:pointer}
 @media(max-width:1250px){.inline-box-items{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:820px){.inline-box-items{grid-template-columns:1fr!important}}
 
+
+/* v18: multiple shipment projects */
+.project-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:100%;padding:5px 0 1px;border-top:1px solid #d7e0db;margin-top:5px}
+.project-bar .project-label{font-size:11px;font-weight:900;color:#174d35;white-space:nowrap}
+.project-bar select{height:31px;min-width:260px;max-width:430px;border:1px solid #8fa89b;border-radius:5px;background:#fff;padding:0 28px 0 9px;font-size:11px;font-weight:800;color:#1e3028}
+.project-bar button{height:31px;border:1px solid #96aaa0;border-radius:5px;background:#fff;padding:0 10px;font-size:10.5px;font-weight:900;cursor:pointer;white-space:nowrap}
+.project-bar button:hover{background:#f0f7f3}
+.project-bar .new-project{background:#0b5f92;color:#fff;border-color:#0b5f92}
+.project-bar .archive-project{background:#f8f4df;border-color:#c8b75d;color:#5b4b00}
+.project-bar .delete-project{background:#fff1f1;border-color:#d29494;color:#a21d1d}
+.project-bar .project-note{font-size:10px;color:#607168;margin-left:4px;white-space:nowrap}
+@media(max-width:1050px){.project-bar select{min-width:190px;max-width:300px}.project-bar .project-note{width:100%;margin-left:0}}
+
 </style>
 </head>
 <body>
@@ -117,6 +130,14 @@ button,input,select{font:inherit}button{cursor:pointer}
       <input id="workFile" type="file" accept=".xlsx,.xlsm,.xls">
       <button class="btn btn-green" onclick="downloadCurrentWorkbook()">현재 엑셀 저장</button>
       <span id="fileName" class="file-name">기준 엑셀 화면을 불러오는 중…</span>
+    </div>
+    <div class="project-bar" id="projectBar">
+      <span class="project-label">선적 작업</span>
+      <select id="projectSelect" onchange="switchProjectV18(this.value)"><option value="">작업 목록 불러오는 중…</option></select>
+      <button class="new-project" type="button" onclick="createProjectV18()">＋ 새 선적 작업</button>
+      <button class="archive-project" id="archiveProjectBtn" type="button" onclick="toggleArchiveProjectV18()">작업 보관</button>
+      <button class="delete-project" type="button" onclick="deleteProjectV18()">삭제</button>
+      <span class="project-note" id="projectNote">선적건별로 작업 내용이 따로 저장됩니다.</span>
     </div>
     <div class="statusline"><span id="statusDot" class="status-dot busy"></span><span id="statusText">기준 엑셀 시트를 준비하고 있습니다.</span><span class="notice">첫 번째 파일은 화면 어디에나 끌어놓을 수 있습니다. 팔레트·밀크런·택배 탭에서 바코드를 바로 스캔할 수 있습니다.</span></div>
   </section>
@@ -975,7 +996,7 @@ inlineEl('palletInline')?.addEventListener('input',()=>schedulePersistentState(3
 inlineEl('palletInline')?.addEventListener('change',()=>schedulePersistentState(180));
 window.addEventListener('pagehide',()=>{try{savePersistentState()}catch(e){}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')try{savePersistentState()}catch(e){}});
-setTimeout(restorePersistentSession,30);
+setTimeout(()=>{ if(typeof initProjectsV18==='function') initProjectsV18(); else restorePersistentSession(); },30);
 
 </script>
 
@@ -1503,6 +1524,221 @@ downloadCurrentWorkbook=async function(){
     alert('엑셀 저장에 실패했습니다.\n'+(err?.message||err));
   }finally{showLoading(false)}
 };
+</script>
+
+
+<script id="v18-multi-shipment-projects">
+// ===== v18: multiple shipment jobs stored independently on the shared server =====
+let currentProjectIdV18='';
+let projectsV18=[];
+let projectSwitchBusyV18=false;
+let projectCreatingV18=false;
+const loadSourceFileProjectBaseV18=loadSourceFile;
+
+function projectApiV18(suffix=''){
+  if(!currentProjectIdV18)throw new Error('선적 작업을 먼저 선택해 주세요.');
+  return '/projects/'+encodeURIComponent(currentProjectIdV18)+suffix;
+}
+function localProjectKeyV18(key){return currentProjectIdV18?`project:${currentProjectIdV18}:${key}`:`no-project:${key}`}
+function activeProjectV18(){return projectsV18.find(p=>p.id===currentProjectIdV18)||null}
+function formatProjectTimeV18(ts){try{return ts?new Date(ts).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):''}catch(_){return ''}}
+function safeProjectFilenameV18(name){return String(name||'쿠팡선적작업').replace(/[\\/:*?"<>|]+/g,'_').trim()||'쿠팡선적작업'}
+
+async function projectFetchV18(path,opts={}){
+  return sharedFetch(path,opts);
+}
+async function fetchProjectsV18(){
+  const r=await projectFetchV18('/projects');
+  if(!r.ok)throw new Error('선적 작업 목록 조회 실패 ('+r.status+')');
+  const j=await r.json();projectsV18=Array.isArray(j.projects)?j.projects:[];renderProjectSelectV18();return projectsV18;
+}
+function renderProjectSelectV18(){
+  const sel=$('projectSelect');if(!sel)return;
+  const current=currentProjectIdV18;
+  sel.innerHTML='';
+  if(!projectsV18.length){const o=document.createElement('option');o.value='';o.textContent='저장된 선적 작업 없음';sel.appendChild(o);}
+  const active=projectsV18.filter(p=>p.status!=='archived');
+  const archived=projectsV18.filter(p=>p.status==='archived');
+  const addGroup=(label,rows)=>{if(!rows.length)return;const g=document.createElement('optgroup');g.label=label;for(const p of rows){const o=document.createElement('option');o.value=p.id;o.textContent=(p.status==='archived'?'[보관] ':'')+p.name+(p.updatedAt?' · '+formatProjectTimeV18(p.updatedAt):'');g.appendChild(o)}sel.appendChild(g)};
+  addGroup('진행 중',active);addGroup('보관함',archived);
+  if(current&&projectsV18.some(p=>p.id===current))sel.value=current;
+  const p=activeProjectV18(),btn=$('archiveProjectBtn');if(btn)btn.textContent=p?.status==='archived'?'보관 해제':'작업 보관';
+  const note=$('projectNote');if(note)note.textContent=p?(p.status==='archived'?'보관된 작업입니다. 필요하면 보관 해제 후 계속 작업할 수 있습니다.':'자동저장 중 · 다른 PC에서도 같은 작업이 보입니다.'):'＋ 새 선적 작업을 눌러 시작하세요.';
+}
+
+// Project-scoped local + shared persistence. Existing autosave logic calls these names dynamically.
+persistPut=async function(key,value){
+  if(!currentProjectIdV18)return;
+  try{await localPersistPut(localProjectKeyV18(key),value)}catch(e){console.warn('local project cache save failed',e)}
+  await sharedRemotePut(key,value);
+};
+persistGet=async function(key){
+  if(!currentProjectIdV18)return null;
+  let local;try{local=await localPersistGet(localProjectKeyV18(key))}catch(e){console.warn('local project cache read failed',e)}
+  const remote=await sharedRemoteGet(key);
+  if(remote!==undefined&&remote!==null){
+    if(key==='state'){if(local?.activeSheet)remote.activeSheet=local.activeSheet;if(local?.boxDraft)remote.boxDraft=local.boxDraft;}
+    try{await localPersistPut(localProjectKeyV18(key),remote)}catch(_){}
+    return remote;
+  }
+  return local||null;
+};
+persistDelete=async function(key){
+  if(!currentProjectIdV18)return;
+  try{await localPersistDelete(localProjectKeyV18(key))}catch(_){}
+  await sharedRemoteDelete(key);
+};
+
+sharedRemoteGet=async function(key){
+  if(!currentProjectIdV18)return null;
+  try{
+    if(key==='state'){
+      const r=await sharedFetch(projectApiV18('/state'));if(r.status===404)return null;if(!r.ok)throw new Error('project state '+r.status);
+      const j=await r.json();sharedLastStateAt=Math.max(sharedLastStateAt,Number(j.updatedAt||r.headers.get('X-Updated-At')||0));return j.state||null;
+    }
+    if(key==='source'||key==='workbookSnapshot'){
+      const r=await sharedFetch(projectApiV18('/blob/'+key));if(r.status===404)return null;if(!r.ok)throw new Error('project blob '+r.status);
+      const blob=await r.blob(),updated=Number(r.headers.get('X-Updated-At')||0);
+      if(key==='source')sharedLastSourceAt=Math.max(sharedLastSourceAt,updated);else sharedLastSnapshotAt=Math.max(sharedLastSnapshotAt,updated);
+      return {name:decHeader(r.headers.get('X-File-Name')),type:decHeader(r.headers.get('X-File-Type'))||blob.type,mode:decHeader(r.headers.get('X-File-Mode')),savedAt:Number(r.headers.get('X-Saved-At')||updated||Date.now()),blob};
+    }
+  }catch(e){console.warn('project shared get failed',key,e)}
+  return undefined;
+};
+sharedSendState=async function(value){
+  if(!currentProjectIdV18)return;
+  try{
+    const send={...value,boxDraft:null};
+    const r=await sharedFetch(projectApiV18('/state'),{method:'PUT',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(send)});
+    if(!r.ok)throw new Error('project state save '+r.status);const j=await r.json();sharedLastStateAt=Math.max(sharedLastStateAt,Number(j.updatedAt||0));
+  }catch(e){console.warn('project state save failed',e)}
+};
+sharedRemotePut=async function(key,value){
+  if(!currentProjectIdV18)return;
+  if(key==='state'){sharedQueueState(value);return}
+  if((key==='source'||key==='workbookSnapshot')&&value?.blob){
+    try{
+      const headers={'Content-Type':'application/octet-stream','X-File-Name':encHeader(value.name||`${key}.xlsx`),'X-File-Type':encHeader(value.type||value.blob.type||''),'X-File-Mode':encHeader(value.mode||''),'X-Saved-At':String(value.savedAt||Date.now())};
+      const r=await sharedFetch(projectApiV18('/blob/'+key),{method:'PUT',headers,body:value.blob});if(!r.ok)throw new Error('project blob save '+r.status);const j=await r.json();
+      if(key==='source'){sharedLastSourceAt=Number(j.updatedAt||Date.now());sharedLastStateAt=0;sharedLastSnapshotAt=0}else sharedLastSnapshotAt=Number(j.updatedAt||Date.now());
+      const p=activeProjectV18();if(p)p.updatedAt=Number(j.updatedAt||Date.now());renderProjectSelectV18();
+    }catch(e){console.warn('project blob save failed',key,e)}
+  }
+};
+sharedRemoteDelete=async function(key){
+  if(!currentProjectIdV18)return;
+  try{const path=key==='state'?projectApiV18('/state'):projectApiV18('/blob/'+key);const r=await sharedFetch(path,{method:'DELETE'});if(!r.ok&&r.status!==404)throw new Error('project delete '+r.status)}catch(e){console.warn('project delete failed',key,e)}
+};
+sharedStatus=async function(){
+  if(!currentProjectIdV18)return null;
+  try{const r=await sharedFetch(projectApiV18('/status'),{},false);if(!r.ok)return null;return await r.json()}catch(_){return null}
+};
+
+function clearWorkspaceForProjectV18(message='선적 작업을 선택해 주세요.'){
+  clearTimeout(persistStateTimer);clearTimeout(persistSnapshotTimer);persistStateTimer=null;persistSnapshotTimer=null;
+  palletStates.clear();try{dirtyPalletSheets.clear()}catch(_){};workbook=null;boxDraft=null;activeSheet='';currentFileName='';
+  const host=$('sheetHost');if(host)host.innerHTML='<div class="sheet-empty" style="padding:42px 20px;text-align:center;color:#61716a">'+message+'</div>';
+  if($('sheetTabs'))$('sheetTabs').innerHTML='';if($('activeSheetName'))$('activeSheetName').textContent='발주서';if($('sheetInfo'))$('sheetInfo').textContent='파일 대기';if($('palletInline'))$('palletInline').style.display='none';
+  if($('fileName'))$('fileName').textContent=message;
+}
+
+const restorePersistentSessionBaseV18=restorePersistentSession;
+restorePersistentSession=async function(){
+  if(!currentProjectIdV18)return;
+  clearWorkspaceForProjectV18('선택한 선적 작업을 불러오는 중…');
+  await restorePersistentSessionBaseV18();
+  if(!workbook){setStatus('선택한 작업에 아직 선적 엑셀이 없습니다. 첫 번째 선적 엑셀을 올려주세요.','ok');}
+};
+
+async function switchProjectV18(id){
+  if(!id||id===currentProjectIdV18||projectSwitchBusyV18)return;
+  if(sharedHasActiveDraft()&&!confirm('현재 박스에 스캔된 상품이 있습니다. 다른 선적 작업으로 이동하면 이 PC의 미완료 스캔 목록은 유지되지만 먼저 완료하는 것을 권장합니다.\n계속 이동할까요?')){renderProjectSelectV18();return}
+  projectSwitchBusyV18=true;
+  try{
+    if(currentProjectIdV18&&workbook){clearTimeout(persistStateTimer);await savePersistentState();await sharedDrainStateQueue()}
+    currentProjectIdV18=id;try{localStorage.setItem('coupangLastProjectV18',id)}catch(_){}
+    sharedLastStateAt=sharedLastSourceAt=sharedLastSnapshotAt=0;sharedStateQueued=null;
+    renderProjectSelectV18();await restorePersistentSession();renderProjectSelectV18();
+  }catch(e){console.error(e);setStatus('선적 작업 전환 실패: '+(e.message||e),'bad');alert('선적 작업을 불러오지 못했습니다.\n'+(e.message||e))}
+  finally{projectSwitchBusyV18=false}
+}
+
+async function createProjectV18(){
+  if(projectSwitchBusyV18)return;
+  let def='';try{const d=new Date();def=`${d.getMonth()+1}월 ${d.getDate()}일 쿠팡입고`;}catch(_){}
+  const name=prompt('새 선적 작업 이름을 입력해 주세요.\n예: 9월 20일 쿠팡입고',def);if(name===null)return;
+  const clean=String(name).trim();if(!clean){alert('선적 작업 이름을 입력해 주세요.');return}
+  try{
+    if(currentProjectIdV18&&workbook){await savePersistentState();await sharedDrainStateQueue()}
+    const r=await projectFetchV18('/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:clean})});if(!r.ok)throw new Error('새 작업 생성 실패 ('+r.status+')');
+    const j=await r.json();await fetchProjectsV18();projectCreatingV18=true;await switchProjectV18(j.project.id);projectCreatingV18=false;
+    setStatus('✓ 새 선적 작업을 만들었습니다. 첫 번째 선적 엑셀을 선택해 주세요.','ok');
+    setTimeout(()=>$('sourceFile')?.click(),60);
+  }catch(e){projectCreatingV18=false;console.error(e);alert('새 선적 작업을 만들지 못했습니다.\n'+(e.message||e))}
+}
+
+async function toggleArchiveProjectV18(){
+  const p=activeProjectV18();if(!p)return alert('선적 작업을 먼저 선택해 주세요.');
+  const next=p.status==='archived'?'active':'archived';
+  if(next==='archived'&&!confirm(`“${p.name}” 작업을 보관함으로 이동할까요?\n작업 데이터는 삭제되지 않습니다.`))return;
+  try{
+    if(workbook){await savePersistentState();await sharedDrainStateQueue()}
+    const r=await projectFetchV18('/projects/'+encodeURIComponent(p.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:next})});if(!r.ok)throw new Error('보관 상태 변경 실패');
+    await fetchProjectsV18();renderProjectSelectV18();setStatus(next==='archived'?'✓ 작업을 보관했습니다.':'✓ 작업을 진행 목록으로 복원했습니다.','ok');
+  }catch(e){alert('작업 보관 상태를 변경하지 못했습니다.\n'+(e.message||e))}
+}
+
+function downloadBlobV18(blob,filename){
+  const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);
+}
+async function exportBeforeDeleteV18(projectName){
+  if(!workbook)return null;
+  setStatus('삭제 전 최종 엑셀을 자동 저장하는 중…','busy');showLoading(true,'삭제 전에 최종 Excel 파일을 만드는 중…');
+  const out=await cleanWorkbookBufferV17();const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  if(blob.size<5000)throw new Error('생성된 Excel 파일 크기가 비정상적으로 작습니다.');
+  const d=new Date(),pad=n=>String(n).padStart(2,'0'),stamp=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+  downloadBlobV18(blob,`${safeProjectFilenameV18(projectName)}_최종_삭제전_${stamp}.xlsx`);return blob;
+}
+async function deleteProjectV18(){
+  const p=activeProjectV18();if(!p)return alert('삭제할 선적 작업을 선택해 주세요.');
+  const msg=`“${p.name}” 선적 작업을 삭제하시겠습니까?\n\n삭제 전에 현재 작업을 Excel로 자동 다운로드합니다.\n삭제 후 서버의 이 작업 데이터는 복구할 수 없습니다.`;
+  if(!confirm(msg))return;
+  projectSwitchBusyV18=true;
+  try{
+    if(workbook)await exportBeforeDeleteV18(p.name);
+    // Give the browser a moment to start the download before removing server data.
+    await new Promise(r=>setTimeout(r,350));
+    const r=await projectFetchV18('/projects/'+encodeURIComponent(p.id),{method:'DELETE'});if(!r.ok)throw new Error('서버 작업 삭제 실패 ('+r.status+')');
+    for(const k of ['state','source','workbookSnapshot'])try{await localPersistDelete(`project:${p.id}:${k}`)}catch(_){}
+    currentProjectIdV18='';try{localStorage.removeItem('coupangLastProjectV18')}catch(_){};clearWorkspaceForProjectV18('삭제 완료 · 다른 선적 작업을 선택하거나 새 작업을 만들어 주세요.');
+    await fetchProjectsV18();const next=projectsV18.find(x=>x.status!=='archived')||projectsV18[0];if(next)await switchProjectV18(next.id);else{renderProjectSelectV18();setStatus('✓ 작업 삭제 완료 · 새 선적 작업을 만들어 주세요.','ok')}
+  }catch(e){console.error(e);alert('삭제를 완료하지 못했습니다. 서버 작업은 삭제하지 않았습니다.\n'+(e.message||e));setStatus('삭제 취소 · 작업 데이터는 그대로 유지됩니다.','bad')}
+  finally{projectSwitchBusyV18=false;showLoading(false)}
+}
+
+// Existing upload/drop flows now automatically target the selected project.
+loadSourceFile=async function(file,mode='source'){
+  if(!file)return;
+  if(!currentProjectIdV18){alert('먼저 “＋ 새 선적 작업”을 만들어 주세요.');return}
+  if(mode==='source'&&workbook){
+    const p=activeProjectV18();if(!confirm(`현재 “${p?.name||'선적 작업'}”의 선적 파일을 새 파일로 교체할까요?\n기존 작업 내용이 초기화됩니다.\n\n다른 선적건이라면 취소 후 “＋ 새 선적 작업”을 눌러주세요.`))return;
+  }
+  await loadSourceFileProjectBaseV18(file,mode);
+  projectCreatingV18=false;
+  const p=activeProjectV18();if(p){p.updatedAt=Date.now();renderProjectSelectV18()}
+};
+
+async function initProjectsV18(){
+  try{
+    setStatus('선적 작업 목록을 불러오는 중…','busy');
+    await fetchProjectsV18();
+    let wanted='';try{wanted=localStorage.getItem('coupangLastProjectV18')||''}catch(_){}
+    let p=projectsV18.find(x=>x.id===wanted)||projectsV18.find(x=>x.status!=='archived')||projectsV18[0];
+    if(p){currentProjectIdV18=p.id;sharedLastStateAt=sharedLastSourceAt=sharedLastSnapshotAt=0;renderProjectSelectV18();await restorePersistentSession();try{localStorage.setItem('coupangLastProjectV18',p.id)}catch(_){}}
+    else{clearWorkspaceForProjectV18('저장된 선적 작업이 없습니다. ＋ 새 선적 작업을 눌러 시작하세요.');renderProjectSelectV18();setStatus('✓ 준비 완료 · 새 선적 작업을 만들어 주세요.','ok')}
+  }catch(e){console.error('project init failed',e);clearWorkspaceForProjectV18('선적 작업 목록을 불러오지 못했습니다.');setStatus('공용 선적 작업 서버 연결 실패: '+(e.message||e),'bad')}
+}
+// ===== /v18 =====
 </script>
 
 </body>
