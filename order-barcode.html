@@ -86,11 +86,11 @@ td.name{min-width:310px}
   <button class="nav-btn" onclick="location.href='/hs-code'">📊 TradeCode Navi 관세율 계산</button>
   <button class="nav-btn" onclick="location.href='/coupang-margin'">🚀 로켓배송 원가&amp;마진률 계산</button>
   <button class="nav-btn" onclick="location.href='/logistics-cost'">🚚 물류비 계산기</button>
-  <button class="nav-btn" onclick="location.href='/barcode-label.html?v=39'">🏷️ 바코드 라벨 생성기</button>
-  <button class="nav-btn active" onclick="location.href='/order-barcode.html?v=39'">📦 발주 바코드 출력</button>
-  <button class="nav-btn" onclick="location.href='/shipment-list-builder.html?v=39'">📋 선적 리스트 작성</button>
+  <button class="nav-btn" onclick="location.href='/barcode-label.html?v=42'">🏷️ 바코드 라벨 생성기</button>
+  <button class="nav-btn active" onclick="location.href='/order-barcode.html?v=42'">📦 발주 바코드 출력</button>
+  <button class="nav-btn" onclick="location.href='/shipment-list-builder.html?v=42'">📋 선적 리스트 작성</button>
   <button class="nav-btn" onclick="location.href='/detail-maker'">✨ 쿠팡 상세페이지 자동 제작</button>
-  <button class="nav-btn" onclick="location.href='/coupang-inbound-work.html?v=39'">📦 쿠팡 입고 작업</button>
+  <button class="nav-btn" onclick="location.href='/coupang-inbound-work.html?v=42'">📦 쿠팡 입고 작업</button>
 </nav>
 
 <main class="main">
@@ -101,13 +101,15 @@ td.name{min-width:310px}
     <div class="upload-box">
       <input class="file-input" id="orderFile" type="file" accept=".xlsx,.xls">
       <button class="btn btn-secondary" onclick="reloadLibrary()">🔄 저장 라벨 다시 불러오기</button>
+      <button class="btn btn-danger" onclick="resetOrderBarcodeWork()">🗑 초기화</button>
       <label style="font-size:13px;font-weight:700;">1회 최대 출력 장수
         <input id="maxPerFile" type="number" min="1" max="1000" value="100" style="width:80px;padding:8px;border:1px solid #cbd5df;border-radius:7px;margin-left:6px;">
       </label>
     </div>
     <div class="note" style="margin-top:10px;">
       발주서에서 <b>상품번호 / 바코드 / 상품명 / 발주수량</b> 헤더를 자동으로 찾습니다. 저장 라벨 매칭은 <b>바코드 우선 → 상품번호</b> 순서입니다.
-      총 출력 장수가 1회 최대 장수를 넘으면 PDF를 여러 개로 나눠 ZIP 파일로 내려받습니다.
+      총 출력 장수가 1회 최대 장수를 넘으면 PDF를 여러 개로 나눠 ZIP 파일로 내려받습니다.<br>
+      <b>현재 작업은 자동 저장</b>되어 다른 메뉴를 다녀와도 그대로 복원됩니다. 새로 시작하려면 <b>초기화</b> 버튼을 누르세요.
     </div>
     <div class="progress" id="progress"></div>
 
@@ -157,10 +159,61 @@ const MM_TO_PX=96/25.4;
 const LABEL_LIBRARY_KEY='tradecodeLabelLibraryV1';
 let orderRows=[];
 let labelLibrary=[];
+let currentOrderFileName='';
+const ORDER_WORK_KEY='tradecodeOrderBarcodeWorkV42';
+let persistTimer=null;
 
 const el=id=>document.getElementById(id);
 const norm=v=>String(v??'').trim();
 const normBc=v=>norm(v).toUpperCase();
+
+function compactOrderRowsForSave(){
+  return orderRows.map(r=>({
+    id:r.id,productNumber:r.productNumber,barcode:r.barcode,productName:r.productName,
+    orderQty:Number(r.orderQty)||0,printQty:Number(r.printQty)||0,checked:!!r.checked
+  }));
+}
+function persistOrderBarcodeWork(){
+  try{
+    if(!orderRows.length){localStorage.removeItem(ORDER_WORK_KEY);return}
+    const payload={
+      version:42,sourceFileName:currentOrderFileName||'',savedAt:Date.now(),
+      maxPerFile:Math.max(1,Math.floor(Number(el('maxPerFile')?.value)||100)),
+      rows:compactOrderRowsForSave()
+    };
+    localStorage.setItem(ORDER_WORK_KEY,JSON.stringify(payload));
+  }catch(err){console.warn('발주 바코드 작업 자동저장 실패',err)}
+}
+function scheduleOrderBarcodeSave(delay=80){
+  clearTimeout(persistTimer);persistTimer=setTimeout(persistOrderBarcodeWork,delay);
+}
+function restoreOrderBarcodeWork(){
+  try{
+    const raw=localStorage.getItem(ORDER_WORK_KEY);if(!raw)return false;
+    const saved=JSON.parse(raw);if(!saved||!Array.isArray(saved.rows)||!saved.rows.length)return false;
+    currentOrderFileName=norm(saved.sourceFileName);
+    orderRows=saved.rows.map((r,i)=>({
+      id:Number(r.id)||i+1,productNumber:norm(r.productNumber),barcode:norm(r.barcode),productName:norm(r.productName),
+      orderQty:Math.max(0,Number(r.orderQty)||0),printQty:Math.max(0,Number(r.printQty)||0),checked:!!r.checked,
+      label:null,size:'missing'
+    }));
+    if(el('maxPerFile'))el('maxPerFile').value=String(Math.max(1,Math.floor(Number(saved.maxPerFile)||100)));
+    labelLibrary=getLibrary();
+    rematchRows();renderRows();
+    const when=saved.savedAt?new Date(saved.savedAt).toLocaleString('ko-KR'):'';
+    setProgress(`✓ 이전 작업 자동 복구${currentOrderFileName?' · '+currentOrderFileName:''}${when?' · '+when:''}`);
+    return true;
+  }catch(err){console.warn('발주 바코드 작업 복구 실패',err);return false}
+}
+function resetOrderBarcodeWork(){
+  if(orderRows.length&&!confirm('현재 불러온 발주 바코드 작업을 초기화할까요?\n공용 저장 라벨은 삭제되지 않습니다.'))return;
+  clearTimeout(persistTimer);
+  localStorage.removeItem(ORDER_WORK_KEY);
+  orderRows=[];currentOrderFileName='';
+  const f=el('orderFile');if(f)f.value='';
+  if(el('maxPerFile'))el('maxPerFile').value='100';
+  renderRows();setProgress('✓ 현재 발주 바코드 작업을 초기화했습니다. 공용 저장 라벨은 그대로 유지됩니다.');
+}
 
 function getLibrary(){
   try{
@@ -172,6 +225,7 @@ function reloadLibrary(){
   labelLibrary=getLibrary();
   rematchRows();
   renderRows();
+  scheduleOrderBarcodeSave();
   setProgress(`저장 라벨 ${labelLibrary.length}개를 다시 불러왔습니다.`);
 }
 function findLabel(barcode,productNumber){
@@ -203,6 +257,7 @@ el('orderFile').addEventListener('change',async e=>{
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array'});
     const parsed=parseWorkbook(wb);
+    currentOrderFileName=file.name;
     orderRows=parsed.map((r,i)=>({
       id:i+1,
       productNumber:norm(r.productNumber),
@@ -217,7 +272,8 @@ el('orderFile').addEventListener('change',async e=>{
     labelLibrary=getLibrary();
     rematchRows();
     renderRows();
-    setProgress(`"${file.name}"에서 ${orderRows.length}개 발주 품목을 불러왔습니다.`);
+    persistOrderBarcodeWork();
+    setProgress(`"${file.name}"에서 ${orderRows.length}개 발주 품목을 불러왔습니다. · 자동 저장됨`);
   }catch(err){
     console.error(err);
     alert('발주현황 엑셀을 읽지 못했습니다. 상품번호/바코드/상품명/발주수량 헤더가 있는지 확인해 주세요.');
@@ -283,7 +339,7 @@ function renderRows(){
       <td class="name">${esc(r.productName)}</td>
       <td class="center"><b>${fmt(r.orderQty)}</b></td>
       <td class="center">${sizeText}</td>
-      <td class="center"><input class="qty" type="number" min="0" value="${r.printQty}" ${disabled?'disabled':''} onchange="changeQty(${r.id},this.value)"></td>
+      <td class="center"><input class="qty" type="number" min="0" value="${r.printQty}" ${disabled?'disabled':''} oninput="changeQty(${r.id},this.value)"></td>
       <td class="center"><span class="badge ${badge}">${status}</span></td>
       <td class="center">
         ${r.label
@@ -297,9 +353,9 @@ function renderRows(){
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function fmt(v){return Number(v||0).toLocaleString('ko-KR')}
 function getRow(id){return orderRows.find(r=>r.id===id)}
-function toggleRow(id,checked){const r=getRow(id);if(r)r.checked=checked;updateSummary()}
-function changeQty(id,v){const r=getRow(id);if(r)r.printQty=Math.max(0,Math.floor(Number(v)||0));updateSummary()}
-function setAllChecks(v){orderRows.forEach(r=>{if(r.label&&['50x30','50x60'].includes(r.size))r.checked=v});renderRows()}
+function toggleRow(id,checked){const r=getRow(id);if(r)r.checked=checked;updateSummary();scheduleOrderBarcodeSave()}
+function changeQty(id,v){const r=getRow(id);if(r)r.printQty=Math.max(0,Math.floor(Number(v)||0));updateSummary();scheduleOrderBarcodeSave()}
+function setAllChecks(v){orderRows.forEach(r=>{if(r.label&&['50x30','50x60'].includes(r.size))r.checked=v});renderRows();scheduleOrderBarcodeSave()}
 function updateSummary(){
   el('kpiItems').textContent=fmt(orderRows.length);
   el('kpi30').textContent=fmt(orderRows.filter(r=>r.checked&&r.size==='50x30').reduce((s,r)=>s+r.printQty,0));
@@ -454,6 +510,9 @@ function downloadBlob(blob,name){
   setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
 labelLibrary=getLibrary();
+if(el('maxPerFile'))el('maxPerFile').addEventListener('input',()=>scheduleOrderBarcodeSave());
+window.addEventListener('beforeunload',()=>{try{persistOrderBarcodeWork()}catch(e){}});
+if(!restoreOrderBarcodeWork())renderRows();
 </script>
 </body>
 </html>
