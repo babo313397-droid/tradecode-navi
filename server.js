@@ -706,6 +706,71 @@ app.delete('/api/coupang-shared/blob/:key', coupangAuth, (req, res) => {
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
+
+// =====================================================================
+// v18: 여러 선적 작업을 동시에 보관하는 프로젝트형 공용 저장소
+// 기존 단일 저장소는 자동으로 첫 프로젝트로 복사되어 마이그레이션됩니다.
+// =====================================================================
+const COUPANG_PROJECTS_PATH = path.join(COUPANG_SHARED_DIR, 'projects.json');
+const COUPANG_PROJECTS_DIR = path.join(COUPANG_SHARED_DIR, 'projects');
+function readProjectsV18(){
+  const raw=readJsonSafe(COUPANG_PROJECTS_PATH);return raw&&Array.isArray(raw.projects)?raw:{version:18,projects:[]};
+}
+function saveProjectsV18(index){writeAtomic(COUPANG_PROJECTS_PATH,JSON.stringify({version:18,projects:index.projects||[]}));}
+function safeProjectIdV18(id){id=String(id||'');return /^[A-Za-z0-9_-]{3,80}$/.test(id)?id:null;}
+function newProjectIdV18(){return 'p_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);}
+function projectPathsV18(id){
+  const dir=path.join(COUPANG_PROJECTS_DIR,id);return {dir,state:path.join(dir,'state.json'),source:{data:path.join(dir,'source.xlsx.bin'),meta:path.join(dir,'source.meta.json')},workbookSnapshot:{data:path.join(dir,'workbookSnapshot.xlsx.bin'),meta:path.join(dir,'workbookSnapshot.meta.json')}};
+}
+function projectBlobStatusV18(paths,key){const info=paths[key],meta=info&&readJsonSafe(info.meta);if(!info||!meta||!fs.existsSync(info.data))return null;return {updatedAt:Number(meta.updatedAt||0),size:Number(meta.size||0),name:meta.name||''};}
+function projectStateStatusV18(paths){const row=readJsonSafe(paths.state);return row?{updatedAt:Number(row.updatedAt||0)}:null;}
+function touchProjectV18(id,patch={}){
+  const idx=readProjectsV18(),p=idx.projects.find(x=>x.id===id);if(!p)return null;Object.assign(p,patch,{updatedAt:Date.now()});saveProjectsV18(idx);return p;
+}
+function copyIfExistsV18(src,dst){if(!fs.existsSync(src))return;fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);}
+function migrateLegacyProjectV18(){
+  ensureCoupangSharedDir();fs.mkdirSync(COUPANG_PROJECTS_DIR,{recursive:true});
+  const idx=readProjectsV18();if(idx.projects.length)return idx;
+  const hasLegacy=fs.existsSync(COUPANG_STATE_PATH)||fs.existsSync(COUPANG_BLOBS.source.data)||fs.existsSync(COUPANG_BLOBS.workbookSnapshot.data);if(!hasLegacy)return idx;
+  const id=newProjectIdV18(),paths=projectPathsV18(id),sourceMeta=readJsonSafe(COUPANG_BLOBS.source.meta)||{};
+  fs.mkdirSync(paths.dir,{recursive:true});
+  copyIfExistsV18(COUPANG_STATE_PATH,paths.state);copyIfExistsV18(COUPANG_BLOBS.source.data,paths.source.data);copyIfExistsV18(COUPANG_BLOBS.source.meta,paths.source.meta);copyIfExistsV18(COUPANG_BLOBS.workbookSnapshot.data,paths.workbookSnapshot.data);copyIfExistsV18(COUPANG_BLOBS.workbookSnapshot.meta,paths.workbookSnapshot.meta);
+  let name=String(sourceMeta.name||'기존 쿠팡 선적 작업').replace(/\.(xlsx|xlsm|xls)$/i,'').trim()||'기존 쿠팡 선적 작업';const now=Date.now();
+  idx.projects.push({id,name,status:'active',createdAt:now,updatedAt:now,migratedFromLegacy:true});saveProjectsV18(idx);return idx;
+}
+function getProjectOr404V18(req,res){
+  const id=safeProjectIdV18(req.params.projectId);if(!id){res.status(404).json({ok:false,error:'잘못된 작업 ID입니다.'});return null}
+  const idx=migrateLegacyProjectV18(),project=idx.projects.find(x=>x.id===id);if(!project){res.status(404).json({ok:false,error:'선적 작업을 찾을 수 없습니다.'});return null}return {id,idx,project,paths:projectPathsV18(id)};
+}
+
+app.get('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
+  const idx=migrateLegacyProjectV18();res.set('Cache-Control','no-store');res.json({ok:true,projects:[...idx.projects].sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0))});
+});
+app.post('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
+  try{const idx=migrateLegacyProjectV18(),id=newProjectIdV18(),now=Date.now(),name=String(req.body?.name||'').trim().slice(0,120)||`새 선적 작업 ${new Date().toLocaleDateString('ko-KR')}`;const p={id,name,status:'active',createdAt:now,updatedAt:now};fs.mkdirSync(projectPathsV18(id).dir,{recursive:true});idx.projects.push(p);saveProjectsV18(idx);res.json({ok:true,project:p})}catch(err){res.status(500).json({ok:false,error:err.message})}
+});
+app.patch('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
+  try{const found=getProjectOr404V18(req,res);if(!found)return;const {idx,project}=found;if(req.body?.name!==undefined){const n=String(req.body.name||'').trim().slice(0,120);if(n)project.name=n}if(req.body?.status!==undefined){const s=String(req.body.status);if(!['active','archived'].includes(s))return res.status(400).json({ok:false,error:'지원하지 않는 상태입니다.'});project.status=s}project.updatedAt=Date.now();saveProjectsV18(idx);res.json({ok:true,project})}catch(err){res.status(500).json({ok:false,error:err.message})}
+});
+app.delete('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
+  try{const found=getProjectOr404V18(req,res);if(!found)return;const {id,idx,paths}=found;fs.rmSync(paths.dir,{recursive:true,force:true});idx.projects=idx.projects.filter(x=>x.id!==id);saveProjectsV18(idx);res.json({ok:true})}catch(err){res.status(500).json({ok:false,error:err.message})}
+});
+
+app.get('/api/coupang-shared/projects/:projectId/status',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const {paths}=found;res.set('Cache-Control','no-store');res.json({ok:true,state:projectStateStatusV18(paths),source:projectBlobStatusV18(paths,'source'),workbookSnapshot:projectBlobStatusV18(paths,'workbookSnapshot')})});
+app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
+app.put('/api/coupang-shared/projects/:projectId/state',coupangAuth,express.text({type:['text/plain','application/json'],limit:'15mb'}),(req,res)=>{
+  try{const found=getProjectOr404V18(req,res);if(!found)return;const state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{}),updatedAt=Date.now();writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
+});
+app.delete('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;try{unlinkSafe(found.paths.state);touchProjectV18(found.id);res.json({ok:true})}catch(err){res.status(500).json({ok:false,error:err.message})}});
+
+app.get('/api/coupang-shared/projects/:projectId/blob/:key',coupangAuth,(req,res)=>{
+  const found=getProjectOr404V18(req,res);if(!found)return;const key=req.params.key;if(!['source','workbookSnapshot'].includes(key))return res.status(404).json({ok:false,error:'지원하지 않는 파일 키입니다.'});const info=found.paths[key],meta=readJsonSafe(info.meta);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Cache-Control','no-store');res.set('Content-Type',meta.type||'application/octet-stream');res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',String(meta.name||''));res.set('X-File-Type',String(meta.type||''));res.set('X-File-Mode',String(meta.mode||''));res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));res.sendFile(info.data)
+});
+app.put('/api/coupang-shared/projects/:projectId/blob/:key',coupangAuth,express.raw({type:'application/octet-stream',limit:'80mb'}),(req,res)=>{
+  try{const found=getProjectOr404V18(req,res);if(!found)return;const key=req.params.key;if(!['source','workbookSnapshot'].includes(key))return res.status(404).json({ok:false,error:'지원하지 않는 파일 키입니다.'});const info=found.paths[key],body=Buffer.isBuffer(req.body)?req.body:Buffer.from(req.body||'');if(!body.length)return res.status(400).json({ok:false,error:'빈 파일은 저장할 수 없습니다.'});const updatedAt=Date.now(),meta={updatedAt,size:body.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};writeAtomic(info.data,body);writeAtomic(info.meta,JSON.stringify(meta));if(key==='source'){unlinkSafe(found.paths.state);unlinkSafe(found.paths.workbookSnapshot.data);unlinkSafe(found.paths.workbookSnapshot.meta)}touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt,size:body.length})}catch(err){res.status(500).json({ok:false,error:`공용 파일 저장 실패: ${err.message}`})}
+});
+app.delete('/api/coupang-shared/projects/:projectId/blob/:key',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const key=req.params.key;if(!['source','workbookSnapshot'].includes(key))return res.status(404).json({ok:false,error:'지원하지 않는 파일 키입니다.'});try{unlinkSafe(found.paths[key].data);unlinkSafe(found.paths[key].meta);touchProjectV18(found.id);res.json({ok:true})}catch(err){res.status(500).json({ok:false,error:err.message})}});
+
 // 확장자 없는 주소도 지원: https://tool.dasaba.co.kr/coupang-inbound-work
 app.get('/coupang-inbound-work', (req, res) => {
   res.sendFile(path.join(__dirname, 'coupang-inbound-work.html'));
