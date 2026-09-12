@@ -2471,5 +2471,202 @@ generateFromRaw=async function(sections){
 // ===== /v25 =====
 </script>
 
+<script id="v26-manual-order-entry">
+// ===== v26: direct typing + multi-cell Excel paste for Order and user-added work sheets =====
+const userEditableAddedSheetsV26=new Set();
+
+function v26IsFormulaCell(cell){
+  const v=cell?.value;return !!(v&&typeof v==='object'&&typeof v.formula==='string');
+}
+function v26IsUserAddedSheet(ws){return !!ws&&userEditableAddedSheetsV26.has(ws.name)}
+function v26EditableArea(ws,r,c,cell){
+  if(!ws||v26IsFormulaCell(cell))return false;
+  if(ws.name==='발주서')return r>=8&&c>=1&&c<=35;
+  if(v26IsUserAddedSheet(ws))return r>=generationStartRow(ws)&&c>=1&&c<=19;
+  return false;
+}
+const isEditableCellBaseV26=isEditableCell;
+isEditableCell=function(ws,r,c,cell){
+  if(v26EditableArea(ws,r,c,cell))return true;
+  return isEditableCellBaseV26(ws,r,c,cell);
+};
+
+function v26MaxCols(ws){return ws?.name==='발주서'?35:(sheetKind(ws)==='parcel'?19:18)}
+function v26StyleTemplateRow(ws){return ws?.name==='발주서'?9:generationStartRow(ws)}
+function v26EnsureRowStyled(ws,r){
+  if(!ws||r<1)return;
+  const maxC=v26MaxCols(ws),row=ws.getRow(r);
+  let hasStyle=false;
+  for(let c=1;c<=Math.min(maxC,5);c++)if(Object.keys(row.getCell(c).style||{}).length){hasStyle=true;break}
+  if(hasStyle)return;
+  try{applyStyleSpecFast(row,styleRowFrom(ws,v26StyleTemplateRow(ws),1,maxC))}catch(e){
+    const src=ws.getRow(v26StyleTemplateRow(ws));
+    for(let c=1;c<=maxC;c++)try{row.getCell(c).style=cloneObj(src.getCell(c).style||{})}catch(_){}
+    try{row.height=src.height}catch(_){}
+  }
+}
+function v26EnsureEntryRows(ws,minRows=25){
+  if(!ws||!v26IsUserAddedSheet(ws))return;
+  const start=generationStartRow(ws),state=palletStates.get(ws.name),used=state?(state.completed||[]).reduce((a,g)=>a+(g.items||[]).length,0)+(state.incomplete||[]).length:0;
+  const through=Math.max(ws.rowCount||0,start+used+minRows-1);
+  for(let r=Math.max(start,(ws.rowCount||0)+1);r<=through;r++)v26EnsureRowStyled(ws,r);
+  // If the template already has rows, make sure there are styled rows after the visible work rows too.
+  for(let r=start+used;r<start+used+minRows;r++)v26EnsureRowStyled(ws,r);
+}
+function v26SyncPackStateBeforeManualEdit(ws){
+  if(!ws||!isPackWorkSheet(ws))return;
+  const st=palletStates.get(ws.name);
+  if(st){try{syncPalletState(ws,st);dirtyPalletSheets?.delete?.(ws.name);mergeLookupCache?.delete?.(ws)}catch(e){console.warn('v26 sync before edit',e)}}
+}
+function v26AfterManualChange(ws,message){
+  if(!ws)return;
+  if(isPackWorkSheet(ws)){
+    palletStates.delete(ws.name);try{dirtyPalletSheets?.delete?.(ws.name)}catch(_){}
+    try{ensurePalletState(ws);recalcWorkSheet(ws)}catch(e){console.warn(e)}
+  }
+  try{recalcDashboard(workbook)}catch(e){}
+  schedulePersistentState(80);scheduleWorkbookSnapshot(900);
+  renderTabs();renderSheet(true);
+  if(message)setStatus(message,'ok');
+}
+
+// Remember sheets created through + Pallet / + Parcel, per shipment project.
+const addExtraWorkBaseV26=addExtraWork;
+addExtraWork=function(kind){
+  const before=new Set((workbook?.worksheets||[]).map(ws=>ws.name));
+  const result=addExtraWorkBaseV26(kind);
+  const created=(workbook?.worksheets||[]).find(ws=>!before.has(ws.name));
+  if(created){
+    userEditableAddedSheetsV26.add(created.name);created._webUserAddedV26=true;
+    v26EnsureEntryRows(created,30);
+    schedulePersistentState(20);scheduleWorkbookSnapshot(500);
+    if(activeSheet===created.name)renderSheet(true);
+  }
+  return result;
+};
+
+const persistentStatePayloadBaseV26=persistentStatePayload;
+persistentStatePayload=function(){
+  const p=persistentStatePayloadBaseV26();
+  p.userEditableAddedSheetsV26=[...userEditableAddedSheetsV26].filter(n=>workbook?.getWorksheet(n));
+  return p;
+};
+const applyRecoveredStateBaseV26=applyRecoveredState;
+applyRecoveredState=function(saved){
+  userEditableAddedSheetsV26.clear();
+  for(const n of saved?.userEditableAddedSheetsV26||[])userEditableAddedSheetsV26.add(String(n));
+  const ret=applyRecoveredStateBaseV26(saved);
+  for(const n of userEditableAddedSheetsV26){const ws=workbook?.getWorksheet(n);if(ws){ws._webUserAddedV26=true;v26EnsureEntryRows(ws,25)}}
+  if(workbook)requestAnimationFrame(()=>renderSheet(true));
+  return ret;
+};
+const clearWorkspaceForProjectBaseV26=typeof clearWorkspaceForProjectV18==='function'?clearWorkspaceForProjectV18:null;
+if(clearWorkspaceForProjectBaseV26)clearWorkspaceForProjectV18=function(...args){userEditableAddedSheetsV26.clear();return clearWorkspaceForProjectBaseV26(...args)};
+const loadSourceFileBaseV26=loadSourceFile;
+loadSourceFile=async function(file,mode='source'){
+  if(mode==='source')userEditableAddedSheetsV26.clear();
+  return await loadSourceFileBaseV26(file,mode);
+};
+
+// User-added pallet/parcel sheets stay in a spreadsheet-like raw-entry view until the first box is completed.
+// After packing starts, the normal completed/incomplete view returns, with extra blank entry rows appended below it.
+const renderSheetBaseV26=renderSheet;
+renderSheet=function(keepScroll=false){
+  const ws=workbook?.getWorksheet(activeSheet);
+  if(ws&&v26IsUserAddedSheet(ws)&&isPackWorkSheet(ws)){
+    v26EnsureEntryRows(ws,25);
+    const st=ensurePalletState(ws);
+    if(!(st.completed||[]).length){
+      const ret=renderGenericSheetFast(keepScroll,ws);
+      $('scanReady').style.display='inline';updateInlinePalletPanel(true,ws);
+      try{updateCenterExcelButtonV22?.()}catch(_){}
+      requestAnimationFrame(()=>v26InstallEntryInteractions(ws));
+      return ret;
+    }
+  }
+  const ret=renderSheetBaseV26(keepScroll);
+  if(ws&&v26IsUserAddedSheet(ws)&&isPackWorkSheet(ws))requestAnimationFrame(()=>{v26AppendBlankEntryRows(ws);v26InstallEntryInteractions(ws)});
+  return ret;
+};
+
+function v26AppendBlankEntryRows(ws,count=15){
+  if(!ws||!v26IsUserAddedSheet(ws)||!isPackWorkSheet(ws))return;
+  const host=$('sheetHost'),tbody=host?.querySelector('table.sheet-table tbody');if(!tbody)return;
+  if(tbody.querySelector('tr.v26-entry-row'))return;
+  const st=ensurePalletState(ws),start=generationStartRow(ws),used=(st.completed||[]).reduce((a,g)=>a+(g.items||[]).length,0)+(st.incomplete||[]).length;
+  const first=start+used,maxC=v26MaxCols(ws);
+  for(let i=0;i<count;i++){
+    const r=first+i;v26EnsureRowStyled(ws,r);
+    const tr=document.createElement('tr');tr.className='v26-entry-row';tr.style.height=pxFromPoints(ws.getRow(v26StyleTemplateRow(ws)).height)+'px';
+    const th=document.createElement('th');th.className='row-number data-row';th.dataset.rowNo=String(r);th.textContent=String(r);tr.appendChild(th);
+    for(let c=1;c<=maxC;c++){
+      if(ws.getColumn(c).hidden)continue;
+      const td=document.createElement('td');td.className='cell'+(c<=5?' editable v26-entry-cell':'');td.dataset.r=String(r);td.dataset.c=String(c);td.dataset.addr=`${excelCol(c)}${r}`;
+      if(c<=5)td.dataset.editable='1';td.style.cssText=cellCss(ws.getRow(v26StyleTemplateRow(ws)).getCell(c));td.textContent=displayText(ws.getRow(r).getCell(c));tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+}
+function v26InstallEntryInteractions(ws){
+  const host=$('sheetHost');if(!host||host.dataset.v26BoundFor===ws.name)return;
+  host.dataset.v26BoundFor=ws.name;
+  host.addEventListener('dblclick',e=>{
+    const td=e.target.closest('td.v26-entry-cell');if(!td)return;
+    e.preventDefault();e.stopImmediatePropagation();
+    v26SyncPackStateBeforeManualEdit(ws);
+    const r=Number(td.dataset.r),c=Number(td.dataset.c);v26EnsureRowStyled(ws,r);
+    beginCellEdit(td,ws.getRow(r).getCell(c),ws,r,c);
+  },true);
+}
+
+function v26ParseAddr(addr){const m=String(addr||'').match(/^([A-Z]+)(\d+)$/i);if(!m)return null;const c=[...m[1].toUpperCase()].reduce((a,x)=>a*26+x.charCodeAt(0)-64,0);return {r:Number(m[2]),c}}
+function v26ClipboardMatrix(text){
+  let s=String(text??'').replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  if(s.endsWith('\n'))s=s.slice(0,-1);
+  return s.split('\n').map(line=>line.split('\t'));
+}
+function v26CanBulkEdit(ws){return !!ws&&(ws.name==='발주서'||v26IsUserAddedSheet(ws))}
+async function v26PasteMatrix(text){
+  const ws=workbook?.getWorksheet(activeSheet),pos=v26ParseAddr(selectedCell);if(!ws||!pos||!v26CanBulkEdit(ws))return false;
+  const matrix=v26ClipboardMatrix(text);if(!matrix.length)return false;
+  if(v26IsUserAddedSheet(ws)&&isPackWorkSheet(ws))v26SyncPackStateBeforeManualEdit(ws);
+  const maxC=v26MaxCols(ws),limitR=5000;
+  let written=0;
+  for(let i=0;i<matrix.length;i++){
+    const r=pos.r+i;if(r>limitR)break;v26EnsureRowStyled(ws,r);
+    for(let j=0;j<matrix[i].length;j++){
+      const c=pos.c+j;if(c>maxC)break;
+      const cell=ws.getRow(r).getCell(c);if(v26IsFormulaCell(cell))continue;
+      const raw=matrix[i][j];cell.value=raw===''?null:coerceValue(raw,cell,c);written++;
+    }
+  }
+  if(!written)return false;
+  v26AfterManualChange(ws,`✓ Excel에서 복사한 ${matrix.length}줄을 ${selectedCell}부터 붙여넣었습니다.`);return true;
+}
+window.addEventListener('paste',e=>{
+  if(document.activeElement?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||''))return;
+  const ws=workbook?.getWorksheet(activeSheet);if(!selectedCell||!v26CanBulkEdit(ws))return;
+  const text=e.clipboardData?.getData('text/plain');if(text==null)return;
+  e.preventDefault();v26PasteMatrix(text).catch(err=>{console.error(err);alert('붙여넣기 중 오류가 발생했습니다.\n'+(err.message||err))});
+},true);
+
+// Excel-like direct typing: select an editable cell and type, or double-click it.
+window.addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.metaKey||e.altKey||e.isComposing)return;
+  if(document.activeElement?.isContentEditable||/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(document.activeElement?.tagName||''))return;
+  if(!selectedCell||e.key.length!==1)return;
+  const ws=workbook?.getWorksheet(activeSheet),pos=v26ParseAddr(selectedCell);if(!ws||!pos||!v26EditableArea(ws,pos.r,pos.c,ws.getRow(pos.r).getCell(pos.c)))return;
+  const td=$('sheetHost')?.querySelector(`td.cell[data-addr="${CSS.escape(selectedCell)}"]`);if(!td)return;
+  if(v26IsUserAddedSheet(ws)&&isPackWorkSheet(ws))v26SyncPackStateBeforeManualEdit(ws);
+  e.preventDefault();beginCellEdit(td,ws.getRow(pos.r).getCell(pos.c),ws,pos.r,pos.c);td.textContent=e.key;
+  const range=document.createRange();range.selectNodeContents(td);range.collapse(false);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
+},true);
+
+// Helpful status hint when the editable sheets are opened.
+const switchSheetBaseV26=switchSheet;
+switchSheet=function(name){const ret=switchSheetBaseV26(name);const ws=workbook?.getWorksheet(name);if(ws?.name==='발주서')setStatus('발주서 편집 가능 · 셀을 더블클릭하거나 선택 후 타이핑 · Excel 여러 셀은 Ctrl+V 붙여넣기','ok');else if(v26IsUserAddedSheet(ws))setStatus('추가 작업 시트 편집 가능 · A~E열에 직접 입력하거나 Excel 여러 줄을 복사해 Ctrl+V 하세요.','ok');return ret};
+// ===== /v26 =====
+</script>
+
 </body>
 </html>
