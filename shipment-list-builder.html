@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>선적 리스트 작성 | TradeCode Navi</title>
+<meta name="description" content="쿠팡 선적 원본 엑셀의 동일 상품·동일 센터 발주수량을 자동 합산하고 팔레트/밀크런 센터명을 정리합니다.">
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<style>
+:root{--navy:#0b2f4f;--navy2:#08253f;--gold:#d6a52b;--bg:#eef2f5;--green:#217346;--border:#c9d2d9;--red:#b42318}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:#13212c}button,input,select{font:inherit}button{cursor:pointer}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:258px;background:linear-gradient(180deg,var(--navy2),var(--navy));padding:22px 15px;overflow:auto;z-index:50}.side-brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;font-size:17px;margin-bottom:18px}.logo-badge{width:38px;height:38px;border-radius:10px;background:var(--gold);color:#08253f;display:grid;place-items:center;font-weight:1000}.side-brand small{font-size:11px;font-weight:500;color:#c8d4df}.nav-section-label{font-size:10.5px;color:#8fa6ba;margin:14px 8px 7px;font-weight:900;letter-spacing:.08em}.nav-btn{display:block;width:100%;text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);color:#e8eef4;border-radius:10px;padding:12px;font-size:13px;font-weight:800;margin-bottom:7px;text-decoration:none}.nav-btn:hover{background:rgba(255,255,255,.12)}.nav-btn.active{background:var(--gold);color:#08253f;border-color:var(--gold)}
+.main{margin-left:258px;min-height:100vh;padding:18px;max-width:1700px}.head{display:flex;align-items:center;gap:10px;margin-bottom:12px}.head h1{font-size:22px;color:#0b3152;margin:0}.head .sub{font-size:11px;color:#6c7b88}.panel{background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 2px 9px rgba(0,0,0,.05);margin-bottom:12px}.panel-title{padding:12px 14px;border-bottom:1px solid #e0e5e9;font-size:13px;font-weight:900;color:#173b55}.panel-body{padding:14px}
+.dropzone{border:2px dashed #77a18a;border-radius:10px;min-height:140px;display:flex;align-items:center;justify-content:center;text-align:center;background:#f8fbf9;color:#436253;transition:.15s}.dropzone.drag{background:#e8f5ed;border-color:var(--green);transform:scale(1.002)}.dropzone strong{display:block;font-size:17px;color:#185638;margin-bottom:8px}.dropzone small{font-size:11px;color:#71827a}.buttons{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.btn{border:1px solid #b8c3ca;border-radius:6px;padding:8px 12px;background:#fff;font-size:11px;font-weight:900}.btn.primary{background:#0b5f92;color:#fff;border-color:#0b5f92}.btn.green{background:var(--green);color:#fff;border-color:var(--green)}.btn:disabled{opacity:.45;cursor:not-allowed}input[type=file]{display:none}.status{font-size:11px;margin-top:9px;color:#52656f}.status.ok{color:#1d6c43}.status.bad{color:var(--red)}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:9px}.kpi{border:1px solid #dce3e7;border-radius:8px;padding:12px;background:#fbfcfd}.kpi b{font-size:20px;color:#0b3152}.kpi span{display:block;font-size:10px;color:#6b7a84;margin-top:3px}.kpi.good b{color:#1d7145}
+.rules{overflow:auto}.rules table,.preview table{border-collapse:collapse;width:100%;font-size:11px}.rules th,.rules td,.preview th,.preview td{border:1px solid #d8dfe3;padding:7px 8px;text-align:left}.rules th,.preview th{background:#f2f5f7;color:#334a5a;font-weight:900;position:sticky;top:0}.rules select{width:125px;height:30px;border:1px solid #aab7bf;border-radius:5px;background:#fff;padding:0 6px;font-weight:800}.badge{display:inline-block;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:900}.badge.known{background:#e5f2e9;color:#1d6841}.badge.saved{background:#e8eef9;color:#345182}.badge.auto{background:#f3f0df;color:#715d08}
+.preview{max-height:520px;overflow:auto}.preview .section td{background:#fff200;font-weight:900;text-align:center;font-size:13px}.preview td.num{text-align:right;font-weight:800}.preview td.center{font-weight:900}.empty{padding:30px;text-align:center;color:#75838b;font-size:12px}.warn{background:#fff7e8;border:1px solid #efd4a4;color:#6b4b12;border-radius:7px;padding:8px 10px;font-size:10px;margin-top:9px;line-height:1.5}
+
+.center-summary-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.center-summary-head .hint{font-size:10px;color:#657782}.type-pill{display:inline-block;border-radius:999px;padding:4px 9px;font-size:10px;font-weight:900}.type-pill.pallet{background:#e5f2e9;color:#17623a}.type-pill.milkrun{background:#e7eefb;color:#244f89}.type-pill.parcel{background:#f1f3f5;color:#55636c}
+.wizard-backdrop{position:fixed;inset:0;z-index:3000;background:rgba(6,25,41,.56);display:none;align-items:center;justify-content:center;padding:18px}.wizard-backdrop.show{display:flex}.wizard{width:min(920px,96vw);max-height:92vh;display:flex;flex-direction:column;background:#fff;border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.34);overflow:hidden}.wizard-head{padding:16px 18px;border-bottom:1px solid #dde4e8;background:#f7f9fa}.wizard-head b{font-size:17px;color:#0b3152}.wizard-head .step{display:block;font-size:10px;color:#6d7e88;margin-top:4px}.wizard-body{padding:18px;overflow:auto}.wizard-question{font-size:15px;font-weight:900;color:#173b55;margin-bottom:6px}.wizard-help{font-size:11px;color:#61727d;line-height:1.55;margin-bottom:15px}.company-block{margin-bottom:14px}.company-name{font-size:11px;font-weight:900;color:#294d66;margin-bottom:7px}.center-chips{display:flex;flex-wrap:wrap;gap:7px}.center-chip{border:1px solid #aebbc4;background:#fff;border-radius:999px;padding:8px 12px;font-size:11px;font-weight:800;color:#314754;cursor:pointer;user-select:none}.center-chip:hover{border-color:#65869a;background:#f6fafc}.center-chip.selected.pallet{background:#217346;border-color:#217346;color:#fff}.center-chip.selected.milkrun{background:#3569a8;border-color:#3569a8;color:#fff}.center-chip.disabled{opacity:.35;cursor:not-allowed;text-decoration:line-through}.wizard-actions{display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid #dde4e8;background:#fafbfc}.wizard-actions .note{margin-right:auto;font-size:10px;color:#6a7b85}.wizard-actions button{border:1px solid #acb8c0;border-radius:6px;background:#fff;padding:8px 13px;font-size:11px;font-weight:900}.wizard-actions .next{background:#0b5f92;color:#fff;border-color:#0b5f92}.wizard-actions .finish{background:#217346;color:#fff;border-color:#217346}.safe-note{background:#eef8f1;border:1px solid #bddcc8;color:#215d3d;border-radius:7px;padding:8px 10px;font-size:10px;margin-top:9px;line-height:1.5}
+@media(max-width:900px){.sidebar{display:none}.main{margin-left:0;padding:8px}.kpis{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<nav class="sidebar">
+  <div class="side-brand"><div class="logo-badge">TC</div><div>TradeCode Navi<br><small>기능 목록</small></div></div>
+  <div class="nav-section-label">도구</div>
+  <a class="nav-btn" href="/">📊 TradeCode Navi 관세율 계산</a>
+  <a class="nav-btn" href="/coupang-margin">🚀 로켓배송 원가&amp;마진률 계산</a>
+  <a class="nav-btn" href="/logistics-cost">🚚 물류비 계산기</a>
+  <a class="nav-btn" href="/barcode-label.html">🏷️ 바코드 라벨 생성기</a>
+  <a class="nav-btn" href="/order-barcode.html">📦 발주 바코드 출력</a>
+  <a class="nav-btn active" href="/shipment-list-builder.html">📋 선적 리스트 작성</a>
+  <a class="nav-btn" href="/detail-maker">✨ 쿠팡 상세페이지 자동 제작</a>
+  <a class="nav-btn" href="/coupang-inbound-work.html">📦 쿠팡 입고 작업</a>
+</nav>
+<main class="main">
+  <div class="head"><h1>선적 리스트 작성</h1><span class="sub">동일 상품 · 동일 센터 발주수량 자동 합산</span></div>
+  <section class="panel">
+    <div class="panel-title">1. 원본 선적 엑셀 불러오기</div>
+    <div class="panel-body">
+      <div id="dropzone" class="dropzone">
+        <div><strong>원본 선적 엑셀을 여기에 끌어놓으세요</strong><small>또는 아래 ‘파일 선택’을 눌러 .xlsx / .xlsm 파일을 선택하세요.</small></div>
+      </div>
+      <div class="buttons">
+        <button class="btn primary" onclick="document.getElementById('fileInput').click()">파일 선택</button>
+        <input id="fileInput" type="file" accept=".xlsx,.xlsm">
+        <button id="downloadBtn" class="btn green" disabled onclick="downloadResult()">정리 엑셀 다운로드</button>
+        <button id="resetBtn" class="btn" onclick="resetAll()">초기화</button>
+      </div>
+      <div id="status" class="status">정리 전 원본 파일을 불러와 주세요.</div>
+      <div class="warn">정리 기준: <b>같은 업체 + 같은 센터 + 같은 상품번호/바코드</b>인 행의 발주수량(E열)을 합산합니다. 같은 상품이라도 센터가 다르면 서로 합치지 않습니다.</div>
+      <div class="safe-note"><b>기존 파일은 변경하지 않습니다.</b> 원본 엑셀은 읽기만 하고, 정리 결과는 새 Excel 파일로 다운로드합니다. 쿠팡 입고 작업·바코드 라벨·서버 저장 데이터에도 영향을 주지 않습니다.</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">2. 원본 분석 결과</div>
+    <div class="panel-body"><div class="kpis">
+      <div class="kpi"><b id="rawCount">0</b><span>원본 상품 행</span></div>
+      <div class="kpi good"><b id="resultCount">0</b><span>정리 후 상품 행</span></div>
+      <div class="kpi"><b id="mergedCount">0</b><span>합쳐진 중복 행</span></div>
+      <div class="kpi"><b id="totalQty">0</b><span>총 발주수량</span></div>
+    </div></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">3. 센터 작업구분 확인 <span style="font-size:10px;font-weight:500;color:#6e7d86">· 파일마다 팔레트/밀크런 센터를 직접 선택합니다</span></div>
+    <div class="panel-body rules"><div id="rulesHost" class="empty">파일을 불러오면 팔레트 센터와 밀크런 센터를 선택하는 창이 먼저 열립니다.</div></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">4. 결과 미리보기</div>
+    <div class="panel-body preview"><div id="previewHost" class="empty">정리 결과가 여기에 표시됩니다.</div></div>
+  </section>
+</main>
+
+<div id="centerWizard" class="wizard-backdrop" aria-hidden="true">
+  <div class="wizard" role="dialog" aria-modal="true" aria-labelledby="wizardQuestion">
+    <div class="wizard-head"><b>센터 작업구분 선택</b><span id="wizardStep" class="step">1단계 / 2단계</span></div>
+    <div class="wizard-body">
+      <div id="wizardQuestion" class="wizard-question">팔레트로 입고할 센터를 클릭해 주세요.</div>
+      <div id="wizardHelp" class="wizard-help">이번 원본 파일에서 발견된 센터만 표시합니다. 여러 개를 선택할 수 있습니다.</div>
+      <div id="wizardCenters"></div>
+    </div>
+    <div class="wizard-actions">
+      <span id="wizardNote" class="note">선택하지 않은 센터는 다음 단계로 넘어갑니다.</span>
+      <button id="wizardBackBtn" type="button" style="display:none" onclick="wizardBack()">이전</button>
+      <button id="wizardNextBtn" class="next" type="button" onclick="wizardNext()">다음: 밀크런 센터 선택</button>
+      <button id="wizardFinishBtn" class="finish" type="button" style="display:none" onclick="wizardFinish()">선택 완료</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let sourceFile=null, sourceWorkbook=null, sourceSheet=null, parsedSections=[], groupedSections=[], centerRules=new Map();
+let centerChoiceConfirmed=false,wizardStage='pallet',wizardPallet=new Set(),wizardMilkrun=new Set();
+const $=id=>document.getElementById(id);
+function norm(v){return String(v??'').replace(/\u00a0/g,' ').trim().replace(/\s+/g,' ')}
+function compact(v){return norm(v).replace(/\s+/g,'').toLowerCase()}
+function num(v){const n=Number(String(v??'').replace(/,/g,''));return Number.isFinite(n)?n:0}
+function clone(v){if(v===undefined)return undefined;try{return JSON.parse(JSON.stringify(v))}catch(_){return v}}
+function cellText(cell){return norm(cell?.text ?? cell?.value ?? '')}
+function normalizeCompany(title){const t=norm(title);if(/봄날애/.test(t))return '봄날애';if(/차통/.test(t))return '차통익스프레스';return '코리아원'}
+function baseCenter(center){return norm(center).replace(/\s*(팔레트|밀크런)\s*/gi,' ').replace(/\s+/g,' ').trim()}
+function centerKey(company,center){return `${company}|${compact(baseCenter(center))}`}
+function centerLabel(company,center){const base=baseCenter(center),rule=centerRules.get(centerKey(company,center));const type=rule?.type||'parcel';return type==='pallet'?`${base} 팔레트`:type==='milkrun'?`${base} 밀크런`:base}
+function setStatus(text,kind=''){const s=$('status');s.textContent=text;s.className='status '+kind}
+function isShipmentTitle(a,b,c,d,e){const t=norm(a);return !!t && /선적(?:건)?/.test(t) && (!norm(b)&&!norm(c)&&!norm(d)&&!norm(e)||/\d+월/.test(t))}
+function rowTemplate(ws,rowNo){const row=ws.getRow(rowNo);return {height:row.height,cells:Array.from({length:7},(_,i)=>({style:clone(row.getCell(i+1).style),numFmt:row.getCell(i+1).numFmt,alignment:clone(row.getCell(i+1).alignment)}))}}
+async function parseSource(file){
+  setStatus('엑셀을 읽고 동일 상품을 찾는 중입니다…');
+  const wb=new ExcelJS.Workbook();await wb.xlsx.load(await file.arrayBuffer());
+  const ws=wb.worksheets[0];if(!ws)throw new Error('첫 번째 시트를 찾을 수 없습니다.');
+  sourceWorkbook=wb;sourceSheet=ws;
+  const sections=[];let sec=null,currentCompany='코리아원';
+  for(let r=1;r<=ws.rowCount;r++){
+    const row=ws.getRow(r),a=cellText(row.getCell(1)),b=cellText(row.getCell(2)),c=cellText(row.getCell(3)),d=cellText(row.getCell(4)),eText=cellText(row.getCell(5)),q=num(row.getCell(5).value??eText);
+    if(isShipmentTitle(a,b,c,d,eText)){
+      currentCompany=normalizeCompany(a);sec={company:currentCompany,title:a,titleRow:r,titleTpl:rowTemplate(ws,r),items:[]};sections.push(sec);continue;
+    }
+    if(a&&b&&c&&d&&q>0){
+      if(!sec){const title=(cellText(ws.getCell('A1'))&&/선적/.test(cellText(ws.getCell('A1'))))?cellText(ws.getCell('A1')):`${currentCompany} 선적건`;sec={company:currentCompany,title,titleRow:r,titleTpl:null,items:[]};sections.push(sec)}
+      sec.items.push({sourceRow:r,productNumberValue:clone(row.getCell(1).value),productNumber:a,productNameValue:clone(row.getCell(2).value),productName:b,barcodeValue:clone(row.getCell(3).value),barcode:c,centerValue:clone(row.getCell(4).value),center:d,qty:q,rowTpl:rowTemplate(ws,r),centerStyle:clone(row.getCell(4).style),firstOrder:r});
+    }
+  }
+  if(!sections.some(s=>s.items.length))throw new Error('A~E열에서 상품번호/제품명/바코드/센터/수량 형식의 데이터를 찾지 못했습니다.');
+  parsedSections=sections.filter(s=>s.items.length);
+  buildCenterRules();buildGroups();renderAll();
+  centerChoiceConfirmed=false;$('downloadBtn').disabled=true;
+  setStatus(`✓ ${file.name} 분석 완료 · 먼저 팔레트/밀크런 센터를 선택해 주세요.`,'ok');
+  showCenterWizard();
+}
+function buildCenterRules(){
+  centerRules=new Map();
+  for(const sec of parsedSections)for(const it of sec.items){const key=centerKey(sec.company,it.center);if(!centerRules.has(key))centerRules.set(key,{company:sec.company,center:baseCenter(it.center),type:'pending',firstOrder:it.firstOrder})}
+}
+function itemKey(sec,it){
+  const pn=compact(it.productNumber),bc=compact(it.barcode),identity=(pn&&bc)?`${pn}|${bc}`:(pn||bc||compact(it.productName));
+  return `${sec.company}|${compact(baseCenter(it.center))}|${identity}`;
+}
+function buildGroups(){
+  groupedSections=[];
+  for(const sec of parsedSections){
+    const map=new Map(),out=[];
+    for(const it of sec.items){const key=itemKey(sec,it);if(!map.has(key)){const x={...it,qty:0,mergedRows:0};map.set(key,x);out.push(x)}const x=map.get(key);x.qty+=Number(it.qty)||0;x.mergedRows++;}
+    groupedSections.push({...sec,items:out});
+  }
+}
+function rawCount(){return parsedSections.reduce((a,s)=>a+s.items.length,0)}
+function resultCount(){return groupedSections.reduce((a,s)=>a+s.items.length,0)}
+function totalQty(){return groupedSections.reduce((a,s)=>a+s.items.reduce((b,i)=>b+(Number(i.qty)||0),0),0)}
+function renderAll(){
+  $('rawCount').textContent=rawCount().toLocaleString();$('resultCount').textContent=resultCount().toLocaleString();$('mergedCount').textContent=(rawCount()-resultCount()).toLocaleString();$('totalQty').textContent=totalQty().toLocaleString();renderRules();renderPreview();
+}
+function typeName(type){return type==='pallet'?'팔레트':type==='milkrun'?'밀크런':'택배'}
+function renderRules(){
+  if(!centerRules.size){$('rulesHost').innerHTML='<div class="empty">감지된 센터가 없습니다.</div>';return}
+  if(!centerChoiceConfirmed){$('rulesHost').innerHTML='<div class="empty">센터 선택이 아직 완료되지 않았습니다. <button class="btn primary" type="button" onclick="showCenterWizard()">센터 선택하기</button></div>';return}
+  const rows=[...centerRules.entries()].sort((a,b)=>a[1].firstOrder-b[1].firstOrder);
+  let h='<div class="center-summary-head"><span class="hint">선택하지 않은 센터는 자동으로 택배로 처리됩니다.</span><button class="btn" type="button" onclick="showCenterWizard(true)">센터 구분 다시 선택</button></div><table><thead><tr><th>업체</th><th>원본 센터명</th><th>작업구분</th><th>결과 센터명</th></tr></thead><tbody>';
+  rows.forEach(([key,r])=>{h+=`<tr><td><b>${esc(r.company)}</b></td><td>${esc(r.center)}</td><td><span class="type-pill ${escAttr(r.type)}">${typeName(r.type)}</span></td><td><b>${esc(centerLabel(r.company,r.center))}</b></td></tr>`});
+  h+='</tbody></table>';$('rulesHost').innerHTML=h;
+}
+function orderedCenters(){return [...centerRules.entries()].sort((a,b)=>a[1].firstOrder-b[1].firstOrder)}
+function showCenterWizard(preserve=false){
+  if(!centerRules.size)return;
+  wizardStage='pallet';wizardPallet=new Set();wizardMilkrun=new Set();
+  if(preserve&&centerChoiceConfirmed){for(const [key,r] of centerRules){if(r.type==='pallet')wizardPallet.add(key);else if(r.type==='milkrun')wizardMilkrun.add(key)}}
+  const m=$('centerWizard');m.classList.add('show');m.setAttribute('aria-hidden','false');renderWizard();
+}
+function renderWizard(){
+  const pallet=wizardStage==='pallet';
+  $('wizardStep').textContent=pallet?'1단계 / 2단계 · 팔레트':'2단계 / 2단계 · 밀크런';
+  $('wizardQuestion').textContent=pallet?'팔레트로 입고할 센터를 클릭해 주세요.':'밀크런으로 입고할 센터를 클릭해 주세요.';
+  $('wizardHelp').textContent=pallet?'이번 원본 파일에서 발견된 센터입니다. 팔레트 센터를 모두 선택한 뒤 다음을 누르세요. 팔레트 센터가 없으면 아무것도 선택하지 않고 다음을 누르면 됩니다.':'팔레트로 선택한 센터는 제외되어 있습니다. 밀크런 센터를 모두 선택하세요. 나머지는 자동으로 택배로 처리됩니다.';
+  $('wizardBackBtn').style.display=pallet?'none':'inline-block';$('wizardNextBtn').style.display=pallet?'inline-block':'none';$('wizardFinishBtn').style.display=pallet?'none':'inline-block';
+  $('wizardNote').textContent=pallet?`팔레트 선택 ${wizardPallet.size}개`:`밀크런 선택 ${wizardMilkrun.size}개 · 나머지는 택배`;
+  const grouped=new Map();for(const [key,r] of orderedCenters()){if(!grouped.has(r.company))grouped.set(r.company,[]);grouped.get(r.company).push([key,r])}
+  let h='';for(const [company,rows] of grouped){h+=`<div class="company-block"><div class="company-name">${esc(company)}</div><div class="center-chips">`;for(const [key,r] of rows){const excluded=!pallet&&wizardPallet.has(key),selected=(pallet?wizardPallet:wizardMilkrun).has(key);h+=`<button type="button" class="center-chip ${excluded?'disabled':''} ${selected?'selected '+(pallet?'pallet':'milkrun'):''}" data-key="${escAttr(key)}" ${excluded?'disabled':''}>${esc(r.center)}</button>`}h+='</div></div>'}
+  $('wizardCenters').innerHTML=h;
+  $('wizardCenters').querySelectorAll('.center-chip:not(.disabled)').forEach(btn=>btn.onclick=()=>{const key=btn.dataset.key,set=pallet?wizardPallet:wizardMilkrun;if(set.has(key))set.delete(key);else set.add(key);renderWizard()});
+}
+function wizardNext(){wizardStage='milkrun';for(const k of [...wizardMilkrun])if(wizardPallet.has(k))wizardMilkrun.delete(k);renderWizard()}
+function wizardBack(){wizardStage='pallet';renderWizard()}
+function wizardFinish(){
+  for(const [key,r] of centerRules){r.type=wizardPallet.has(key)?'pallet':wizardMilkrun.has(key)?'milkrun':'parcel'}
+  centerChoiceConfirmed=true;$('downloadBtn').disabled=false;
+  const m=$('centerWizard');m.classList.remove('show');m.setAttribute('aria-hidden','true');
+  renderRules();renderPreview();setStatus(`✓ 센터 구분 완료 · 팔레트 ${wizardPallet.size}개 / 밀크런 ${wizardMilkrun.size}개 / 나머지 택배`,'ok');
+}
+function renderPreview(){
+  if(!groupedSections.length){$('previewHost').innerHTML='<div class="empty">정리 결과가 없습니다.</div>';return}
+  if(!centerChoiceConfirmed){$('previewHost').innerHTML='<div class="empty">팔레트/밀크런 센터 선택을 완료하면 결과가 표시됩니다.</div>';return}
+  let h='<table><thead><tr><th style="width:100px">상품번호</th><th>제품명</th><th style="width:155px">바코드</th><th style="width:145px">물류센터</th><th style="width:85px">발주수량</th></tr></thead><tbody>';
+  for(const sec of groupedSections){h+=`<tr class="section"><td colspan="5">${esc(sec.title)}</td></tr>`;for(const it of sec.items)h+=`<tr><td>${esc(it.productNumber)}</td><td>${esc(it.productName)}</td><td>${esc(it.barcode)}</td><td class="center">${esc(centerLabel(sec.company,it.center))}</td><td class="num">${Number(it.qty).toLocaleString()}</td></tr>`}
+  h+='</tbody></table>';$('previewHost').innerHTML=h;
+}
+function copyCellStyle(srcTpl,index,dst){const s=srcTpl?.cells?.[index];if(!s)return;try{dst.style=clone(s.style)||{}}catch(_){}if(s.numFmt)dst.numFmt=s.numFmt;if(s.alignment)dst.alignment=clone(s.alignment)}
+function fallbackTitleStyle(cell){cell.font={name:'맑은 고딕',size:14,bold:true};cell.alignment={horizontal:'center',vertical:'middle'};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'}};cell.border={top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}}}
+function fallbackDataStyle(cell){cell.font={name:'맑은 고딕',size:11,bold:true};cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};cell.border={top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}}}
+async function makeResultWorkbook(){
+  if(!sourceSheet||!groupedSections.length)throw new Error('먼저 원본 선적 엑셀을 불러와 주세요.');
+  const out=new ExcelJS.Workbook();out.creator='TradeCode Navi';out.created=new Date();out.modified=new Date();const ws=out.addWorksheet(sourceSheet.name||'Sheet2');
+  const sampleWidths=[11.2,39.9,17.4,12,9,7.4,7.7];for(let c=1;c<=7;c++){const sw=sourceSheet.getColumn(c)?.width;ws.getColumn(c).width=sw||sampleWidths[c-1]||10}
+  let rowNo=1;let firstTitle=true;const grand=totalQty();
+  for(const sec of groupedSections){
+    const row=ws.getRow(rowNo);row.height=sec.titleTpl?.height||(firstTitle?42:33);for(let c=1;c<=7;c++){copyCellStyle(sec.titleTpl,c-1,row.getCell(c));if(!sec.titleTpl)fallbackTitleStyle(row.getCell(c))}
+    row.getCell(1).value=sec.title;try{ws.mergeCells(rowNo,1,rowNo,5)}catch(_){}
+    if(firstTitle){row.getCell(6).value=grand;row.getCell(7).value=grand;firstTitle=false} else {row.getCell(6).value=null;row.getCell(7).value=null}
+    rowNo++;
+    for(const it of sec.items){const rr=ws.getRow(rowNo);rr.height=it.rowTpl?.height||33;for(let c=1;c<=7;c++){copyCellStyle(it.rowTpl,c-1,rr.getCell(c));if(!it.rowTpl)fallbackDataStyle(rr.getCell(c))}rr.getCell(1).value=clone(it.productNumberValue)??it.productNumber;rr.getCell(2).value=clone(it.productNameValue)??it.productName;rr.getCell(3).value=clone(it.barcodeValue)??it.barcode;rr.getCell(4).value=centerLabel(sec.company,it.center);if(it.centerStyle)rr.getCell(4).style=clone(it.centerStyle);rr.getCell(5).value=Number(it.qty)||0;rr.getCell(6).value=null;rr.getCell(7).value=null;rowNo++}
+  }
+  ws.views=clone(sourceSheet.views)||[];
+  return out;
+}
+async function downloadResult(){
+  if(!centerChoiceConfirmed){showCenterWizard();return}
+  try{setStatus('정리된 엑셀을 만드는 중입니다…');const wb=await makeResultWorkbook();const buf=await wb.xlsx.writeBuffer();const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);const base=(sourceFile?.name||'선적리스트').replace(/\.(xlsx|xlsm)$/i,'');a.download=`${base}_정리본.xlsx`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),12000);setStatus('✓ 정리된 선적 리스트를 다운로드했습니다.','ok')}catch(e){console.error(e);setStatus('엑셀 생성 실패: '+(e.message||e),'bad');alert('정리 엑셀 생성에 실패했습니다.\n'+(e.message||e))}
+}
+async function acceptFile(file){if(!file||!/\.(xlsx|xlsm)$/i.test(file.name||'')){alert('Excel .xlsx 또는 .xlsm 파일을 넣어주세요.');return}sourceFile=file;try{await parseSource(file)}catch(e){console.error(e);setStatus('파일 분석 실패: '+(e.message||e),'bad');alert('파일을 분석하지 못했습니다.\n'+(e.message||e))}}
+function resetAll(){sourceFile=null;sourceWorkbook=null;sourceSheet=null;parsedSections=[];groupedSections=[];centerRules=new Map();centerChoiceConfirmed=false;wizardPallet=new Set();wizardMilkrun=new Set();$('centerWizard').classList.remove('show');$('fileInput').value='';$('downloadBtn').disabled=true;$('rawCount').textContent=$('resultCount').textContent=$('mergedCount').textContent=$('totalQty').textContent='0';$('rulesHost').innerHTML='<div class="empty">파일을 불러오면 감지된 업체/센터가 여기에 표시됩니다.</div>';$('previewHost').innerHTML='<div class="empty">정리 결과가 여기에 표시됩니다.</div>';setStatus('정리 전 원본 파일을 불러와 주세요.')}
+function esc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]))}function escAttr(v){return esc(v)}
+$('fileInput').addEventListener('change',e=>acceptFile(e.target.files?.[0]));
+const dz=$('dropzone');['dragenter','dragover'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.add('drag');if(e.dataTransfer)e.dataTransfer.dropEffect='copy'}));['dragleave','drop'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',e=>acceptFile([...(e.dataTransfer?.files||[])].find(f=>/\.(xlsx|xlsm)$/i.test(f.name||''))));dz.addEventListener('dblclick',()=>$('fileInput').click());
+</script>
+</body>
+</html>
