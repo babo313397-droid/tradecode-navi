@@ -1377,7 +1377,71 @@ async function initOrderBarcodeV44(){
 });
 document.querySelectorAll('input[name="printMethod"]').forEach(r=>r.addEventListener('change',()=>scheduleOrderBarcodeSave()));
 window.addEventListener('beforeunload',()=>{try{persistOrderBarcodeWork()}catch(e){}});
-initOrderBarcodeV44();
+initOrderBarcodeV44().then(()=>window.loadOrderServerV46?.()).catch(e=>console.warn('order init',e));
+</script>
+<script id="v46-shared-order-work">
+// ===== v46: 발주 바코드 작업 공용 서버 저장 =====
+(function(){
+  const API='/api/shared-workspace/order-barcode';
+  const localPersistBase=window.persistOrderBarcodeWork;
+  const localResetBase=window.resetOrderBarcodeWork;
+  let serverTimer=null,serverSaving=false,serverQueued=false,lastServerUpdated=0;
+  function token(){try{return localStorage.getItem('coupangSharedToken')||''}catch(_){return ''}}
+  async function sf(opts={},allowPrompt=true){
+    const headers=new Headers(opts.headers||{}),t=token();if(t)headers.set('X-Coupang-Work-Token',t);
+    let r=await fetch(API,{cache:'no-store',...opts,headers});
+    if(r.status===401&&allowPrompt){const pw=prompt('공용 작업 암호를 입력해 주세요.');if(pw){try{localStorage.setItem('coupangSharedToken',pw)}catch(_){};return sf(opts,false)}}
+    return r;
+  }
+  function status(msg,bad=false){let e=document.getElementById('orderServerStatusV46');if(!e)return;e.textContent=msg||'';e.style.color=bad?'#b42318':'#157347'}
+  function fmt(ts){try{return new Date(ts).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}catch(_){return''}}
+  function build(){
+    if(!Array.isArray(orderRows)||!orderRows.length)return null;
+    const getVal=id=>el(id)?.value ?? '';
+    return {version:46,sourceFileName:currentOrderFileName||'',savedAt:Date.now(),currentOrderProgressKey:currentOrderProgressKey||'',maxPerFile:Math.max(1,Math.floor(Number(getVal('maxPerFile'))||100)),printMethod:(typeof getPrintMethod==='function'?getPrintMethod():'continuous'),thermalGapMm:getVal('thermalGapMm'),sheetSettings:{sheetPaperWidth:getVal('sheetPaperWidth'),sheetPaperHeight:getVal('sheetPaperHeight'),sheetColumns:getVal('sheetColumns'),sheetRows:getVal('sheetRows'),sheetMarginX:getVal('sheetMarginX'),sheetMarginY:getVal('sheetMarginY'),sheetGapX:getVal('sheetGapX'),sheetGapY:getVal('sheetGapY')},rows:compactOrderRowsForSave()};
+  }
+  async function saveNow(manual=false,keepalive=false){
+    const payload=build();
+    if(!payload){if(manual)status('☁ 저장할 발주 작업이 없습니다.');return false}
+    if(serverSaving){serverQueued=true;return true}
+    serverSaving=true;status('☁ 서버 저장 중…');
+    try{
+      const r=await sf({method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:payload}),keepalive:!!keepalive});
+      if(!r.ok)throw new Error('서버 저장 '+r.status);const j=await r.json();lastServerUpdated=Number(j.updatedAt||Date.now());status(`☁ 서버 저장 완료 · ${fmt(lastServerUpdated)}`);return true;
+    }catch(e){console.warn('order shared save',e);status('⚠ 서버 저장 실패 · 이 PC에는 임시 저장됨',true);return false}
+    finally{serverSaving=false;if(serverQueued){serverQueued=false;setTimeout(()=>saveNow(false),60)}}
+  }
+  window.saveOrderServerNowV46=()=>saveNow(true);
+  window.loadOrderServerV46=loadServer;
+  function queue(delay=260){clearTimeout(serverTimer);serverTimer=setTimeout(()=>{serverTimer=null;saveNow(false)},delay)}
+  window.persistOrderBarcodeWork=function(){try{localPersistBase?.()}catch(e){console.warn(e)}queue(120)};
+
+  function apply(saved){
+    if(!saved||!Array.isArray(saved.rows)||!saved.rows.length)return false;
+    currentOrderFileName=norm(saved.sourceFileName);currentOrderProgressKey=norm(saved.currentOrderProgressKey);
+    orderRows=saved.rows.map((r,i)=>({id:Number(r.id)||i+1,productNumber:norm(r.productNumber),barcode:norm(r.barcode),productName:norm(r.productName),orderQty:Math.max(0,Number(r.orderQty)||0),orderQtyColor:norm(r.orderQtyColor),printedQty:Math.max(0,Number(r.printedQty)||0),printQty:Math.max(0,Number(r.printQty)||0),checked:!!r.checked,label:null,size:'missing'}));
+    if(el('maxPerFile'))el('maxPerFile').value=String(Math.max(1,Math.floor(Number(saved.maxPerFile)||100)));
+    if(el('thermalGapMm')&&saved.thermalGapMm!=='')el('thermalGapMm').value=saved.thermalGapMm;
+    if(saved.sheetSettings)for(const [id,v] of Object.entries(saved.sheetSettings)){if(el(id)&&v!=='')el(id).value=v}
+    if(saved.printMethod){const radio=document.querySelector(`input[name="printMethod"][value="${saved.printMethod}"]`);if(radio)radio.checked=true;try{togglePrintMethod()}catch(_){}}
+    rematchRows();renderRows();try{localPersistBase?.()}catch(_){};return true;
+  }
+  async function loadServer(){
+    try{
+      const r=await sf({});if(r.status===404){if(orderRows?.length)await saveNow(false);else status('☁ 서버 저장 대기');return false}if(!r.ok)throw new Error('서버 조회 '+r.status);
+      const j=await r.json(),saved=j.state;lastServerUpdated=Number(j.updatedAt||0);if(apply(saved)){status(`☁ 서버 작업 불러옴 · ${fmt(lastServerUpdated)}`);setProgress(`✓ 공용 서버의 발주 바코드 작업을 복구했습니다${currentOrderFileName?' · '+currentOrderFileName:''}`);return true}return false;
+    }catch(e){console.warn('order shared load',e);status('⚠ 서버 연결 실패 · 이 PC 저장본 사용',true);return false}
+  }
+  window.resetOrderBarcodeWork=async function(){const before=orderRows?.length||0;localResetBase?.();if(before&&orderRows?.length===before)return;try{const r=await sf({method:'DELETE'});if(!r.ok&&r.status!==404)throw new Error(String(r.status));status('☁ 서버 작업도 초기화됨')}catch(e){status('⚠ 서버 초기화 실패',true)}};
+
+  function install(){
+    const box=document.querySelector('.upload-box');if(box&&!document.getElementById('orderServerSaveBtnV46')){const b=document.createElement('button');b.id='orderServerSaveBtnV46';b.className='btn btn-primary';b.type='button';b.textContent='☁ 지금 저장';b.onclick=()=>saveNow(true);box.appendChild(b);const st=document.createElement('span');st.id='orderServerStatusV46';st.style.cssText='font-size:12px;font-weight:900;color:#157347;white-space:nowrap';st.textContent='☁ 서버 확인 중…';box.appendChild(st)}
+  }
+  window.addEventListener('pagehide',()=>{try{localPersistBase?.();saveNow(false,true)}catch(_){}});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveNow(false,true)});
+  setTimeout(install,0);
+})();
+// ===== /v46 =====
 </script>
 </body>
 </html>
