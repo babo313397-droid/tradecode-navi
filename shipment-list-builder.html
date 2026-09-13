@@ -327,11 +327,22 @@ async function loadSelectedDraftV40(){const id=document.getElementById('savedLis
 async function deleteSelectedDraftV40(){const id=document.getElementById('savedListSelectV40')?.value||selectedDraftIdV40;if(!id)return;const d=await vaultGetV40(id);if(!d)return;if(!confirm(`“${d.name||d.fileName}” 보관본을 삭제할까요?\n쿠팡 입고 작업으로 이미 전송된 선적 작업은 삭제되지 않습니다.`))return;await vaultDeleteV40(id);if(activeDraftIdV40===id)activeDraftIdV40='';try{if(localStorage.getItem(SHIPMENT_VAULT_LAST_V40)===id)localStorage.removeItem(SHIPMENT_VAULT_LAST_V40)}catch(_){}await refreshVaultSelectV40();vaultStatusV40('✓ 보관본 삭제됨')}
 
 function deriveCoupangProjectNameV40(){
-  let t=norm(groupedSections?.[0]?.title||defaultDraftNameV40()).replace(/코리아원|봄날애|차통\s*익스프레스|차통/gi,'').trim();
-  const ship=t.match(/(\d{1,2})월\s*(\d{1,2})일\s*선적/), inbound=t.match(/(\d{1,2})월\s*(\d{1,2})일[^)]*?입고/);
+  // v58: 선적일과 입고일을 서로 독립적으로 찾습니다.
+  // 이전 정규식은 "9월14일선적(9월17일 입고)"에서 9월14일부터 '입고'까지
+  // 통째로 잡을 수 있어 입고일이 선적일(9월14일)로 잘못 바뀌는 문제가 있었습니다.
+  const texts=[
+    norm(defaultDraftNameV40()),
+    norm(groupedSections?.[0]?.title||'')
+  ].map(x=>String(x||'').replace(/복사본\s*/gi,'').replace(/코리아원|봄날애|차통\s*익스프레스|차통/gi,'').trim()).filter(Boolean);
+  let ship=null,inbound=null;
+  for(const t of texts){
+    if(!ship)ship=t.match(/(\d{1,2})월\s*(\d{1,2})일\s*선적(?:건)?/i);
+    if(!inbound)inbound=t.match(/(\d{1,2})월\s*(\d{1,2})일\s*(?:쿠팡\s*)?입고(?:건)?/i);
+  }
   if(ship&&inbound)return `${Number(ship[1])}월${Number(ship[2])}일선적(${Number(inbound[1])}월${Number(inbound[2])}일 입고건)`;
   if(ship)return `${Number(ship[1])}월${Number(ship[2])}일선적`;
-  return t.replace(/\s+/g,' ').slice(0,100)||'쿠팡 선적 작업';
+  const t=texts[0]||texts[1]||'쿠팡 선적 작업';
+  return t.replace(/\s+/g,' ').replace(/\(\d+\)\s*$/,'').slice(0,100)||'쿠팡 선적 작업';
 }
 function coupangTokenV40(){try{return localStorage.getItem('coupangSharedToken')||''}catch(_){return ''}}
 async function coupangFetchV40(path,opts={},allowPrompt=true){
