@@ -97,57 +97,101 @@ function discoverPersistentCoupangRootV54(){
   return best;
 }
 const PERSISTENT_COUPANG_ROOT_V54=discoverPersistentCoupangRootV54();
-// v56: 인증 DB는 쿠팡 프로젝트 저장경로 선택과 분리하여 기존 계정 DB를 직접 찾아 사용합니다.
-// 업데이트 중 쿠팡 저장루트가 잠깐 달라져도 로그인 계정이 0개로 보이지 않게 합니다.
-function uniquePathListV56(rows){const out=[];for(const v of rows){try{if(!v)continue;const r=path.resolve(v);if(!out.includes(r))out.push(r)}catch(_){}}return out}
-function scanAuthDirsNearbyV56(){
+// v58: 인증 DB 영구 고정
+// - 인증 DB의 "사용 위치"는 더 이상 발견된 임시/이전 폴더로 바뀌지 않습니다.
+// - 항상 현재 서버의 data/auth (또는 TRADECODE_AUTH_DIR) 하나를 정본으로 사용합니다.
+// - 이전 v48~v56 위치/백업은 "복구 원본"으로만 검색하고, 정본으로 1회 복사합니다.
+// - 정본이 한 번 만들어진 뒤에는 다른 미러/백업의 mtime 때문에 저장 위치가 바뀌지 않습니다.
+function uniquePathListV58(rows){const out=[];for(const v of rows){try{if(!v)continue;const r=path.resolve(v);if(!out.includes(r))out.push(r)}catch(_){}}return out}
+function readJsonFileV48(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch(_){return fallback}}
+function atomicJsonV48(file,obj){fs.mkdirSync(path.dirname(file),{recursive:true});const t=`${file}.${process.pid}.${Date.now()}.tmp`;fs.writeFileSync(t,JSON.stringify(obj,null,2),'utf8');fs.renameSync(t,file)}
+
+const AUTH_COUPANG_ROOT_V52=PERSISTENT_COUPANG_ROOT_V54;
+const AUTH_DIR_V48=process.env.TRADECODE_AUTH_DIR
+  ? path.resolve(process.env.TRADECODE_AUTH_DIR)
+  : path.resolve(path.join(__dirname,'data','auth'));
+const USERS_FILE_V48=path.join(AUTH_DIR_V48,'users.json');
+const SECRET_FILE_V48=path.join(AUTH_DIR_V48,'session-secret.txt');
+const AUTH_INIT_FLAG_V58=path.join(AUTH_DIR_V48,'initialized.flag');
+const SESSION_COOKIE_V48='tradecode_session';
+const AUTH_BACKUP_DIR_V54=path.join(AUTH_DIR_V48,'_backups');
+fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
+
+function scanAuthDirsNearbyV58(){
   const dirs=[];const add=v=>{try{if(v)dirs.push(path.resolve(v))}catch(_){}};
+  add(AUTH_DIR_V48);
   if(process.env.TRADECODE_AUTH_DIR)add(process.env.TRADECODE_AUTH_DIR);
-  add(path.join(__dirname,'data','auth'));add(path.join(__dirname,'data','coupang-shared','_auth'));add(path.join(__dirname,'auth'));
-  add(path.join(process.cwd(),'data','auth'));add(path.join(process.cwd(),'data','coupang-shared','_auth'));add(path.join(process.cwd(),'auth'));
-  for(const r of PERSISTENT_ROOT_CANDIDATES_V54){add(path.join(r,'_auth'));add(path.join(path.dirname(r),'auth'))}
-  add(path.join(PERSISTENT_COUPANG_ROOT_V54,'_auth'));add(path.join(path.dirname(PERSISTENT_COUPANG_ROOT_V54),'auth'));
-  const parents=uniquePathListV56([__dirname,path.dirname(__dirname),process.cwd(),path.dirname(process.cwd())]);
+  add(path.join(__dirname,'data','auth'));
+  add(path.join(__dirname,'data','coupang-shared','_auth'));
+  add(path.join(__dirname,'auth'));
+  add(path.join(process.cwd(),'data','auth'));
+  add(path.join(process.cwd(),'data','coupang-shared','_auth'));
+  add(path.join(process.cwd(),'auth'));
+  for(const r of PERSISTENT_ROOT_CANDIDATES_V54||[]){
+    add(path.join(r,'_auth'));add(path.join(path.dirname(r),'auth'));
+  }
+  add(path.join(PERSISTENT_COUPANG_ROOT_V54,'_auth'));
+  add(path.join(path.dirname(PERSISTENT_COUPANG_ROOT_V54),'auth'));
+
+  // 이전 배포 폴더가 한 단계 옆에 남아 있는 경우까지 탐색합니다.
+  const parents=uniquePathListV58([__dirname,path.dirname(__dirname),process.cwd(),path.dirname(process.cwd())]);
   for(const parent of parents){
     try{
-      for(const e of fs.readdirSync(parent,{withFileTypes:true}).slice(0,300)){
+      for(const e of fs.readdirSync(parent,{withFileTypes:true}).slice(0,400)){
         if(!e.isDirectory()||['node_modules','.git'].includes(e.name))continue;
         const base=path.join(parent,e.name);
-        add(path.join(base,'data','auth'));add(path.join(base,'data','coupang-shared','_auth'));
-        add(path.join(base,'server','data','auth'));add(path.join(base,'server','data','coupang-shared','_auth'));
+        add(path.join(base,'data','auth'));
+        add(path.join(base,'data','coupang-shared','_auth'));
+        add(path.join(base,'server','data','auth'));
+        add(path.join(base,'server','data','coupang-shared','_auth'));
       }
     }catch(_){}
   }
-  return uniquePathListV56(dirs);
+  return uniquePathListV58(dirs);
 }
-function readJsonFileV48(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch(_){return fallback}}
-function atomicJsonV48(file,obj){fs.mkdirSync(path.dirname(file),{recursive:true});const t=`${file}.${process.pid}.${Date.now()}.tmp`;fs.writeFileSync(t,JSON.stringify(obj,null,2),'utf8');fs.renameSync(t,file)}
-function authFileInfoV56(file,authDir,kind='users'){
+const AUTH_LEGACY_DIRS_V52=scanAuthDirsNearbyV58();
+
+function authFileInfoV58(file,authDir,kind='users'){
   const x=readJsonFileV48(file,null);let mtime=0;try{mtime=fs.statSync(file).mtimeMs}catch(_){}
-  const valid=!!(x&&Array.isArray(x.users));return{file,authDir,kind,data:valid?x:null,count:valid?x.users.length:0,mtime,valid};
+  const valid=!!(x&&Array.isArray(x.users));
+  return {file,authDir,kind,data:valid?x:null,count:valid?x.users.length:0,mtime,valid};
 }
-function authDbCandidatesV56(){
+function authDbCandidatesV58(){
   const rows=[];
-  for(const dir of scanAuthDirsNearbyV56()){
-    rows.push(authFileInfoV56(path.join(dir,'users.json'),dir,'users'));
-    rows.push(authFileInfoV56(path.join(dir,'users.json.prev'),dir,'prev'));
+  for(const dir of scanAuthDirsNearbyV58()){
+    rows.push(authFileInfoV58(path.join(dir,'users.json'),dir,'users'));
+    rows.push(authFileInfoV58(path.join(dir,'users.json.prev'),dir,'prev'));
     try{
       const b=path.join(dir,'_backups');
-      if(fs.existsSync(b))for(const n of fs.readdirSync(b).filter(n=>/^users-.*\.json$/i.test(n)).sort().slice(-40))rows.push(authFileInfoV56(path.join(b,n),dir,'backup'));
+      if(fs.existsSync(b)){
+        for(const n of fs.readdirSync(b).filter(n=>/^users-.*\.json$/i.test(n)).sort().slice(-80)){
+          rows.push(authFileInfoV58(path.join(b,n),dir,'backup'));
+        }
+      }
     }catch(_){}
   }
   return rows.filter(x=>x.valid);
 }
-function bestAuthDbV56(){return authDbCandidatesV56().filter(x=>x.count>0).sort((a,b)=>b.count-a.count||b.mtime-a.mtime)[0]||null}
-const AUTH_COUPANG_ROOT_V52=PERSISTENT_COUPANG_ROOT_V54;
-const EXISTING_AUTH_DB_V56=bestAuthDbV56();
-const AUTH_DIR_V48=process.env.TRADECODE_AUTH_DIR?path.resolve(process.env.TRADECODE_AUTH_DIR):(EXISTING_AUTH_DB_V56?.authDir||path.resolve(path.join(__dirname,'data','auth')));
-const USERS_FILE_V48=path.join(AUTH_DIR_V48,'users.json');
-const SECRET_FILE_V48=path.join(AUTH_DIR_V48,'session-secret.txt');
-const SESSION_COOKIE_V48='tradecode_session';
-const AUTH_BACKUP_DIR_V54=path.join(AUTH_DIR_V48,'_backups');
-const AUTH_LEGACY_DIRS_V52=uniquePathListV56([AUTH_DIR_V48,...scanAuthDirsNearbyV56()]);
-fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
+function bestAuthDbV58(){
+  return authDbCandidatesV58().filter(x=>x.count>0).sort((a,b)=>b.count-a.count||b.mtime-a.mtime)[0]||null;
+}
+function authInitFlagExistsV58(){
+  const dirs=scanAuthDirsNearbyV58();
+  for(const dir of dirs){
+    try{if(fs.existsSync(path.join(dir,'initialized.flag')))return true}catch(_){}
+  }
+  return false;
+}
+function authHistoryExistsV58(){
+  const canonical=authFileInfoV58(USERS_FILE_V48,AUTH_DIR_V48,'users');
+  return canonical.count>0 || authDbCandidatesV58().some(x=>x.count>0) || authInitFlagExistsV58();
+}
+function writeAuthInitFlagV58(){
+  try{
+    fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
+    fs.writeFileSync(AUTH_INIT_FLAG_V58,`initialized=${new Date().toISOString()}\n`,'utf8');
+  }catch(e){console.warn('[v58 auth] 초기화 표식 저장 실패:',e.message)}
+}
 function backupAuthUsersV54(){
   try{
     if(!fs.existsSync(USERS_FILE_V48))return;
@@ -156,52 +200,98 @@ function backupAuthUsersV54(){
     const stamp=new Date().toISOString().replace(/[:.]/g,'-');
     fs.copyFileSync(USERS_FILE_V48,path.join(AUTH_BACKUP_DIR_V54,`users-${stamp}.json`));
     const rows=fs.readdirSync(AUTH_BACKUP_DIR_V54).filter(x=>/^users-.*\.json$/.test(x)).sort();
-    while(rows.length>50){const x=rows.shift();try{fs.unlinkSync(path.join(AUTH_BACKUP_DIR_V54,x))}catch(_){}}
-  }catch(e){console.warn('[v56 auth] 계정 백업 실패:',e.message)}
+    while(rows.length>80){const x=rows.shift();try{fs.unlinkSync(path.join(AUTH_BACKUP_DIR_V54,x))}catch(_){}}
+  }catch(e){console.warn('[v58 auth] 계정 백업 실패:',e.message)}
 }
-function authCandidateV52(dir){return authFileInfoV56(path.join(dir,'users.json'),dir,'users')}
-function authHistoryExistsV56(){return authDbCandidatesV56().some(x=>x.count>0)}
-function recoverAuthFilesV52(){
+function recoverAuthFilesV58(){
   try{
     fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
-    const canonical=authFileInfoV56(USERS_FILE_V48,AUTH_DIR_V48,'users');
-    const best=bestAuthDbV56();
-    if(best&&best.count>0&&(!canonical.valid||canonical.count===0||best.count>canonical.count||(best.count===canonical.count&&best.mtime>canonical.mtime+1000))&&path.resolve(best.file)!==path.resolve(USERS_FILE_V48)){
-      if(canonical.valid&&canonical.count>0)backupAuthUsersV54();
-      fs.copyFileSync(best.file,USERS_FILE_V48);
-      const bestSecret=path.join(best.authDir,'session-secret.txt');
-      if(fs.existsSync(bestSecret))try{fs.copyFileSync(bestSecret,SECRET_FILE_V48)}catch(_){}
-      console.log(`[v56 auth] 기존 계정 ${best.count}개 복구: ${best.file} -> ${USERS_FILE_V48}`);
+    const canonical=authFileInfoV58(USERS_FILE_V48,AUTH_DIR_V48,'users');
+
+    // 중요: 정본에 계정이 이미 있으면 절대로 다른 발견 위치로 갈아타지 않습니다.
+    if(canonical.count>0){
+      writeAuthInitFlagV58();
+    }else{
+      const best=bestAuthDbV58();
+      if(best&&best.count>0&&path.resolve(best.file)!==path.resolve(USERS_FILE_V48)){
+        fs.copyFileSync(best.file,USERS_FILE_V48);
+        const bestSecret=path.join(best.authDir,'session-secret.txt');
+        if(fs.existsSync(bestSecret)&&!fs.existsSync(SECRET_FILE_V48)){
+          try{fs.copyFileSync(bestSecret,SECRET_FILE_V48)}catch(_){}
+        }
+        writeAuthInitFlagV58();
+        console.log(`[v58 auth] 기존 계정 ${best.count}개를 고정 인증 저장소로 복구: ${best.file} -> ${USERS_FILE_V48}`);
+      }
     }
+
     if(!fs.existsSync(SECRET_FILE_V48)){
-      const dirs=uniquePathListV56([best?.authDir,...AUTH_LEGACY_DIRS_V52]);
-      for(const dir of dirs){const f=path.join(dir,'session-secret.txt');if(path.resolve(f)===path.resolve(SECRET_FILE_V48))continue;try{if(fs.existsSync(f)&&fs.readFileSync(f,'utf8').trim()){fs.copyFileSync(f,SECRET_FILE_V48);break}}catch(_){}}
+      const best=bestAuthDbV58();
+      const dirs=uniquePathListV58([best?.authDir,...scanAuthDirsNearbyV58()]);
+      for(const dir of dirs){
+        const f=path.join(dir,'session-secret.txt');
+        if(path.resolve(f)===path.resolve(SECRET_FILE_V48))continue;
+        try{
+          if(fs.existsSync(f)&&fs.readFileSync(f,'utf8').trim()){
+            fs.copyFileSync(f,SECRET_FILE_V48);break;
+          }
+        }catch(_){}
+      }
     }
-    try{atomicJsonV48(path.join(AUTH_DIR_V48,'storage-location.json'),{version:56,authDir:AUTH_DIR_V48,usersFile:USERS_FILE_V48,coupangRoot:PERSISTENT_COUPANG_ROOT_V54,checkedAt:Date.now()})}catch(_){}
-  }catch(e){console.warn('[v56 auth] 기존 계정 자동 연결 실패:',e.message)}
+    try{
+      atomicJsonV48(path.join(AUTH_DIR_V48,'storage-location.json'),{
+        version:58,canonical:true,authDir:AUTH_DIR_V48,usersFile:USERS_FILE_V48,
+        coupangRoot:PERSISTENT_COUPANG_ROOT_V54,checkedAt:Date.now()
+      });
+    }catch(_){}
+  }catch(e){console.warn('[v58 auth] 기존 계정 자동 복구 실패:',e.message)}
 }
-function mirrorAuthFilesV56(){
-  const mirrors=uniquePathListV56([path.join(__dirname,'data','auth'),path.join(PERSISTENT_COUPANG_ROOT_V54,'_auth')]);
+function mirrorAuthFilesV58(){
+  const mirrors=uniquePathListV58([
+    path.join(__dirname,'data','coupang-shared','_auth'),
+    path.join(PERSISTENT_COUPANG_ROOT_V54,'_auth')
+  ]);
   for(const dir of mirrors){
     try{
       if(path.resolve(dir)===path.resolve(AUTH_DIR_V48))continue;
       fs.mkdirSync(dir,{recursive:true});
       if(fs.existsSync(USERS_FILE_V48))fs.copyFileSync(USERS_FILE_V48,path.join(dir,'users.json'));
       if(fs.existsSync(SECRET_FILE_V48))fs.copyFileSync(SECRET_FILE_V48,path.join(dir,'session-secret.txt'));
-    }catch(e){console.warn('[v56 auth] 인증 미러 저장 실패:',dir,e.message)}
+      if(fs.existsSync(AUTH_INIT_FLAG_V58))fs.copyFileSync(AUTH_INIT_FLAG_V58,path.join(dir,'initialized.flag'));
+    }catch(e){console.warn('[v58 auth] 인증 미러 저장 실패:',dir,e.message)}
   }
 }
-recoverAuthFilesV52();
+// 기존 함수명은 뒤쪽 코드 호환용 별칭입니다.
+function bestAuthDbV56(){return bestAuthDbV58()}
+function authHistoryExistsV56(){return authHistoryExistsV58()}
+function recoverAuthFilesV52(){return recoverAuthFilesV58()}
+function mirrorAuthFilesV56(){return mirrorAuthFilesV58()}
+
+recoverAuthFilesV58();
 function usersV48(){
-  let x=readJsonFileV48(USERS_FILE_V48,{version:48,users:[]});
-  if(!x||!Array.isArray(x.users)||x.users.length===0){recoverAuthFilesV52();x=readJsonFileV48(USERS_FILE_V48,{version:48,users:[]})}
-  return x&&Array.isArray(x.users)?x:{version:48,users:[]}
+  let x=readJsonFileV48(USERS_FILE_V48,{version:58,users:[]});
+  if(!x||!Array.isArray(x.users)||x.users.length===0){
+    recoverAuthFilesV58();
+    x=readJsonFileV48(USERS_FILE_V48,{version:58,users:[]});
+  }
+  return x&&Array.isArray(x.users)?x:{version:58,users:[]}
 }
-function saveUsersV48(x){backupAuthUsersV54();atomicJsonV48(USERS_FILE_V48,{version:56,users:x.users||[]});mirrorAuthFilesV56()}
-function secretV48(){try{const x=fs.readFileSync(SECRET_FILE_V48,'utf8').trim();if(x)return x}catch(_){}const x=crypto.randomBytes(48).toString('hex');fs.writeFileSync(SECRET_FILE_V48,x,{mode:0o600});return x}
+function saveUsersV48(x){
+  backupAuthUsersV54();
+  atomicJsonV48(USERS_FILE_V48,{version:58,users:x.users||[]});
+  if((x.users||[]).length)writeAuthInitFlagV58();
+  mirrorAuthFilesV58();
+}
+function secretV48(){
+  try{const x=fs.readFileSync(SECRET_FILE_V48,'utf8').trim();if(x)return x}catch(_){}
+  const x=crypto.randomBytes(48).toString('hex');
+  fs.mkdirSync(path.dirname(SECRET_FILE_V48),{recursive:true});
+  fs.writeFileSync(SECRET_FILE_V48,x,{mode:0o600});
+  return x
+}
 const AUTH_SECRET_V48=String(process.env.TRADECODE_AUTH_SECRET||'').trim()||secretV48();
-try{mirrorAuthFilesV56()}catch(_){}
-console.log(`[v56 auth] 인증 저장소: ${AUTH_DIR_V48} / 계정 ${usersV48().users.length}개`);
+try{mirrorAuthFilesV58()}catch(_){}
+console.log(`[v58 auth] 고정 인증 저장소: ${AUTH_DIR_V48} / 계정 ${usersV48().users.length}개`);
+
 function normUserV48(v){return String(v||'').trim().toLowerCase().replace(/[^a-z0-9._-]/g,'').slice(0,60)}
 function hashPwV48(pw,salt=crypto.randomBytes(16).toString('hex')){const hash=crypto.scryptSync(String(pw),salt,64).toString('hex');return{salt,hash}}
 function verifyPwV48(pw,u){try{const h=crypto.scryptSync(String(pw),u.salt,64);return crypto.timingSafeEqual(h,Buffer.from(u.passwordHash,'hex'))}catch(_){return false}}
@@ -219,9 +309,9 @@ function isAdminV48(req){return req.authUser&&req.authUser.role==='admin'}
 function userDataRootV48(req){const u=req.authUser;if(!u)throw new Error('login required');if(u.legacyOwner)return null;const parent=process.env.TRADECODE_USER_DATA_DIR?path.resolve(process.env.TRADECODE_USER_DATA_DIR):path.join(path.dirname(PERSISTENT_COUPANG_ROOT_V54),'users');return path.join(parent,'v50-private',u.id)}
 function ensureUserRootV48(req){const r=userDataRootV48(req);if(r)fs.mkdirSync(r,{recursive:true});return r}
 
-app.get('/api/auth/me',(req,res)=>{const u=authUserV48(req),db=usersV48(),history=authHistoryExistsV56();res.set('Cache-Control','no-store');res.json({ok:true,authenticated:!!u,user:u?publicUserV48(u):null,needsBootstrap:db.users.length===0&&!history,recoveryRequired:db.users.length===0&&history,authVersion:56})});
-app.get('/api/auth/storage-status',(req,res)=>{const db=usersV48(),best=bestAuthDbV56();res.set('Cache-Control','no-store');res.json({ok:true,version:56,userCount:db.users.length,historyFound:authHistoryExistsV56(),bestCandidateCount:best?best.count:0})});
-app.get('/api/auth/safety-status',(req,res)=>{const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,error:'로그인이 필요합니다.'});if(u.role!=='admin')return res.status(403).json({ok:false,error:'관리자만 확인할 수 있습니다.'});const db=usersV48();res.set('Cache-Control','no-store');res.json({ok:true,version:54,persistentRoot:PERSISTENT_COUPANG_ROOT_V54,authDir:AUTH_DIR_V48,userCount:db.users.length,usersFileExists:fs.existsSync(USERS_FILE_V48),prevBackupExists:fs.existsSync(USERS_FILE_V48+'.prev'),backupDir:AUTH_BACKUP_DIR_V54})});
+app.get('/api/auth/me',(req,res)=>{const u=authUserV48(req),db=usersV48(),history=authHistoryExistsV56();res.set('Cache-Control','no-store');res.json({ok:true,authenticated:!!u,user:u?publicUserV48(u):null,needsBootstrap:db.users.length===0&&!history,recoveryRequired:db.users.length===0&&history,authVersion:58})});
+app.get('/api/auth/storage-status',(req,res)=>{const db=usersV48(),best=bestAuthDbV56();res.set('Cache-Control','no-store');res.json({ok:true,version:58,userCount:db.users.length,historyFound:authHistoryExistsV56(),bestCandidateCount:best?best.count:0,canonicalAuthDir:AUTH_DIR_V48,usersFile:USERS_FILE_V48,initializedFlag:authInitFlagExistsV58()})});
+app.get('/api/auth/safety-status',(req,res)=>{const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,error:'로그인이 필요합니다.'});if(u.role!=='admin')return res.status(403).json({ok:false,error:'관리자만 확인할 수 있습니다.'});const db=usersV48();res.set('Cache-Control','no-store');res.json({ok:true,version:58,persistentRoot:PERSISTENT_COUPANG_ROOT_V54,authDir:AUTH_DIR_V48,userCount:db.users.length,usersFileExists:fs.existsSync(USERS_FILE_V48),prevBackupExists:fs.existsSync(USERS_FILE_V48+'.prev'),backupDir:AUTH_BACKUP_DIR_V54})});
 app.post('/api/auth/bootstrap',(req,res)=>{try{recoverAuthFilesV52();const db=usersV48();if(db.users.length||authHistoryExistsV56())return res.status(409).json({ok:false,error:'기존 관리자/사용자 계정 또는 계정 백업이 발견되었습니다. 새 관리자 계정을 만들지 않고 기존 계정을 복구합니다. 기존 아이디로 로그인해 주세요.'});const username=normUserV48(req.body?.username),displayName=String(req.body?.displayName||username).trim().slice(0,80),pw=String(req.body?.password||'');if(username.length<3)return res.status(400).json({ok:false,error:'아이디는 3자 이상이어야 합니다.'});if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:'admin',legacyOwner:true,approved:true,approvedAt:Date.now(),disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u),legacyDataAssigned:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.post('/api/auth/login',(req,res)=>{const username=normUserV48(req.body?.username),pw=String(req.body?.password||'');const u=usersV48().users.find(x=>x.username===username&&!x.disabled);if(!u||!verifyPwV48(pw,u))return res.status(401).json({ok:false,error:'아이디 또는 비밀번호가 올바르지 않습니다.'});if(!u.legacyOwner&&u.approved===false)return res.status(403).json({ok:false,code:'APPROVAL_REQUIRED',error:'관리자 승인 대기 중인 계정입니다. 관리자에게 승인을 요청해 주세요.'});setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u)})});
 app.post('/api/auth/logout',(req,res)=>{clearSessionV48(req,res);res.json({ok:true})});
@@ -1009,7 +1099,6 @@ function saveProjectsV18(index){
   writeAtomic(COUPANG_PROJECTS_PATH,JSON.stringify({version:53,projects}));
   // 마지막 정상 비어있지 않은 인덱스를 별도 안전본으로 보관합니다.
   if(projects.length){try{writeAtomic(COUPANG_PROJECTS_SAFE_V53,JSON.stringify({version:53,projects}))}catch(_){}}
-  try{if(typeof saveProjectRegistryV57==='function')saveProjectRegistryV57(projects)}catch(_){}
 }
 function recoverProjectsIndexV53(){
   ensureCoupangSharedDir();fs.mkdirSync(COUPANG_PROJECTS_DIR,{recursive:true});
@@ -1031,9 +1120,8 @@ function recoverProjectsIndexV53(){
   return {version:53,projects:rebuilt};
 }
 function readProjectsV18(){
-  try{
-    if(typeof mergeAllCoupangRootsV57==='function')return mergeAllCoupangRootsV57();
-  }catch(e){console.warn('[v57 coupang safety] 전체 저장소 병합 실패, 현재 저장소로 폴백:',e.message)}
+  const raw=validProjectIndexV53(readJsonSafe(COUPANG_PROJECTS_PATH));
+  if(raw&&raw.projects.length)return recoverProjectsIndexV53();
   return recoverProjectsIndexV53();
 }
 function newProjectIdV18(){return 'p_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);}
@@ -1140,166 +1228,6 @@ function recoverCoupangFromAlternateRootsV55(){
   return {idx,recovered:idx.projects.length>0,sourceRoot:best.root};
 }
 
-
-// =====================================================================
-// v57: 모든 과거 쿠팡 저장루트 병합 + 프로젝트 이름/폴더 영구 복구
-// 문제: 한 저장루트에 일부 프로젝트만 남아 있으면 v55는 "비어 있지 않다"고 판단해
-//      다른 루트의 최신 프로젝트를 가져오지 않았습니다.
-// 해결: 서버 시작/목록 조회/저장 전마다 발견 가능한 모든 루트의 프로젝트를 ID 기준으로
-//      합치고, 현재 루트에 없는 프로젝트 폴더를 복사합니다. 같은 ID가 여러 루트에 있으면
-//      더 최신 파일만 안전백업 후 가져옵니다. 어떤 원본도 삭제하지 않습니다.
-// =====================================================================
-const V57_PROJECT_REGISTRY_FILE=path.join(AUTH_DIR_V48,'coupang-project-registry.json');
-const V57_PROJECT_REGISTRY_PREV=V57_PROJECT_REGISTRY_FILE+'.prev';
-function readProjectRegistryV57(){
-  const x=validProjectIndexV53(readJsonSafe(V57_PROJECT_REGISTRY_FILE))||validProjectIndexV53(readJsonSafe(V57_PROJECT_REGISTRY_PREV));
-  return x&&Array.isArray(x.projects)?x:{version:57,projects:[]};
-}
-function saveProjectRegistryV57(projects){
-  try{
-    fs.mkdirSync(path.dirname(V57_PROJECT_REGISTRY_FILE),{recursive:true});
-    if(fs.existsSync(V57_PROJECT_REGISTRY_FILE))try{fs.copyFileSync(V57_PROJECT_REGISTRY_FILE,V57_PROJECT_REGISTRY_PREV)}catch(_){}
-    const payload={version:57,updatedAt:Date.now(),projects:(projects||[]).map(p=>({id:p.id,name:p.name||'',status:p.status==='archived'?'archived':'active',createdAt:Number(p.createdAt||0),updatedAt:Number(p.updatedAt||0)}))};
-    atomicJsonV48(V57_PROJECT_REGISTRY_FILE,payload);
-    try{const mirror=path.join(COUPANG_SHARED_DIR,'_auth','coupang-project-registry.json');atomicJsonV48(mirror,payload)}catch(_){}
-  }catch(e){console.warn('[v57 coupang safety] 프로젝트 이름 레지스트리 저장 실패:',e.message)}
-}
-function v57ProjectIndexAtRoot(root){
-  const rows=[];
-  for(const f of ['projects.json','projects.json.safe','projects.json.prev']){
-    const x=validProjectIndexV53(readJsonSafe(path.join(root,f)));
-    if(x&&Array.isArray(x.projects))rows.push(...x.projects);
-  }
-  try{
-    const b=path.join(root,'_project-index-backups');
-    if(fs.existsSync(b)){
-      const names=fs.readdirSync(b).filter(n=>/^projects-.*\.json$/i.test(n)).sort().slice(-30);
-      for(const n of names){const x=validProjectIndexV53(readJsonSafe(path.join(b,n)));if(x?.projects)rows.push(...x.projects)}
-    }
-  }catch(_){}
-  const map=new Map();
-  for(const raw of rows){
-    if(!raw||!safeProjectIdV18(raw.id))continue;
-    const prev=map.get(raw.id);
-    const nu={...raw,id:String(raw.id),name:String(raw.name||'').trim(),status:raw.status==='archived'?'archived':'active',createdAt:Number(raw.createdAt||0),updatedAt:Number(raw.updatedAt||0)};
-    if(!prev || Number(nu.updatedAt||0)>=Number(prev.updatedAt||0))map.set(nu.id,{...(prev||{}),...nu});
-  }
-  return map;
-}
-function v57ProjectDirsAtRoot(root){
-  try{
-    const d=path.join(root,'projects');if(!fs.existsSync(d))return [];
-    return fs.readdirSync(d,{withFileTypes:true}).filter(e=>e.isDirectory()&&safeProjectIdV18(e.name)).map(e=>e.name);
-  }catch(_){return []}
-}
-function v57FileStamp(file){
-  try{
-    let updated=0,size=0;const st=fs.statSync(file);size=st.size;updated=st.mtimeMs;
-    if(/\.json$/i.test(file)){
-      const x=readJsonSafe(file);const n=Number(x?.updatedAt||x?.savedAt||x?.state?.savedAt||0);if(n)updated=Math.max(updated,n);
-    }
-    return {exists:true,updated,size};
-  }catch(_){return {exists:false,updated:0,size:0}}
-}
-function v57CopyNewerFile(src,dst){
-  const a=v57FileStamp(src),b=v57FileStamp(dst);if(!a.exists||!a.size)return false;
-  if(b.exists && a.updated<=b.updated+1500)return false;
-  fs.mkdirSync(path.dirname(dst),{recursive:true});
-  if(b.exists){
-    try{fs.copyFileSync(dst,dst+'.v57-prev')}catch(_){}
-  }
-  fs.copyFileSync(src,dst);return true;
-}
-function v57MergeProjectDir(srcRoot,dstRoot,id){
-  const src=path.join(srcRoot,'projects',id),dst=path.join(dstRoot,'projects',id);if(!fs.existsSync(src))return false;
-  fs.mkdirSync(dst,{recursive:true});let changed=false;
-  for(const rel of ['state.json','source.xlsx.bin','source.meta.json','workbookSnapshot.xlsx.bin','workbookSnapshot.meta.json']){
-    try{changed=v57CopyNewerFile(path.join(src,rel),path.join(dst,rel))||changed}catch(_){}
-  }
-  // 미래 버전에서 추가된 파일도 현재 폴더에 없다면 보존용으로 복사합니다.
-  try{
-    for(const ent of fs.readdirSync(src,{withFileTypes:true})){
-      if(!ent.isFile())continue;const d=path.join(dst,ent.name);if(!fs.existsSync(d)){fs.copyFileSync(path.join(src,ent.name),d);changed=true}
-    }
-  }catch(_){}
-  return changed;
-}
-function v57AllCoupangRoots(){
-  const roots=[];const add=v=>{try{if(v){const r=path.resolve(v);if(!roots.includes(r))roots.push(r)}}catch(_){}};
-  for(const r of nearbyCoupangRootsV55())add(r);add(COUPANG_SHARED_DIR);
-  // 이전 버전이 기록해 둔 선택경로/병합경로 힌트도 계속 따라갑니다.
-  for(let round=0;round<3;round++){
-    for(const root of [...roots]){
-      for(const f of [path.join(root,'coupang-storage-location.json'),path.join(root,'_auth','coupang-storage-location.json'),path.join(root,'_auth','storage-location.json')]){
-        try{
-          const x=readJsonSafe(f);if(!x)continue;
-          add(x.selectedRoot);add(x.coupangRoot);add(x.storageRoot);
-          for(const row of x.sourceRoots||[])add(typeof row==='string'?row:row?.root);
-        }catch(_){}
-      }
-    }
-  }
-  return roots;
-}
-function v57DeletedProjectIds(){
-  const ids=new Set();
-  try{
-    if(fs.existsSync(COUPANG_PROJECTS_TRASH_V53)){
-      for(const e of fs.readdirSync(COUPANG_PROJECTS_TRASH_V53,{withFileTypes:true})){
-        if(!e.isDirectory())continue;const m=e.name.match(/^([A-Za-z0-9_-]{3,80})_\d+$/);if(m)ids.add(m[1]);
-      }
-    }
-  }catch(_){}
-  return [...ids];
-}
-function mergeAllCoupangRootsV57(){
-  ensureCoupangSharedDir();fs.mkdirSync(COUPANG_PROJECTS_DIR,{recursive:true});
-  const roots=v57AllCoupangRoots();if(!roots.includes(COUPANG_SHARED_DIR))roots.unshift(COUPANG_SHARED_DIR);
-  const deleted=new Set(v57DeletedProjectIds());
-  const meta=new Map();const sources=[];
-  const registry=readProjectRegistryV57();
-  for(const p of registry.projects||[]){if(p&&safeProjectIdV18(p.id)&&!deleted.has(p.id))meta.set(p.id,p)}
-  for(const root of roots){
-    const idx=v57ProjectIndexAtRoot(root),dirs=v57ProjectDirsAtRoot(root);if(!idx.size&&!dirs.length)continue;
-    sources.push({root,indexCount:idx.size,dirCount:dirs.length});
-    for(const [id,p] of idx){if(deleted.has(id))continue;const old=meta.get(id);if(!old||Number(p.updatedAt||0)>=Number(old.updatedAt||0))meta.set(id,p)}
-    for(const id of dirs){
-      if(deleted.has(id))continue;
-      try{v57MergeProjectDir(root,COUPANG_SHARED_DIR,id)}catch(e){console.warn('[v57 coupang safety] 프로젝트 병합 실패',id,root,e.message)}
-      if(!meta.has(id))meta.set(id,{id,name:'',status:'active',createdAt:0,updatedAt:0});
-    }
-  }
-  // 현재 저장소의 실제 폴더를 기준으로 최종 목록을 만들되, 모든 과거 인덱스의 이름/상태를 보존합니다.
-  const currentDirs=listProjectDirsV53();const rows=[];
-  for(const id of currentDirs){if(deleted.has(id))continue;rows.push(deriveProjectV53(id,meta.get(id)||{}))}
-  rows.sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
-  const current=validProjectIndexV53(readJsonSafe(COUPANG_PROJECTS_PATH))||{projects:[]};
-  const sig=a=>(a||[]).map(x=>`${x.id}|${x.name}|${x.status}|${Number(x.updatedAt||0)}`).sort().join('\n');
-  if(sig(current.projects)!==sig(rows)){
-    console.warn(`[v57 coupang safety] 전체 저장소 병합: ${current.projects.length}개 -> ${rows.length}개 / 저장소 ${sources.length}곳`);
-    saveProjectsV18({version:57,projects:rows});
-  }else{
-    saveProjectRegistryV57(rows);
-  }
-  try{writeAtomic(path.join(COUPANG_SHARED_DIR,'coupang-storage-location.json'),JSON.stringify({version:57,selectedRoot:COUPANG_SHARED_DIR,projectCount:rows.length,sourceRoots:sources,checkedAt:Date.now()}))}catch(_){}
-  return {version:57,projects:rows,_v57:{sourceRoots:sources,deletedIds:[...deleted]}};
-}
-function v57ProjectAudit(){
-  const roots=v57AllCoupangRoots();if(!roots.includes(COUPANG_SHARED_DIR))roots.unshift(COUPANG_SHARED_DIR);
-  return roots.map(root=>{
-    const idx=v57ProjectIndexAtRoot(root),dirs=v57ProjectDirsAtRoot(root);const names=[];
-    for(const [id,p] of idx)names.push({id,name:p.name||'',updatedAt:Number(p.updatedAt||0)});
-    for(const id of dirs)if(!idx.has(id))names.push({id,name:'(폴더만 발견)',updatedAt:0});
-    return {root,indexCount:idx.size,dirCount:dirs.length,projects:names.sort((a,b)=>b.updatedAt-a.updatedAt)};
-  }).filter(x=>x.indexCount||x.dirCount);
-}
-try{const _v57=mergeAllCoupangRootsV57();console.log(`[v57 coupang safety] 전체 저장소 병합 완료: ${_v57.projects.length}개`)}catch(e){console.warn('[v57 coupang safety] 시작 병합 실패:',e.message)}
-
-app.get('/api/coupang-shared/project-audit',coupangAuth,(req,res)=>{
-  if(!req.authUser||!req.authUser.legacyOwner||req.authUser.role!=='admin')return res.status(403).json({ok:false,error:'기존 관리자 계정만 확인할 수 있습니다.'});
-  const idx=mergeAllCoupangRootsV57();res.set('Cache-Control','no-store');res.json({ok:true,version:57,storageRoot:COUPANG_SHARED_DIR,mergedCount:idx.projects.length,deletedIds:v57DeletedProjectIds(),stores:v57ProjectAudit()});
-});
-
 app.get('/api/coupang-shared/safety-status',coupangAuth,(req,res)=>{
   if(!req.authUser||req.authUser.role!=='admin')return res.status(403).json({ok:false,error:'관리자만 확인할 수 있습니다.'});
   const idx=recoverProjectsIndexV53();
@@ -1308,10 +1236,12 @@ app.get('/api/coupang-shared/safety-status',coupangAuth,(req,res)=>{
 });
 
 app.get('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
-  const idx=mergeAllCoupangRootsV57();
-  const rows=[...(idx.projects||[])].sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
+  let recovered={idx:migrateLegacyProjectV18(),recovered:false,sourceRoot:COUPANG_SHARED_DIR};
+  if(!recovered.idx.projects.length)recovered=recoverCoupangFromAlternateRootsV55();
+  const idx=recovered.idx||{projects:[]};
+  const rows=[...idx.projects].sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
   res.set('Cache-Control','no-store');
-  res.json({ok:true,projects:rows,safety:{version:57,empty:rows.length===0,storageRoot:COUPANG_SHARED_DIR,projectFolderCount:listProjectDirsV53().length,mergedAcrossRoots:true,sourceRoots:idx._v57?.sourceRoots||[],deletedProjectIds:idx._v57?.deletedIds||[]}});
+  res.json({ok:true,projects:rows,safety:{version:55,empty:rows.length===0,storageRoot:COUPANG_SHARED_DIR,projectFolderCount:listProjectDirsV53().length,recoveredFromAlternate:!!recovered.recovered,sourceRoot:recovered.sourceRoot||''}});
 });
 app.post('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
   try{const idx=migrateLegacyProjectV18(),id=newProjectIdV18(),now=Date.now(),name=String(req.body?.name||'').trim().slice(0,120)||`새 선적 작업 ${new Date().toLocaleDateString('ko-KR')}`;const p={id,name,status:'active',createdAt:now,updatedAt:now};fs.mkdirSync(projectPathsV18(id).dir,{recursive:true});idx.projects.push(p);saveProjectsV18(idx);res.json({ok:true,project:p})}catch(err){res.status(500).json({ok:false,error:err.message})}
