@@ -635,6 +635,7 @@ app.put('/api/coupang-shared/state', coupangAuth,
     try {
       const state = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
       const updatedAt = Date.now();
+      backupFileV46(COUPANG_STATE_PATH);
       writeAtomic(COUPANG_STATE_PATH, JSON.stringify({ ok: true, updatedAt, state }));
       res.set('Cache-Control', 'no-store');
       res.json({ ok: true, updatedAt });
@@ -759,7 +760,7 @@ app.delete('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
 app.get('/api/coupang-shared/projects/:projectId/status',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const {paths}=found;res.set('Cache-Control','no-store');res.json({ok:true,state:projectStateStatusV18(paths),source:projectBlobStatusV18(paths,'source'),workbookSnapshot:projectBlobStatusV18(paths,'workbookSnapshot')})});
 app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
 app.put('/api/coupang-shared/projects/:projectId/state',coupangAuth,express.text({type:['text/plain','application/json'],limit:'15mb'}),(req,res)=>{
-  try{const found=getProjectOr404V18(req,res);if(!found)return;const state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{}),updatedAt=Date.now();writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
+  try{const found=getProjectOr404V18(req,res);if(!found)return;const state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{}),updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
 });
 app.delete('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;try{unlinkSafe(found.paths.state);touchProjectV18(found.id);res.json({ok:true})}catch(err){res.status(500).json({ok:false,error:err.message})}});
 
@@ -1134,6 +1135,95 @@ app.get('/barcode-label', (req, res) => {
 });
   app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+
+// =====================================================================
+// v46: 모든 주요 작업 화면의 공용 서버 작업상태 저장소
+// - 바코드 라벨 현재 작성중 상태
+// - 발주 바코드 출력 현재 작업상태
+// - 선적 리스트 작성 보관함(복수 작업 + 원본 엑셀)
+// 쿠팡 입고 작업은 기존 /api/coupang-shared 프로젝트 저장소를 그대로 사용합니다.
+// 저장 위치는 COUPANG_SHARED_DIR 내부라 기존 공용 선적작업과 같은 영구 디스크를 사용합니다.
+// =====================================================================
+const SHARED_WORKSPACE_DIR_V46 = process.env.SHARED_WORKSPACE_DIR || path.join(COUPANG_SHARED_DIR, '_shared-workspaces');
+const WORKSPACE_KEYS_V46 = new Set(['barcode-label','order-barcode']);
+function ensureDirV46(dir){ fs.mkdirSync(dir,{recursive:true}); }
+function safeWorkspaceKeyV46(v){ v=String(v||''); return WORKSPACE_KEYS_V46.has(v)?v:null; }
+function backupFileV46(file){try{if(fs.existsSync(file))fs.copyFileSync(file,file+'.prev')}catch(_){}}
+function writeAtomicV46(file,data){
+  ensureDirV46(path.dirname(file));
+  try{ if(fs.existsSync(file)) fs.copyFileSync(file,file+'.prev'); }catch(_){}
+  const tmp=`${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp,data);
+  fs.renameSync(tmp,file);
+}
+function workspaceFileV46(key){ return path.join(SHARED_WORKSPACE_DIR_V46,`${key}.json`); }
+function readWorkspaceV46(key){ return readJsonSafe(workspaceFileV46(key)); }
+
+app.get('/api/shared-workspace/:key',coupangAuth,(req,res)=>{
+  const key=safeWorkspaceKeyV46(req.params.key);if(!key)return res.status(404).json({ok:false,error:'지원하지 않는 작업 저장소입니다.'});
+  const row=readWorkspaceV46(key);res.set('Cache-Control','no-store');
+  if(!row)return res.status(404).json({ok:false,error:'저장된 작업이 없습니다.'});
+  res.json(row);
+});
+function saveWorkspaceHandlerV46(req,res){
+  const key=safeWorkspaceKeyV46(req.params.key);if(!key)return res.status(404).json({ok:false,error:'지원하지 않는 작업 저장소입니다.'});
+  try{
+    const state=(req.body&&typeof req.body==='object')?req.body?.state:req.body;
+    if(!state||typeof state!=='object')return res.status(400).json({ok:false,error:'저장할 작업 상태가 없습니다.'});
+    const updatedAt=Date.now();const row={ok:true,key,updatedAt,state};
+    writeAtomicV46(workspaceFileV46(key),JSON.stringify(row));
+    res.set('Cache-Control','no-store');res.json({ok:true,key,updatedAt});
+  }catch(err){res.status(400).json({ok:false,error:`공용 작업 저장 실패: ${err.message}`})}
+}
+app.put('/api/shared-workspace/:key',coupangAuth,saveWorkspaceHandlerV46);
+app.post('/api/shared-workspace/:key',coupangAuth,saveWorkspaceHandlerV46);
+app.delete('/api/shared-workspace/:key',coupangAuth,(req,res)=>{
+  const key=safeWorkspaceKeyV46(req.params.key);if(!key)return res.status(404).json({ok:false,error:'지원하지 않는 작업 저장소입니다.'});
+  try{unlinkSafe(workspaceFileV46(key));res.json({ok:true})}catch(err){res.status(500).json({ok:false,error:err.message})}
+});
+
+// 선적 리스트 작성 공용 보관함
+const SHIPMENT_VAULT_DIR_V46=path.join(SHARED_WORKSPACE_DIR_V46,'shipment-list-vault');
+const SHIPMENT_VAULT_INDEX_V46=path.join(SHIPMENT_VAULT_DIR_V46,'index.json');
+function safeShipmentDraftIdV46(v){v=String(v||'');return /^[A-Za-z0-9_-]{3,100}$/.test(v)?v:null}
+function shipmentDraftPathsV46(id){const dir=path.join(SHIPMENT_VAULT_DIR_V46,'drafts',id);return{dir,meta:path.join(dir,'meta.json'),blob:path.join(dir,'source.xlsx.bin')}}
+function readShipmentIndexV46(){const x=readJsonSafe(SHIPMENT_VAULT_INDEX_V46);return x&&Array.isArray(x.drafts)?x:{version:46,drafts:[]}}
+function saveShipmentIndexV46(x){writeAtomicV46(SHIPMENT_VAULT_INDEX_V46,JSON.stringify({version:46,drafts:x.drafts||[]}))}
+function cleanShipmentMetaV46(raw={},id=''){
+  const now=Date.now();const ct=(raw.centerTypes&&typeof raw.centerTypes==='object')?raw.centerTypes:{};
+  const centerTypes={};for(const [k,v] of Object.entries(ct).slice(0,1000))centerTypes[String(k).slice(0,300)]=String(v).slice(0,30);
+  return {
+    id, name:String(raw.name||'선적 리스트').slice(0,180), fileName:String(raw.fileName||'선적리스트.xlsx').slice(0,260),
+    fileType:String(raw.fileType||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').slice(0,160),
+    centerTypes, confirmed:!!raw.confirmed, createdAt:Number(raw.createdAt||now), savedAt:Number(raw.savedAt||now),
+    transferredAt:Number(raw.transferredAt||0), transferredProjectId:String(raw.transferredProjectId||'').slice(0,120),
+    transferredProjectName:String(raw.transferredProjectName||'').slice(0,180),
+    inputNamesV41:Array.isArray(raw.inputNamesV41)?raw.inputNamesV41.slice(0,50).map(x=>String(x).slice(0,260)):[]
+  };
+}
+function upsertShipmentIndexV46(meta,blobSize){
+  const idx=readShipmentIndexV46();let row=idx.drafts.find(x=>x.id===meta.id);
+  const summary={id:meta.id,name:meta.name,fileName:meta.fileName,fileType:meta.fileType,confirmed:meta.confirmed,createdAt:meta.createdAt,savedAt:meta.savedAt,transferredAt:meta.transferredAt,transferredProjectId:meta.transferredProjectId,transferredProjectName:meta.transferredProjectName,inputNamesV41:meta.inputNamesV41||[],blobSize:Number(blobSize??row?.blobSize??0)};
+  if(row)Object.assign(row,summary);else idx.drafts.push(summary);saveShipmentIndexV46(idx);return summary;
+}
+app.get('/api/shipment-list-vault',coupangAuth,(req,res)=>{const idx=readShipmentIndexV46();res.set('Cache-Control','no-store');res.json({ok:true,drafts:[...idx.drafts].sort((a,b)=>Number(b.savedAt||0)-Number(a.savedAt||0))})});
+app.get('/api/shipment-list-vault/:id',coupangAuth,(req,res)=>{const id=safeShipmentDraftIdV46(req.params.id);if(!id)return res.status(404).json({ok:false,error:'잘못된 보관 ID입니다.'});const meta=readJsonSafe(shipmentDraftPathsV46(id).meta);if(!meta)return res.status(404).json({ok:false,error:'보관본을 찾지 못했습니다.'});res.set('Cache-Control','no-store');res.json({ok:true,draft:meta})});
+app.put('/api/shipment-list-vault/:id',coupangAuth,(req,res)=>{
+  const id=safeShipmentDraftIdV46(req.params.id);if(!id)return res.status(404).json({ok:false,error:'잘못된 보관 ID입니다.'});
+  try{const meta=cleanShipmentMetaV46(req.body||{},id),paths=shipmentDraftPathsV46(id);writeAtomicV46(paths.meta,JSON.stringify(meta));const size=fs.existsSync(paths.blob)?fs.statSync(paths.blob).size:0;const summary=upsertShipmentIndexV46(meta,size);res.json({ok:true,draft:summary,updatedAt:Date.now()})}catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+app.get('/api/shipment-list-vault/:id/blob',coupangAuth,(req,res)=>{
+  const id=safeShipmentDraftIdV46(req.params.id);if(!id)return res.status(404).json({ok:false,error:'잘못된 보관 ID입니다.'});const paths=shipmentDraftPathsV46(id),meta=readJsonSafe(paths.meta)||{};if(!fs.existsSync(paths.blob))return res.status(404).json({ok:false,error:'원본 엑셀을 찾지 못했습니다.'});res.set('Cache-Control','no-store');res.set('Content-Type',meta.fileType||'application/octet-stream');res.set('X-File-Name',encodeURIComponent(meta.fileName||'선적리스트.xlsx'));res.sendFile(paths.blob)
+});
+app.put('/api/shipment-list-vault/:id/blob',coupangAuth,express.raw({type:'application/octet-stream',limit:'80mb'}),(req,res)=>{
+  const id=safeShipmentDraftIdV46(req.params.id);if(!id)return res.status(404).json({ok:false,error:'잘못된 보관 ID입니다.'});
+  try{const paths=shipmentDraftPathsV46(id),body=Buffer.isBuffer(req.body)?req.body:Buffer.from(req.body||'');if(!body.length)return res.status(400).json({ok:false,error:'빈 파일은 저장할 수 없습니다.'});ensureDirV46(paths.dir);try{if(fs.existsSync(paths.blob))fs.copyFileSync(paths.blob,paths.blob+'.prev')}catch(_){};writeAtomicV46(paths.blob,body);const meta=readJsonSafe(paths.meta)||cleanShipmentMetaV46({},id);upsertShipmentIndexV46(meta,body.length);res.json({ok:true,size:body.length,updatedAt:Date.now()})}catch(err){res.status(500).json({ok:false,error:err.message})}
+});
+app.delete('/api/shipment-list-vault/:id',coupangAuth,(req,res)=>{
+  const id=safeShipmentDraftIdV46(req.params.id);if(!id)return res.status(404).json({ok:false,error:'잘못된 보관 ID입니다.'});
+  try{fs.rmSync(shipmentDraftPathsV46(id).dir,{recursive:true,force:true});const idx=readShipmentIndexV46();idx.drafts=idx.drafts.filter(x=>x.id!==id);saveShipmentIndexV46(idx);res.json({ok:true})}catch(err){res.status(500).json({ok:false,error:err.message})}
 });
 
 app.listen(PORT, '0.0.0.0', () => {
