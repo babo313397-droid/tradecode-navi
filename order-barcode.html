@@ -225,18 +225,24 @@ td.name{min-width:310px}
 
 <script>
 const MM_TO_PX=96/25.4;
-const LABEL_LIBRARY_KEY='tradecodeSharedLabelCacheV1';
+function tcAccountScopeV50(){
+  let uid='',legacy='0';
+  try{for(const p of String(document.cookie||'').split(';')){const i=p.indexOf('=');if(i<0)continue;const k=p.slice(0,i).trim(),v=decodeURIComponent(p.slice(i+1).trim());if(k==='tradecode_uid')uid=v;if(k==='tradecode_legacy')legacy=v}}catch(_){}
+  return {uid:uid||'unresolved',legacy:legacy==='1'};
+}
+const TC_ACCOUNT_SCOPE_V50=tcAccountScopeV50();
+const LABEL_LIBRARY_KEY=TC_ACCOUNT_SCOPE_V50.legacy?'tradecodeSharedLabelCacheV1':`tradecodeSharedLabelCacheV1:${TC_ACCOUNT_SCOPE_V50.uid}`;
 let orderRows=[];
 let labelLibrary=[];
 let currentOrderProgressKey='';
-const PRINT_PROGRESS_PREFIX='tradecodeOrderPrintProgressV1:';
+const PRINT_PROGRESS_PREFIX=TC_ACCOUNT_SCOPE_V50.legacy?'tradecodeOrderPrintProgressV1:':`tradecodeOrderPrintProgressV1:${TC_ACCOUNT_SCOPE_V50.uid}:`;
 
 const el=id=>document.getElementById(id);
 const norm=v=>String(v??'').trim();
 const normBc=v=>norm(v).toUpperCase();
 
 // v44: 현재 발주 작업 자동 저장/복원
-const ORDER_WORK_KEY='tradecodeOrderBarcodeWorkV44';
+const ORDER_WORK_KEY=TC_ACCOUNT_SCOPE_V50.legacy?'tradecodeOrderBarcodeWorkV44':`tradecodeOrderBarcodeWorkV44:${TC_ACCOUNT_SCOPE_V50.uid}`;
 let currentOrderFileName='';
 let persistTimer=null;
 
@@ -1418,7 +1424,7 @@ window.addEventListener('beforeunload',()=>{try{persistOrderBarcodeWork()}catch(
 initOrderBarcodeV44().then(()=>window.loadOrderServerV46?.()).catch(e=>console.warn('order init',e));
 </script>
 <script id="v46-shared-order-work">
-// ===== v46: 발주 바코드 작업 공용 서버 저장 =====
+// ===== v50: 발주 바코드 작업 계정별 서버 저장 =====
 (function(){
   const API='/api/shared-workspace/order-barcode';
   const localPersistBase=window.persistOrderBarcodeWork;
