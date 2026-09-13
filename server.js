@@ -38,7 +38,7 @@ app.use(express.json({ limit: '5mb' })); // 댓글 + 공용 라벨 JSON 파싱�
 
 
 // =====================================================================
-// v48: 계정별 로그인 + 사용자별 작업공간
+// v50: 계정별 로그인 + 사용자별 작업공간 (직원 데이터 완전 분리)
 // - 기존 데이터는 삭제/이동하지 않습니다.
 // - 최초 생성 관리자(legacyOwner=true)는 기존 저장소를 그대로 사용합니다.
 // - 이후 계정은 data/users/<userId>/ 아래에 분리 저장합니다.
@@ -61,13 +61,14 @@ function b64uV48(x){return Buffer.from(x).toString('base64url')}
 function signSessionV48(u){const payload=b64uV48(JSON.stringify({uid:u.id,exp:Date.now()+1000*60*60*24*14}));const sig=crypto.createHmac('sha256',AUTH_SECRET_V48).update(payload).digest('base64url');return payload+'.'+sig}
 function parseCookiesV48(req){const out={};String(req.headers.cookie||'').split(';').forEach(p=>{const i=p.indexOf('=');if(i>0)out[p.slice(0,i).trim()]=decodeURIComponent(p.slice(i+1).trim())});return out}
 function authUserV48(req){try{const tok=parseCookiesV48(req)[SESSION_COOKIE_V48]||'';const [payload,sig]=tok.split('.');if(!payload||!sig)return null;const expected=crypto.createHmac('sha256',AUTH_SECRET_V48).update(payload).digest('base64url');if(sig.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return null;const d=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));if(Number(d.exp||0)<Date.now())return null;const u=usersV48().users.find(x=>x.id===d.uid&&!x.disabled);return u||null}catch(_){return null}}
-function setSessionV48(req,res,u){const secure=String(req.headers['x-forwarded-proto']||req.protocol||'').includes('https');res.setHeader('Set-Cookie',`${SESSION_COOKIE_V48}=${encodeURIComponent(signSessionV48(u))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60*60*24*14}${secure?'; Secure':''}`)}
-function clearSessionV48(req,res){const secure=String(req.headers['x-forwarded-proto']||req.protocol||'').includes('https');res.setHeader('Set-Cookie',`${SESSION_COOKIE_V48}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure?'; Secure':''}`)}
+function identityCookiesV50(req,u,maxAge=60*60*24*14){const secure=String(req.headers['x-forwarded-proto']||req.protocol||'').includes('https'),sec=secure?'; Secure':'';return [`tradecode_uid=${encodeURIComponent(u?.id||'')}; Path=/; SameSite=Lax; Max-Age=${maxAge}${sec}`,`tradecode_legacy=${u?.legacyOwner?'1':'0'}; Path=/; SameSite=Lax; Max-Age=${maxAge}${sec}`]}
+function setSessionV48(req,res,u){const secure=String(req.headers['x-forwarded-proto']||req.protocol||'').includes('https');res.setHeader('Set-Cookie',[`${SESSION_COOKIE_V48}=${encodeURIComponent(signSessionV48(u))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60*60*24*14}${secure?'; Secure':''}`,...identityCookiesV50(req,u)])}
+function clearSessionV48(req,res){const secure=String(req.headers['x-forwarded-proto']||req.protocol||'').includes('https'),sec=secure?'; Secure':'';res.setHeader('Set-Cookie',[`${SESSION_COOKIE_V48}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${sec}`,`tradecode_uid=; Path=/; SameSite=Lax; Max-Age=0${sec}`,`tradecode_legacy=; Path=/; SameSite=Lax; Max-Age=0${sec}`])}
 function publicUserV48(u){return{id:u.id,username:u.username,displayName:u.displayName||u.username,role:u.role||'user',legacyOwner:!!u.legacyOwner}}
 function requireLoginApiV48(req,res,next){const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,code:'LOGIN_REQUIRED',error:'로그인이 필요합니다.'});req.authUser=u;next()}
-function requireLoginPageV48(req,res,next){const u=authUserV48(req);if(!u)return res.redirect('/login.html?next='+encodeURIComponent(req.originalUrl||'/'));req.authUser=u;next()}
+function requireLoginPageV48(req,res,next){const u=authUserV48(req);if(!u)return res.redirect('/login.html?next='+encodeURIComponent(req.originalUrl||'/'));req.authUser=u;for(const c of identityCookiesV50(req,u))res.append('Set-Cookie',c);next()}
 function isAdminV48(req){return req.authUser&&req.authUser.role==='admin'}
-function userDataRootV48(req){const u=req.authUser;if(!u)throw new Error('login required');if(u.legacyOwner)return null;const base=process.env.TRADECODE_USER_DATA_DIR||path.join(path.dirname(process.env.COUPANG_SHARED_DIR||path.join(__dirname,'data','coupang-shared')),'users');return path.join(base,u.id)}
+function userDataRootV48(req){const u=req.authUser;if(!u)throw new Error('login required');if(u.legacyOwner)return null;const parent=process.env.TRADECODE_USER_DATA_DIR||path.join(path.dirname(process.env.COUPANG_SHARED_DIR||path.join(__dirname,'data','coupang-shared')),'users');return path.join(parent,'v50-private',u.id)}
 function ensureUserRootV48(req){const r=userDataRootV48(req);if(r)fs.mkdirSync(r,{recursive:true});return r}
 
 app.get('/api/auth/me',(req,res)=>{const u=authUserV48(req);res.set('Cache-Control','no-store');res.json({ok:true,authenticated:!!u,user:u?publicUserV48(u):null,needsBootstrap:usersV48().users.length===0})});
@@ -82,6 +83,29 @@ const PROTECTED_PAGE_PREFIXES_V48=['/barcode-label','/order-barcode','/shipment-
 app.use((req,res,next)=>{if(PROTECTED_PAGE_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'.')||req.path.startsWith(p+'/')))return requireLoginPageV48(req,res,next);next()});
 const PRIVATE_API_PREFIXES_V48=['/api/shared-labels','/api/shared-workspace','/api/shipment-list-vault','/api/coupang-shared'];
 app.use((req,res,next)=>{if(PRIVATE_API_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'/')))return requireLoginApiV48(req,res,next);next()});
+
+// v50: 직원 계정 쿠팡 API는 레거시 공용 라우트보다 먼저 개인 저장소에서 처리합니다.
+// 최초 관리자(legacyOwner)는 next()로 기존 저장소를 그대로 사용합니다.
+// 계정별 쿠팡 선적 프로젝트. 최초 관리자는 기존 프로젝트 저장소를 그대로 사용합니다.
+app.use('/api/coupang-shared',(req,res,next)=>{
+  if(!req.authUser||req.authUser.legacyOwner)return next();
+  const root=userJsonV48(req,'coupang-shared');fs.mkdirSync(root,{recursive:true});const idxFile=path.join(root,'projects.json'),pRoot=path.join(root,'projects');
+  const readIdx=()=>{const x=readJsonFileV48(idxFile,{projects:[]});return x&&Array.isArray(x.projects)?x:{projects:[]}};const saveIdx=x=>atomicJsonV48(idxFile,{version:48,projects:x.projects||[]});const newId=()=>`p_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;const pp=id=>{const dir=path.join(pRoot,id);return{dir,state:path.join(dir,'state.json'),source:{data:path.join(dir,'source.xlsx.bin'),meta:path.join(dir,'source.meta.json')},workbookSnapshot:{data:path.join(dir,'workbookSnapshot.xlsx.bin'),meta:path.join(dir,'workbookSnapshot.meta.json')}}};
+  const touch=id=>{const idx=readIdx(),p=idx.projects.find(x=>x.id===id);if(p){p.updatedAt=Date.now();saveIdx(idx)}return p};
+  if(req.path==='/projects'&&req.method==='GET'){const idx=readIdx();return res.json({ok:true,projects:[...idx.projects].sort((a,b)=>b.updatedAt-a.updatedAt)})}
+  if(req.path==='/projects'&&req.method==='POST'){const idx=readIdx(),id=newId(),now=Date.now(),p={id,name:String(req.body?.name||'새 선적 작업').slice(0,120),status:'active',createdAt:now,updatedAt:now};fs.mkdirSync(pp(id).dir,{recursive:true});idx.projects.push(p);saveIdx(idx);return res.json({ok:true,project:p})}
+  const m=req.path.match(/^\/projects\/([A-Za-z0-9_-]+)(?:\/(status|state|blob\/source|blob\/workbookSnapshot))?$/);if(!m)return next();const id=m[1],part=m[2]||'',idx=readIdx(),proj=idx.projects.find(x=>x.id===id);if(!proj)return res.status(404).json({ok:false,error:'선적 작업을 찾을 수 없습니다.'});const paths=pp(id);
+  if(!part){if(req.method==='PATCH'){if(req.body?.name!==undefined)proj.name=String(req.body.name||proj.name).slice(0,120);if(req.body?.status!==undefined)proj.status=req.body.status==='archived'?'archived':'active';proj.updatedAt=Date.now();saveIdx(idx);return res.json({ok:true,project:proj})}if(req.method==='DELETE'){fs.rmSync(paths.dir,{recursive:true,force:true});idx.projects=idx.projects.filter(x=>x.id!==id);saveIdx(idx);return res.json({ok:true})}}
+  if(part==='status'&&req.method==='GET'){const st=readJsonFileV48(paths.state,null),bs=k=>{const meta=readJsonFileV48(paths[k].meta,null);return meta&&fs.existsSync(paths[k].data)?{updatedAt:Number(meta.updatedAt||0),size:Number(meta.size||0),name:meta.name||''}:null};return res.json({ok:true,state:st?{updatedAt:Number(st.updatedAt||0)}:null,source:bs('source'),workbookSnapshot:bs('workbookSnapshot')})}
+  if(part==='state'){
+    if(req.method==='GET'){const st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
+    if(req.method==='DELETE'){fs.rmSync(paths.state,{force:true});touch(id);return res.json({ok:true})}
+    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
+  }
+  if(part.startsWith('blob/')){const key=part.split('/')[1],info=paths[key];if(!info)return res.status(404).json({ok:false,error:'파일 키 오류'});if(req.method==='GET'){const meta=readJsonFileV48(info.meta,null);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Content-Type',meta.type||'application/octet-stream');res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',meta.name||'');res.set('X-File-Type',meta.type||'');res.set('X-File-Mode',meta.mode||'');res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));return res.sendFile(info.data)}if(req.method==='DELETE'){fs.rmSync(info.data,{force:true});fs.rmSync(info.meta,{force:true});touch(id);return res.json({ok:true})}if(req.method==='PUT')return rawBodyV48(req).then(buf=>{if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(paths.dir,{recursive:true});const updatedAt=Date.now(),meta={updatedAt,size:buf.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};fs.writeFileSync(info.data,buf);atomicJsonV48(info.meta,meta);if(key==='source'){fs.rmSync(paths.state,{force:true});fs.rmSync(paths.workbookSnapshot.data,{force:true});fs.rmSync(paths.workbookSnapshot.meta,{force:true})}touch(id);res.json({ok:true,updatedAt,size:buf.length})}).catch(e=>res.status(500).json({ok:false,error:e.message}));}
+  next();
+});
+
 
 // 상세페이지 자동 제작 화면도 기존 파일을 교체하지 않고 로그인 보호 + 계정 표시 스크립트만 삽입합니다.
 app.get('/detail-maker',(req,res,next)=>{const candidates=[path.join(__dirname,'detail-maker.html'),path.join(__dirname,'detail-maker','index.html')];const f=candidates.find(x=>fs.existsSync(x));if(!f)return next();let html=fs.readFileSync(f,'utf8');if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script><script src="/detail-auth-workspace.js"></script></body>');res.type('html').send(html)});
