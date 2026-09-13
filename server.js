@@ -97,22 +97,57 @@ function discoverPersistentCoupangRootV54(){
   return best;
 }
 const PERSISTENT_COUPANG_ROOT_V54=discoverPersistentCoupangRootV54();
+// v56: 인증 DB는 쿠팡 프로젝트 저장경로 선택과 분리하여 기존 계정 DB를 직접 찾아 사용합니다.
+// 업데이트 중 쿠팡 저장루트가 잠깐 달라져도 로그인 계정이 0개로 보이지 않게 합니다.
+function uniquePathListV56(rows){const out=[];for(const v of rows){try{if(!v)continue;const r=path.resolve(v);if(!out.includes(r))out.push(r)}catch(_){}}return out}
+function scanAuthDirsNearbyV56(){
+  const dirs=[];const add=v=>{try{if(v)dirs.push(path.resolve(v))}catch(_){}};
+  if(process.env.TRADECODE_AUTH_DIR)add(process.env.TRADECODE_AUTH_DIR);
+  add(path.join(__dirname,'data','auth'));add(path.join(__dirname,'data','coupang-shared','_auth'));add(path.join(__dirname,'auth'));
+  add(path.join(process.cwd(),'data','auth'));add(path.join(process.cwd(),'data','coupang-shared','_auth'));add(path.join(process.cwd(),'auth'));
+  for(const r of PERSISTENT_ROOT_CANDIDATES_V54){add(path.join(r,'_auth'));add(path.join(path.dirname(r),'auth'))}
+  add(path.join(PERSISTENT_COUPANG_ROOT_V54,'_auth'));add(path.join(path.dirname(PERSISTENT_COUPANG_ROOT_V54),'auth'));
+  const parents=uniquePathListV56([__dirname,path.dirname(__dirname),process.cwd(),path.dirname(process.cwd())]);
+  for(const parent of parents){
+    try{
+      for(const e of fs.readdirSync(parent,{withFileTypes:true}).slice(0,300)){
+        if(!e.isDirectory()||['node_modules','.git'].includes(e.name))continue;
+        const base=path.join(parent,e.name);
+        add(path.join(base,'data','auth'));add(path.join(base,'data','coupang-shared','_auth'));
+        add(path.join(base,'server','data','auth'));add(path.join(base,'server','data','coupang-shared','_auth'));
+      }
+    }catch(_){}
+  }
+  return uniquePathListV56(dirs);
+}
+function readJsonFileV48(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch(_){return fallback}}
+function atomicJsonV48(file,obj){fs.mkdirSync(path.dirname(file),{recursive:true});const t=`${file}.${process.pid}.${Date.now()}.tmp`;fs.writeFileSync(t,JSON.stringify(obj,null,2),'utf8');fs.renameSync(t,file)}
+function authFileInfoV56(file,authDir,kind='users'){
+  const x=readJsonFileV48(file,null);let mtime=0;try{mtime=fs.statSync(file).mtimeMs}catch(_){}
+  const valid=!!(x&&Array.isArray(x.users));return{file,authDir,kind,data:valid?x:null,count:valid?x.users.length:0,mtime,valid};
+}
+function authDbCandidatesV56(){
+  const rows=[];
+  for(const dir of scanAuthDirsNearbyV56()){
+    rows.push(authFileInfoV56(path.join(dir,'users.json'),dir,'users'));
+    rows.push(authFileInfoV56(path.join(dir,'users.json.prev'),dir,'prev'));
+    try{
+      const b=path.join(dir,'_backups');
+      if(fs.existsSync(b))for(const n of fs.readdirSync(b).filter(n=>/^users-.*\.json$/i.test(n)).sort().slice(-40))rows.push(authFileInfoV56(path.join(b,n),dir,'backup'));
+    }catch(_){}
+  }
+  return rows.filter(x=>x.valid);
+}
+function bestAuthDbV56(){return authDbCandidatesV56().filter(x=>x.count>0).sort((a,b)=>b.count-a.count||b.mtime-a.mtime)[0]||null}
 const AUTH_COUPANG_ROOT_V52=PERSISTENT_COUPANG_ROOT_V54;
-const AUTH_DIR_V48=process.env.TRADECODE_AUTH_DIR?path.resolve(process.env.TRADECODE_AUTH_DIR):path.join(PERSISTENT_COUPANG_ROOT_V54,'_auth');
+const EXISTING_AUTH_DB_V56=bestAuthDbV56();
+const AUTH_DIR_V48=process.env.TRADECODE_AUTH_DIR?path.resolve(process.env.TRADECODE_AUTH_DIR):(EXISTING_AUTH_DB_V56?.authDir||path.resolve(path.join(__dirname,'data','auth')));
 const USERS_FILE_V48=path.join(AUTH_DIR_V48,'users.json');
 const SECRET_FILE_V48=path.join(AUTH_DIR_V48,'session-secret.txt');
 const SESSION_COOKIE_V48='tradecode_session';
 const AUTH_BACKUP_DIR_V54=path.join(AUTH_DIR_V48,'_backups');
-const AUTH_LEGACY_DIRS_V52=[...new Set([
-  AUTH_DIR_V48,
-  ...PERSISTENT_ROOT_CANDIDATES_V54.flatMap(r=>[path.join(r,'_auth'),path.join(path.dirname(r),'auth')]),
-  path.join(__dirname,'data','auth'),
-  path.join(__dirname,'auth')
-].map(p=>path.resolve(p)))];
+const AUTH_LEGACY_DIRS_V52=uniquePathListV56([AUTH_DIR_V48,...scanAuthDirsNearbyV56()]);
 fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
-function readJsonFileV48(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch(_){return fallback}}
-function atomicJsonV48(file,obj){fs.mkdirSync(path.dirname(file),{recursive:true});const t=`${file}.${process.pid}.${Date.now()}.tmp`;fs.writeFileSync(t,JSON.stringify(obj,null,2),'utf8');fs.renameSync(t,file)}
-try{atomicJsonV48(path.join(AUTH_DIR_V48,'coupang-storage-location.json'),{version:54,selectedRoot:PERSISTENT_COUPANG_ROOT_V54,checkedAt:Date.now()})}catch(_){}
 function backupAuthUsersV54(){
   try{
     if(!fs.existsSync(USERS_FILE_V48))return;
@@ -121,37 +156,40 @@ function backupAuthUsersV54(){
     const stamp=new Date().toISOString().replace(/[:.]/g,'-');
     fs.copyFileSync(USERS_FILE_V48,path.join(AUTH_BACKUP_DIR_V54,`users-${stamp}.json`));
     const rows=fs.readdirSync(AUTH_BACKUP_DIR_V54).filter(x=>/^users-.*\.json$/.test(x)).sort();
-    while(rows.length>30){const x=rows.shift();try{fs.unlinkSync(path.join(AUTH_BACKUP_DIR_V54,x))}catch(_){}}
-  }catch(e){console.warn('[v54 auth] 계정 백업 실패:',e.message)}
+    while(rows.length>50){const x=rows.shift();try{fs.unlinkSync(path.join(AUTH_BACKUP_DIR_V54,x))}catch(_){}}
+  }catch(e){console.warn('[v56 auth] 계정 백업 실패:',e.message)}
 }
-function authCandidateV52(dir){
-  const file=path.join(dir,'users.json'),x=readJsonFileV48(file,null);let mtime=0;
-  try{mtime=fs.statSync(file).mtimeMs}catch(_){}
-  return{dir,file,data:(x&&Array.isArray(x.users))?x:null,count:(x&&Array.isArray(x.users))?x.users.length:0,mtime};
-}
+function authCandidateV52(dir){return authFileInfoV56(path.join(dir,'users.json'),dir,'users')}
+function authHistoryExistsV56(){return authDbCandidatesV56().some(x=>x.count>0)}
 function recoverAuthFilesV52(){
   try{
     fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
-    const candidates=AUTH_LEGACY_DIRS_V52.map(authCandidateV52);
-    const canonical=candidates.find(x=>path.resolve(x.file)===path.resolve(USERS_FILE_V48))||{count:0,mtime:0};
-    const best=[...candidates].sort((a,b)=>b.count-a.count || b.mtime-a.mtime)[0];
-    if(best&&best.count>0&&best.count>Number(canonical.count||0)&&path.resolve(best.file)!==path.resolve(USERS_FILE_V48)){
-      if(fs.existsSync(USERS_FILE_V48))backupAuthUsersV54();
+    const canonical=authFileInfoV56(USERS_FILE_V48,AUTH_DIR_V48,'users');
+    const best=bestAuthDbV56();
+    if(best&&best.count>0&&(!canonical.valid||canonical.count===0||best.count>canonical.count||(best.count===canonical.count&&best.mtime>canonical.mtime+1000))&&path.resolve(best.file)!==path.resolve(USERS_FILE_V48)){
+      if(canonical.valid&&canonical.count>0)backupAuthUsersV54();
       fs.copyFileSync(best.file,USERS_FILE_V48);
-      const bestSecret=path.join(best.dir,'session-secret.txt');
+      const bestSecret=path.join(best.authDir,'session-secret.txt');
       if(fs.existsSync(bestSecret))try{fs.copyFileSync(bestSecret,SECRET_FILE_V48)}catch(_){}
-      console.log(`[v54 auth] 기존 계정 ${best.count}개를 영구 인증 저장소로 복구: ${best.file} -> ${USERS_FILE_V48}`);
-    }else if((!canonical||canonical.count===0)&&best&&best.count>0&&path.resolve(best.file)!==path.resolve(USERS_FILE_V48)){
-      fs.copyFileSync(best.file,USERS_FILE_V48);
-      const bestSecret=path.join(best.dir,'session-secret.txt');
-      if(fs.existsSync(bestSecret))try{fs.copyFileSync(bestSecret,SECRET_FILE_V48)}catch(_){}
-      console.log(`[v54 auth] 기존 계정 ${best.count}개를 영구 인증 저장소로 연결: ${best.file} -> ${USERS_FILE_V48}`);
+      console.log(`[v56 auth] 기존 계정 ${best.count}개 복구: ${best.file} -> ${USERS_FILE_V48}`);
     }
     if(!fs.existsSync(SECRET_FILE_V48)){
-      const dirs=[];if(best?.dir)dirs.push(best.dir);dirs.push(...AUTH_LEGACY_DIRS_V52);
-      for(const dir of [...new Set(dirs)]){const f=path.join(dir,'session-secret.txt');if(path.resolve(f)===path.resolve(SECRET_FILE_V48))continue;try{if(fs.existsSync(f)&&fs.readFileSync(f,'utf8').trim()){fs.copyFileSync(f,SECRET_FILE_V48);break}}catch(_){}}
+      const dirs=uniquePathListV56([best?.authDir,...AUTH_LEGACY_DIRS_V52]);
+      for(const dir of dirs){const f=path.join(dir,'session-secret.txt');if(path.resolve(f)===path.resolve(SECRET_FILE_V48))continue;try{if(fs.existsSync(f)&&fs.readFileSync(f,'utf8').trim()){fs.copyFileSync(f,SECRET_FILE_V48);break}}catch(_){}}
     }
-  }catch(e){console.warn('[v54 auth] 기존 계정 자동 연결 실패:',e.message)}
+    try{atomicJsonV48(path.join(AUTH_DIR_V48,'storage-location.json'),{version:56,authDir:AUTH_DIR_V48,usersFile:USERS_FILE_V48,coupangRoot:PERSISTENT_COUPANG_ROOT_V54,checkedAt:Date.now()})}catch(_){}
+  }catch(e){console.warn('[v56 auth] 기존 계정 자동 연결 실패:',e.message)}
+}
+function mirrorAuthFilesV56(){
+  const mirrors=uniquePathListV56([path.join(__dirname,'data','auth'),path.join(PERSISTENT_COUPANG_ROOT_V54,'_auth')]);
+  for(const dir of mirrors){
+    try{
+      if(path.resolve(dir)===path.resolve(AUTH_DIR_V48))continue;
+      fs.mkdirSync(dir,{recursive:true});
+      if(fs.existsSync(USERS_FILE_V48))fs.copyFileSync(USERS_FILE_V48,path.join(dir,'users.json'));
+      if(fs.existsSync(SECRET_FILE_V48))fs.copyFileSync(SECRET_FILE_V48,path.join(dir,'session-secret.txt'));
+    }catch(e){console.warn('[v56 auth] 인증 미러 저장 실패:',dir,e.message)}
+  }
 }
 recoverAuthFilesV52();
 function usersV48(){
@@ -159,9 +197,11 @@ function usersV48(){
   if(!x||!Array.isArray(x.users)||x.users.length===0){recoverAuthFilesV52();x=readJsonFileV48(USERS_FILE_V48,{version:48,users:[]})}
   return x&&Array.isArray(x.users)?x:{version:48,users:[]}
 }
-function saveUsersV48(x){backupAuthUsersV54();atomicJsonV48(USERS_FILE_V48,{version:54,users:x.users||[]})}
+function saveUsersV48(x){backupAuthUsersV54();atomicJsonV48(USERS_FILE_V48,{version:56,users:x.users||[]});mirrorAuthFilesV56()}
 function secretV48(){try{const x=fs.readFileSync(SECRET_FILE_V48,'utf8').trim();if(x)return x}catch(_){}const x=crypto.randomBytes(48).toString('hex');fs.writeFileSync(SECRET_FILE_V48,x,{mode:0o600});return x}
 const AUTH_SECRET_V48=String(process.env.TRADECODE_AUTH_SECRET||'').trim()||secretV48();
+try{mirrorAuthFilesV56()}catch(_){}
+console.log(`[v56 auth] 인증 저장소: ${AUTH_DIR_V48} / 계정 ${usersV48().users.length}개`);
 function normUserV48(v){return String(v||'').trim().toLowerCase().replace(/[^a-z0-9._-]/g,'').slice(0,60)}
 function hashPwV48(pw,salt=crypto.randomBytes(16).toString('hex')){const hash=crypto.scryptSync(String(pw),salt,64).toString('hex');return{salt,hash}}
 function verifyPwV48(pw,u){try{const h=crypto.scryptSync(String(pw),u.salt,64);return crypto.timingSafeEqual(h,Buffer.from(u.passwordHash,'hex'))}catch(_){return false}}
@@ -179,9 +219,10 @@ function isAdminV48(req){return req.authUser&&req.authUser.role==='admin'}
 function userDataRootV48(req){const u=req.authUser;if(!u)throw new Error('login required');if(u.legacyOwner)return null;const parent=process.env.TRADECODE_USER_DATA_DIR?path.resolve(process.env.TRADECODE_USER_DATA_DIR):path.join(path.dirname(PERSISTENT_COUPANG_ROOT_V54),'users');return path.join(parent,'v50-private',u.id)}
 function ensureUserRootV48(req){const r=userDataRootV48(req);if(r)fs.mkdirSync(r,{recursive:true});return r}
 
-app.get('/api/auth/me',(req,res)=>{const u=authUserV48(req);res.set('Cache-Control','no-store');res.json({ok:true,authenticated:!!u,user:u?publicUserV48(u):null,needsBootstrap:usersV48().users.length===0})});
+app.get('/api/auth/me',(req,res)=>{const u=authUserV48(req),db=usersV48(),history=authHistoryExistsV56();res.set('Cache-Control','no-store');res.json({ok:true,authenticated:!!u,user:u?publicUserV48(u):null,needsBootstrap:db.users.length===0&&!history,recoveryRequired:db.users.length===0&&history,authVersion:56})});
+app.get('/api/auth/storage-status',(req,res)=>{const db=usersV48(),best=bestAuthDbV56();res.set('Cache-Control','no-store');res.json({ok:true,version:56,userCount:db.users.length,historyFound:authHistoryExistsV56(),bestCandidateCount:best?best.count:0})});
 app.get('/api/auth/safety-status',(req,res)=>{const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,error:'로그인이 필요합니다.'});if(u.role!=='admin')return res.status(403).json({ok:false,error:'관리자만 확인할 수 있습니다.'});const db=usersV48();res.set('Cache-Control','no-store');res.json({ok:true,version:54,persistentRoot:PERSISTENT_COUPANG_ROOT_V54,authDir:AUTH_DIR_V48,userCount:db.users.length,usersFileExists:fs.existsSync(USERS_FILE_V48),prevBackupExists:fs.existsSync(USERS_FILE_V48+'.prev'),backupDir:AUTH_BACKUP_DIR_V54})});
-app.post('/api/auth/bootstrap',(req,res)=>{try{recoverAuthFilesV52();const db=usersV48();if(db.users.length)return res.status(409).json({ok:false,error:'기존 관리자/사용자 계정이 발견되었습니다. 첫 관리자 계정을 새로 만들 수 없습니다. 기존 계정으로 로그인해 주세요.'});const username=normUserV48(req.body?.username),displayName=String(req.body?.displayName||username).trim().slice(0,80),pw=String(req.body?.password||'');if(username.length<3)return res.status(400).json({ok:false,error:'아이디는 3자 이상이어야 합니다.'});if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:'admin',legacyOwner:true,approved:true,approvedAt:Date.now(),disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u),legacyDataAssigned:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.post('/api/auth/bootstrap',(req,res)=>{try{recoverAuthFilesV52();const db=usersV48();if(db.users.length||authHistoryExistsV56())return res.status(409).json({ok:false,error:'기존 관리자/사용자 계정 또는 계정 백업이 발견되었습니다. 새 관리자 계정을 만들지 않고 기존 계정을 복구합니다. 기존 아이디로 로그인해 주세요.'});const username=normUserV48(req.body?.username),displayName=String(req.body?.displayName||username).trim().slice(0,80),pw=String(req.body?.password||'');if(username.length<3)return res.status(400).json({ok:false,error:'아이디는 3자 이상이어야 합니다.'});if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:'admin',legacyOwner:true,approved:true,approvedAt:Date.now(),disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u),legacyDataAssigned:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.post('/api/auth/login',(req,res)=>{const username=normUserV48(req.body?.username),pw=String(req.body?.password||'');const u=usersV48().users.find(x=>x.username===username&&!x.disabled);if(!u||!verifyPwV48(pw,u))return res.status(401).json({ok:false,error:'아이디 또는 비밀번호가 올바르지 않습니다.'});if(!u.legacyOwner&&u.approved===false)return res.status(403).json({ok:false,code:'APPROVAL_REQUIRED',error:'관리자 승인 대기 중인 계정입니다. 관리자에게 승인을 요청해 주세요.'});setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u)})});
 app.post('/api/auth/logout',(req,res)=>{clearSessionV48(req,res);res.json({ok:true})});
 app.get('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});res.json({ok:true,users:usersV48().users.map(publicUserV48)})});
