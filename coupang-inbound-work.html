@@ -643,7 +643,14 @@ $('sourceFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)l
 
 
 // ===== v9 durable autosave / recovery =====
-const PERSIST_DB_NAME='CoupangInboundWorkDB';
+function tcAccountScopeV50(){
+  let uid='',legacy='0';
+  try{for(const p of String(document.cookie||'').split(';')){const i=p.indexOf('=');if(i<0)continue;const k=p.slice(0,i).trim(),v=decodeURIComponent(p.slice(i+1).trim());if(k==='tradecode_uid')uid=v;if(k==='tradecode_legacy')legacy=v}}catch(_){}
+  return {uid:uid||'unresolved',legacy:legacy==='1'};
+}
+const TC_ACCOUNT_SCOPE_V50=tcAccountScopeV50();
+const PERSIST_DB_NAME=TC_ACCOUNT_SCOPE_V50.legacy?'CoupangInboundWorkDB':`CoupangInboundWorkDB-${TC_ACCOUNT_SCOPE_V50.uid}`;
+const COUPANG_LAST_PROJECT_KEY_V50=TC_ACCOUNT_SCOPE_V50.legacy?'coupangLastProjectV18':`coupangLastProjectV18:${TC_ACCOUNT_SCOPE_V50.uid}`;
 const PERSIST_DB_VERSION=1;
 const PERSIST_STORE='kv';
 let persistDbPromise=null,persistStateTimer=null,persistSnapshotTimer=null,persistRestoring=false,persistSnapshotBusy=false;
@@ -1696,7 +1703,7 @@ async function switchProjectV18(id){
   projectSwitchBusyV18=true;
   try{
     if(currentProjectIdV18&&workbook){clearTimeout(persistStateTimer);await savePersistentState();await sharedDrainStateQueue()}
-    currentProjectIdV18=id;try{localStorage.setItem('coupangLastProjectV18',id)}catch(_){}
+    currentProjectIdV18=id;try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,id)}catch(_){}
     sharedLastStateAt=sharedLastSourceAt=sharedLastSnapshotAt=0;sharedStateQueued=null;
     renderProjectSelectV18();await restorePersistentSession();renderProjectSelectV18();
   }catch(e){console.error(e);setStatus('선적 작업 전환 실패: '+(e.message||e),'bad');alert('선적 작업을 불러오지 못했습니다.\n'+(e.message||e))}
@@ -1744,7 +1751,7 @@ async function activateProjectAfterDeleteV19(id){
   // 삭제 처리 중에는 switchProjectV18()가 busy guard 때문에 실행되지 않으므로
   // 남아 있는 프로젝트를 여기서 직접 활성화한다.
   currentProjectIdV18=id;
-  try{localStorage.setItem('coupangLastProjectV18',id)}catch(_){}
+  try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,id)}catch(_){}
   sharedLastStateAt=sharedLastSourceAt=sharedLastSnapshotAt=0;
   sharedStateQueued=null;
   renderProjectSelectV18();
@@ -1782,7 +1789,7 @@ async function deleteProjectV18(){
     clearTimeout(persistStateTimer);clearTimeout(persistSnapshotTimer);
     persistStateTimer=null;persistSnapshotTimer=null;sharedStateQueued=null;
     currentProjectIdV18='';
-    try{localStorage.removeItem('coupangLastProjectV18')}catch(_){}
+    try{localStorage.removeItem(COUPANG_LAST_PROJECT_KEY_V50)}catch(_){}
 
     // 서버 목록을 새로 읽고, 남은 프로젝트를 직접 활성화한다.
     await fetchProjectsV18();
@@ -1824,9 +1831,9 @@ async function initProjectsV18(){
   try{
     setStatus('선적 작업 목록을 불러오는 중…','busy');
     await fetchProjectsV18();
-    let wanted='';try{wanted=localStorage.getItem('coupangLastProjectV18')||''}catch(_){}
+    let wanted='';try{wanted=localStorage.getItem(COUPANG_LAST_PROJECT_KEY_V50)||''}catch(_){}
     let p=projectsV18.find(x=>x.id===wanted)||projectsV18.find(x=>x.status!=='archived')||projectsV18[0];
-    if(p){currentProjectIdV18=p.id;sharedLastStateAt=sharedLastSourceAt=sharedLastSnapshotAt=0;renderProjectSelectV18();await restorePersistentSession();try{localStorage.setItem('coupangLastProjectV18',p.id)}catch(_){}}
+    if(p){currentProjectIdV18=p.id;sharedLastStateAt=sharedLastSourceAt=sharedLastSnapshotAt=0;renderProjectSelectV18();await restorePersistentSession();try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,p.id)}catch(_){}}
     else{clearWorkspaceForProjectV18('저장된 선적 작업이 없습니다. ＋ 새 선적 작업을 눌러 시작하세요.');renderProjectSelectV18();setStatus('✓ 준비 완료 · 새 선적 작업을 만들어 주세요.','ok')}
   }catch(e){console.error('project init failed',e);clearWorkspaceForProjectV18('선적 작업 목록을 불러오지 못했습니다.');setStatus('공용 선적 작업 서버 연결 실패: '+(e.message||e),'bad')}
 }
@@ -1934,7 +1941,7 @@ async function createProjectFromShipmentFileV20(file){
 
     await fetchProjectsV18();
     currentProjectIdV18=createdId;
-    try{localStorage.setItem('coupangLastProjectV18',createdId)}catch(_){}
+    try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,createdId)}catch(_){}
     renderProjectSelectV18();
     setStatus(`✓ 새 선적 작업 “${autoName}” 생성 완료 · 발주서 A8에서 작업명을 자동 추출했습니다.`,'ok');
   }catch(e){
