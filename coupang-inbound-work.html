@@ -1779,6 +1779,8 @@ async function deleteProjectV18(){
     // 서버에는 선택한 프로젝트 ID 하나만 삭제 요청한다.
     const r=await projectFetchV18('/projects/'+encodeURIComponent(deletingId),{method:'DELETE'});
     if(!r.ok)throw new Error('서버 작업 삭제 실패 ('+r.status+')');
+    let deleteReplyV61=null;try{deleteReplyV61=await r.json()}catch(_){}
+    try{if(typeof markProjectDeletedV61==='function')markProjectDeletedV61(deletingId,deleteReplyV61?.deletedProjectIds||[])}catch(_){}
 
     // 이 PC의 캐시도 삭제한 프로젝트 키만 지운다.
     for(const k of ['state','source','workbookSnapshot']){
@@ -3546,6 +3548,18 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 
 
+<script id="v61-coupang-delete-tombstone-guard">
+(function(){
+  const scope=(typeof TC_ACCOUNT_SCOPE_V50!=='undefined'?TC_ACCOUNT_SCOPE_V50:{uid:'unknown',legacy:false});
+  const suffix=scope.legacy?'legacy':String(scope.uid||'unknown'),KEY='coupangDeletedProjectsV61:'+suffix,KEY57='coupangProjectListSafetyV57:'+(scope.legacy?'legacy':suffix),KEY55='coupangProjectListSafetyV55:'+(scope.legacy?'legacy':suffix);
+  function readDeleted(){try{const x=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(x)?x:[]}catch(_){return[]}}
+  function writeDeleted(rows){try{localStorage.setItem(KEY,JSON.stringify([...new Set((rows||[]).map(String).filter(Boolean))].slice(-5000)))}catch(_){}}
+  function purge(k,d){try{const x=JSON.parse(localStorage.getItem(k)||'null');if(!x||!Array.isArray(x.projects))return;x.projects=x.projects.filter(p=>p&&p.id&&!d.has(String(p.id)));localStorage.setItem(k,JSON.stringify(x))}catch(_){}}
+  window.markProjectDeletedV61=function(id,serverDeleted=[]){const all=[...readDeleted(),String(id||''),...(serverDeleted||[]).map(String)].filter(Boolean);writeDeleted(all);const d=new Set(all);purge(KEY57,d);purge(KEY55,d);try{projectsV18=(projectsV18||[]).filter(p=>p&&p.id&&!d.has(String(p.id)));renderProjectSelectV18()}catch(_){};try{if(String(currentProjectIdV18||'')===String(id||''))currentProjectIdV18=''}catch(_){}};
+  window.deletedProjectIdsV61=function(serverDeleted=[]){return new Set([...readDeleted(),...(serverDeleted||[]).map(String)])};
+})();
+</script>
+
 <script id="v57-coupang-project-list-merge-guard">
 // ===== v57: 서버 일부 목록으로 로컬 정상 프로젝트 목록을 덮어쓰지 않도록 보호 =====
 (function(){
@@ -3573,8 +3587,10 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
     const r=await projectFetchV18('/projects');
     if(!r.ok)throw new Error('선적 작업 목록 조회 실패 ('+r.status+')');
     const j=await r.json();const serverRows=Array.isArray(j.projects)?j.projects:[];
-    const cached=readCache().projects||[];const deleted=j?.safety?.deletedProjectIds||[];
+    const cached=readCache().projects||[];const serverDeleted=j?.safety?.deletedProjectIds||[];
+    const deleted=[...(typeof deletedProjectIdsV61==='function'?deletedProjectIdsV61(serverDeleted):new Set(serverDeleted.map(String)))];
     const merged=unionRows(serverRows,cached,deleted);
+    try{for(const id of deleted)markProjectDeletedV61(id,serverDeleted)}catch(_){}
     projectsV18=merged;
     if(merged.length)saveCache(merged);
     renderProjectSelectV18();
