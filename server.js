@@ -21,6 +21,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const cors = require('cors');
 const { searchHs, getTariff, navigateHsCode, checkCustomsRequirement } = require('./lib/unipass');
 const { analyzeProduct } = require('./lib/ai');
@@ -32,6 +33,59 @@ const { getExchangeRate } = require('./lib/exchangeRate');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' })); // 댓글 + 공용 라벨 JSON 파싱용
+// v48: 정적 파일 제공은 로그인 보호 미들웨어 등록 뒤에 시작합니다.
+// app.use(express.static(path.join(__dirname))); // moved below
+
+
+// =====================================================================
+// v48: 계정별 로그인 + 사용자별 작업공간
+// - 기존 데이터는 삭제/이동하지 않습니다.
+// - 최초 생성 관리자(legacyOwner=true)는 기존 저장소를 그대로 사용합니다.
+// - 이후 계정은 data/users/<userId>/ 아래에 분리 저장합니다.
+// =====================================================================
+const AUTH_DIR_V48 = process.env.TRADECODE_AUTH_DIR || path.join(path.dirname(process.env.COUPANG_SHARED_DIR || path.join(__dirname,'data','coupang-shared')),'auth');
+const USERS_FILE_V48 = path.join(AUTH_DIR_V48,'users.json');
+const SECRET_FILE_V48 = path.join(AUTH_DIR_V48,'session-secret.txt');
+const SESSION_COOKIE_V48 = 'tradecode_session';
+fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
+function readJsonFileV48(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch(_){return fallback}}
+function atomicJsonV48(file,obj){fs.mkdirSync(path.dirname(file),{recursive:true});const t=`${file}.${process.pid}.${Date.now()}.tmp`;fs.writeFileSync(t,JSON.stringify(obj,null,2),'utf8');fs.renameSync(t,file)}
+function usersV48(){const x=readJsonFileV48(USERS_FILE_V48,{version:48,users:[]});return x&&Array.isArray(x.users)?x:{version:48,users:[]}}
+function saveUsersV48(x){atomicJsonV48(USERS_FILE_V48,{version:48,users:x.users||[]})}
+function secretV48(){try{const x=fs.readFileSync(SECRET_FILE_V48,'utf8').trim();if(x)return x}catch(_){}const x=crypto.randomBytes(48).toString('hex');fs.writeFileSync(SECRET_FILE_V48,x,{mode:0o600});return x}
+const AUTH_SECRET_V48=String(process.env.TRADECODE_AUTH_SECRET||'').trim()||secretV48();
+function normUserV48(v){return String(v||'').trim().toLowerCase().replace(/[^a-z0-9._-]/g,'').slice(0,60)}
+function hashPwV48(pw,salt=crypto.randomBytes(16).toString('hex')){const hash=crypto.scryptSync(String(pw),salt,64).toString('hex');return{salt,hash}}
+function verifyPwV48(pw,u){try{const h=crypto.scryptSync(String(pw),u.salt,64);return crypto.timingSafeEqual(h,Buffer.from(u.passwordHash,'hex'))}catch(_){return false}}
+function b64uV48(x){return Buffer.from(x).toString('base64url')}
+function signSessionV48(u){const payload=b64uV48(JSON.stringify({uid:u.id,exp:Date.now()+1000*60*60*24*14}));const sig=crypto.createHmac('sha256',AUTH_SECRET_V48).update(payload).digest('base64url');return payload+'.'+sig}
+function parseCookiesV48(req){const out={};String(req.headers.cookie||'').split(';').forEach(p=>{const i=p.indexOf('=');if(i>0)out[p.slice(0,i).trim()]=decodeURIComponent(p.slice(i+1).trim())});return out}
+function authUserV48(req){try{const tok=parseCookiesV48(req)[SESSION_COOKIE_V48]||'';const [payload,sig]=tok.split('.');if(!payload||!sig)return null;const expected=crypto.createHmac('sha256',AUTH_SECRET_V48).update(payload).digest('base64url');if(sig.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return null;const d=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));if(Number(d.exp||0)<Date.now())return null;const u=usersV48().users.find(x=>x.id===d.uid&&!x.disabled);return u||null}catch(_){return null}}
+function setSessionV48(req,res,u){const secure=String(req.headers['x-forwarded-proto']||req.protocol||'').includes('https');res.setHeader('Set-Cookie',`${SESSION_COOKIE_V48}=${encodeURIComponent(signSessionV48(u))}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60*60*24*14}${secure?'; Secure':''}`)}
+function clearSessionV48(req,res){const secure=String(req.headers['x-forwarded-proto']||req.protocol||'').includes('https');res.setHeader('Set-Cookie',`${SESSION_COOKIE_V48}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure?'; Secure':''}`)}
+function publicUserV48(u){return{id:u.id,username:u.username,displayName:u.displayName||u.username,role:u.role||'user',legacyOwner:!!u.legacyOwner}}
+function requireLoginApiV48(req,res,next){const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,code:'LOGIN_REQUIRED',error:'로그인이 필요합니다.'});req.authUser=u;next()}
+function requireLoginPageV48(req,res,next){const u=authUserV48(req);if(!u)return res.redirect('/login.html?next='+encodeURIComponent(req.originalUrl||'/'));req.authUser=u;next()}
+function isAdminV48(req){return req.authUser&&req.authUser.role==='admin'}
+function userDataRootV48(req){const u=req.authUser;if(!u)throw new Error('login required');if(u.legacyOwner)return null;const base=process.env.TRADECODE_USER_DATA_DIR||path.join(path.dirname(process.env.COUPANG_SHARED_DIR||path.join(__dirname,'data','coupang-shared')),'users');return path.join(base,u.id)}
+function ensureUserRootV48(req){const r=userDataRootV48(req);if(r)fs.mkdirSync(r,{recursive:true});return r}
+
+app.get('/api/auth/me',(req,res)=>{const u=authUserV48(req);res.set('Cache-Control','no-store');res.json({ok:true,authenticated:!!u,user:u?publicUserV48(u):null,needsBootstrap:usersV48().users.length===0})});
+app.post('/api/auth/bootstrap',(req,res)=>{try{const db=usersV48();if(db.users.length)return res.status(409).json({ok:false,error:'관리자 계정이 이미 생성되어 있습니다.'});const username=normUserV48(req.body?.username),displayName=String(req.body?.displayName||username).trim().slice(0,80),pw=String(req.body?.password||'');if(username.length<3)return res.status(400).json({ok:false,error:'아이디는 3자 이상이어야 합니다.'});if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:'admin',legacyOwner:true,disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u),legacyDataAssigned:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.post('/api/auth/login',(req,res)=>{const username=normUserV48(req.body?.username),pw=String(req.body?.password||'');const u=usersV48().users.find(x=>x.username===username&&!x.disabled);if(!u||!verifyPwV48(pw,u))return res.status(401).json({ok:false,error:'아이디 또는 비밀번호가 올바르지 않습니다.'});setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u)})});
+app.post('/api/auth/logout',(req,res)=>{clearSessionV48(req,res);res.json({ok:true})});
+app.get('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});res.json({ok:true,users:usersV48().users.map(publicUserV48)})});
+app.post('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});try{const db=usersV48(),username=normUserV48(req.body?.username),pw=String(req.body?.password||''),displayName=String(req.body?.displayName||username).trim().slice(0,80);if(username.length<3||pw.length<8)return res.status(400).json({ok:false,error:'아이디 3자 이상, 비밀번호 8자 이상이 필요합니다.'});if(db.users.some(x=>x.username===username))return res.status(409).json({ok:false,error:'이미 사용 중인 아이디입니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:req.body?.role==='admin'?'admin':'user',legacyOwner:false,disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);res.json({ok:true,user:publicUserV48(u)})}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.patch('/api/auth/users/:id',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});const db=usersV48(),u=db.users.find(x=>x.id===req.params.id);if(!u)return res.status(404).json({ok:false,error:'계정을 찾지 못했습니다.'});if(req.body?.displayName!==undefined)u.displayName=String(req.body.displayName||u.username).slice(0,80);if(req.body?.disabled!==undefined&&!u.legacyOwner)u.disabled=!!req.body.disabled;if(req.body?.role!==undefined&&!u.legacyOwner)u.role=req.body.role==='admin'?'admin':'user';if(req.body?.password){const pw=String(req.body.password);if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw);u.salt=hp.salt;u.passwordHash=hp.hash}saveUsersV48(db);res.json({ok:true,user:publicUserV48(u)})});
+
+const PROTECTED_PAGE_PREFIXES_V48=['/barcode-label','/order-barcode','/shipment-list-builder','/coupang-inbound-work','/detail-maker','/account-admin'];
+app.use((req,res,next)=>{if(PROTECTED_PAGE_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'.')||req.path.startsWith(p+'/')))return requireLoginPageV48(req,res,next);next()});
+const PRIVATE_API_PREFIXES_V48=['/api/shared-labels','/api/shared-workspace','/api/shipment-list-vault','/api/coupang-shared'];
+app.use((req,res,next)=>{if(PRIVATE_API_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'/')))return requireLoginApiV48(req,res,next);next()});
+
+// 상세페이지 자동 제작 화면도 기존 파일을 교체하지 않고 로그인 보호 + 계정 표시 스크립트만 삽입합니다.
+app.get('/detail-maker',(req,res,next)=>{const candidates=[path.join(__dirname,'detail-maker.html'),path.join(__dirname,'detail-maker','index.html')];const f=candidates.find(x=>fs.existsSync(x));if(!f)return next();let html=fs.readFileSync(f,'utf8');if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script><script src="/detail-auth-workspace.js"></script></body>');res.type('html').send(html)});
+
 app.use(express.static(path.join(__dirname)));
 
 const PORT = process.env.PORT || 4000;
@@ -589,6 +643,7 @@ function unlinkSafe(file) {
   try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
 }
 function coupangAuth(req, res, next) {
+  if (req.authUser) return next();
   if (!COUPANG_SHARED_TOKEN) return next();
   const got = String(req.get('X-Coupang-Work-Token') || '');
   if (got !== COUPANG_SHARED_TOKEN) return res.status(401).json({ ok: false, error: '공용 작업 암호가 필요합니다.' });
@@ -779,6 +834,86 @@ app.get('/coupang-inbound-work', (req, res) => {
 
 
 
+
+// =====================================================================
+// v48: 비-기존계정 API 분리 저장소 인터셉터
+// 최초 관리자(legacyOwner)는 기존 API/파일을 그대로 통과시킵니다.
+// =====================================================================
+function userJsonV48(req,...parts){const root=ensureUserRootV48(req);return path.join(root,...parts)}
+function sendJsonFileV48(res,file){const row=readJsonFileV48(file,null);res.set('Cache-Control','no-store');if(!row)return res.status(404).json({ok:false,error:'저장된 작업이 없습니다.'});res.json(row)}
+async function rawBodyV48(req){if(Buffer.isBuffer(req.body))return req.body;if(typeof req.body==='string')return Buffer.from(req.body);if(req.body&&typeof req.body==='object'&&Object.keys(req.body).length)return Buffer.from(JSON.stringify(req.body));return await new Promise((resolve,reject)=>{const a=[];req.on('data',c=>a.push(c));req.on('end',()=>resolve(Buffer.concat(a)));req.on('error',reject)})}
+
+// 계정별 현재 작업 상태. detail-maker는 최초 관리자도 이 저장소를 사용합니다.
+app.use('/api/shared-workspace/:key',(req,res,next)=>{
+  const key=String(req.params.key||'');
+  if(!req.authUser)return next();
+  if(req.authUser.legacyOwner && key!=='detail-maker')return next();
+  if(!['barcode-label','order-barcode','detail-maker'].includes(key))return next();
+  const base=req.authUser.legacyOwner?path.join(__dirname,'data','users',req.authUser.id):ensureUserRootV48(req);const file=path.join(base,'workspaces',key+'.json');
+  if(req.method==='GET')return sendJsonFileV48(res,file);
+  if(req.method==='DELETE'){try{fs.rmSync(file,{force:true});return res.json({ok:true})}catch(e){return res.status(500).json({ok:false,error:e.message})}}
+  if(req.method==='PUT'||req.method==='POST'){try{const state=req.body?.state??req.body;if(!state||typeof state!=='object')return res.status(400).json({ok:false,error:'저장할 작업 상태가 없습니다.'});const updatedAt=Date.now();atomicJsonV48(file,{ok:true,key,updatedAt,state});return res.json({ok:true,key,updatedAt})}catch(e){return res.status(400).json({ok:false,error:e.message})}}
+  next();
+});
+
+// 계정별 바코드 라벨. 최초 관리자는 기존 Supabase/라벨 파일을 그대로 사용합니다.
+app.use('/api/shared-labels',(req,res,next)=>{
+  if(!req.authUser||req.authUser.legacyOwner)return next();
+  const file=userJsonV48(req,'shared-barcode','labels.json');
+  const read=()=>{const x=readJsonFileV48(file,[]);return Array.isArray(x)?x:[]};
+  const write=x=>atomicJsonV48(file,x);
+  if(req.path==='/status'&&req.method==='GET'){const a=read();return res.json({ok:true,count:a.length,storage:'account-private',permanent:true,supabaseConfigured:false})}
+  if(req.path==='/backup'&&req.method==='GET'){const a=read();res.set('Content-Disposition','attachment; filename="my-labels.json"');return res.json({exportedAt:new Date().toISOString(),labels:a})}
+  if(req.path==='/restore'&&req.method==='POST'){const incoming=Array.isArray(req.body)?req.body:req.body?.labels;if(!Array.isArray(incoming))return res.status(400).json({ok:false,error:'라벨 데이터가 없습니다.'});const a=read();for(const raw of incoming){try{upsertLocalLabelV32(a,raw)}catch(_){}}write(a);return res.json({ok:true,restored:incoming.length,count:a.length,storage:'account-private',permanent:true})}
+  if((req.path==='/'||req.path==='')&&req.method==='GET'){const a=read();return res.json({ok:true,labels:a,count:a.length,editKeyRequired:false,permanent:true,storage:'account-private'})}
+  if((req.path==='/'||req.path==='')&&req.method==='POST'){try{const a=read(),label=upsertLocalLabelV32(a,req.body||{});write(a);return res.json({ok:true,label,count:a.length,storage:'account-private',permanent:true})}catch(e){return res.status(400).json({ok:false,error:e.message})}}
+  if(req.method==='DELETE'&&/^\/[A-Za-z0-9_-]+/.test(req.path)){const id=decodeURIComponent(req.path.slice(1)),a=read(),b=a.filter(x=>String(x.id||'')!==id);if(a.length===b.length)return res.status(404).json({ok:false,error:'라벨을 찾지 못했습니다.'});write(b);return res.json({ok:true,count:b.length})}
+  next();
+});
+
+
+// shared-labels-status / backup / restore는 하이픈형 별도 경로라 추가로 분리합니다.
+app.use('/api/shared-labels-status',(req,res,next)=>{if(!req.authUser||req.authUser.legacyOwner)return next();const file=userJsonV48(req,'shared-barcode','labels.json'),a=readJsonFileV48(file,[]);res.json({ok:true,count:Array.isArray(a)?a.length:0,storage:'account-private',permanent:true,supabaseConfigured:false,localSources:[]})});
+app.use('/api/shared-labels-backup',(req,res,next)=>{if(!req.authUser||req.authUser.legacyOwner)return next();const file=userJsonV48(req,'shared-barcode','labels.json'),a=readJsonFileV48(file,[]);res.set('Content-Disposition','attachment; filename="my-labels.json"');res.json({exportedAt:new Date().toISOString(),labels:Array.isArray(a)?a:[]})});
+app.use('/api/shared-labels-restore',(req,res,next)=>{if(!req.authUser||req.authUser.legacyOwner)return next();if(req.method!=='POST')return next();const file=userJsonV48(req,'shared-barcode','labels.json'),a0=readJsonFileV48(file,[]),a=Array.isArray(a0)?a0:[],incoming=Array.isArray(req.body)?req.body:req.body?.labels;if(!Array.isArray(incoming))return res.status(400).json({ok:false,error:'라벨 데이터가 없습니다.'});for(const raw of incoming){try{upsertLocalLabelV32(a,raw)}catch(_){}}atomicJsonV48(file,a);res.json({ok:true,restored:incoming.length,count:a.length,storage:'account-private',permanent:true})});
+
+// 계정별 선적 리스트 보관함. 최초 관리자는 기존 보관함을 그대로 사용합니다.
+app.use('/api/shipment-list-vault',(req,res,next)=>{
+  if(!req.authUser||req.authUser.legacyOwner)return next();
+  const root=userJsonV48(req,'shipment-list-vault'),indexFile=path.join(root,'index.json');
+  const readIdx=()=>{const x=readJsonFileV48(indexFile,{drafts:[]});return x&&Array.isArray(x.drafts)?x:{drafts:[]}};const saveIdx=x=>atomicJsonV48(indexFile,{version:48,drafts:x.drafts||[]});
+  const m=req.path.match(/^\/([^/]+)(?:\/(blob))?$/);if((req.path==='/'||req.path==='')&&req.method==='GET'){const x=readIdx();return res.json({ok:true,drafts:[...x.drafts].sort((a,b)=>Number(b.savedAt||0)-Number(a.savedAt||0))})}if(!m)return next();
+  const id=String(m[1]||'').replace(/[^A-Za-z0-9_-]/g,'');if(!id)return res.status(404).json({ok:false,error:'잘못된 ID입니다.'});const dir=path.join(root,'drafts',id),metaFile=path.join(dir,'meta.json'),blobFile=path.join(dir,'source.xlsx.bin');
+  if(m[2]==='blob'){
+    if(req.method==='GET'){const meta=readJsonFileV48(metaFile,{});if(!fs.existsSync(blobFile))return res.status(404).json({ok:false,error:'원본 엑셀이 없습니다.'});res.set('Content-Type',meta.fileType||'application/octet-stream');res.set('X-File-Name',encodeURIComponent(meta.fileName||'선적리스트.xlsx'));return res.sendFile(blobFile)}
+    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(blobFile,buf);const idx=readIdx(),row=idx.drafts.find(x=>x.id===id);if(row)row.blobSize=buf.length;saveIdx(idx);res.json({ok:true,size:buf.length,updatedAt:Date.now()})}).catch(e=>res.status(500).json({ok:false,error:e.message}));
+  }
+  if(req.method==='GET'){const meta=readJsonFileV48(metaFile,null);if(!meta)return res.status(404).json({ok:false,error:'보관본을 찾지 못했습니다.'});return res.json({ok:true,draft:meta})}
+  if(req.method==='PUT'){const now=Date.now(),meta={...(req.body||{}),id,savedAt:Number(req.body?.savedAt||now),createdAt:Number(req.body?.createdAt||now)};atomicJsonV48(metaFile,meta);const idx=readIdx(),summary={id,name:meta.name,fileName:meta.fileName,fileType:meta.fileType,confirmed:!!meta.confirmed,createdAt:meta.createdAt,savedAt:meta.savedAt,transferredAt:Number(meta.transferredAt||0),transferredProjectId:meta.transferredProjectId||'',transferredProjectName:meta.transferredProjectName||'',inputNamesV41:meta.inputNamesV41||[],blobSize:fs.existsSync(blobFile)?fs.statSync(blobFile).size:0};const at=idx.drafts.findIndex(x=>x.id===id);if(at>=0)idx.drafts[at]=summary;else idx.drafts.push(summary);saveIdx(idx);return res.json({ok:true,draft:summary,updatedAt:now})}
+  if(req.method==='DELETE'){fs.rmSync(dir,{recursive:true,force:true});const idx=readIdx();idx.drafts=idx.drafts.filter(x=>x.id!==id);saveIdx(idx);return res.json({ok:true})}
+  next();
+});
+
+// 계정별 쿠팡 선적 프로젝트. 최초 관리자는 기존 프로젝트 저장소를 그대로 사용합니다.
+app.use('/api/coupang-shared',(req,res,next)=>{
+  if(!req.authUser||req.authUser.legacyOwner)return next();
+  const root=userJsonV48(req,'coupang-shared');fs.mkdirSync(root,{recursive:true});const idxFile=path.join(root,'projects.json'),pRoot=path.join(root,'projects');
+  const readIdx=()=>{const x=readJsonFileV48(idxFile,{projects:[]});return x&&Array.isArray(x.projects)?x:{projects:[]}};const saveIdx=x=>atomicJsonV48(idxFile,{version:48,projects:x.projects||[]});const newId=()=>`p_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;const pp=id=>{const dir=path.join(pRoot,id);return{dir,state:path.join(dir,'state.json'),source:{data:path.join(dir,'source.xlsx.bin'),meta:path.join(dir,'source.meta.json')},workbookSnapshot:{data:path.join(dir,'workbookSnapshot.xlsx.bin'),meta:path.join(dir,'workbookSnapshot.meta.json')}}};
+  const touch=id=>{const idx=readIdx(),p=idx.projects.find(x=>x.id===id);if(p){p.updatedAt=Date.now();saveIdx(idx)}return p};
+  if(req.path==='/projects'&&req.method==='GET'){const idx=readIdx();return res.json({ok:true,projects:[...idx.projects].sort((a,b)=>b.updatedAt-a.updatedAt)})}
+  if(req.path==='/projects'&&req.method==='POST'){const idx=readIdx(),id=newId(),now=Date.now(),p={id,name:String(req.body?.name||'새 선적 작업').slice(0,120),status:'active',createdAt:now,updatedAt:now};fs.mkdirSync(pp(id).dir,{recursive:true});idx.projects.push(p);saveIdx(idx);return res.json({ok:true,project:p})}
+  const m=req.path.match(/^\/projects\/([A-Za-z0-9_-]+)(?:\/(status|state|blob\/source|blob\/workbookSnapshot))?$/);if(!m)return next();const id=m[1],part=m[2]||'',idx=readIdx(),proj=idx.projects.find(x=>x.id===id);if(!proj)return res.status(404).json({ok:false,error:'선적 작업을 찾을 수 없습니다.'});const paths=pp(id);
+  if(!part){if(req.method==='PATCH'){if(req.body?.name!==undefined)proj.name=String(req.body.name||proj.name).slice(0,120);if(req.body?.status!==undefined)proj.status=req.body.status==='archived'?'archived':'active';proj.updatedAt=Date.now();saveIdx(idx);return res.json({ok:true,project:proj})}if(req.method==='DELETE'){fs.rmSync(paths.dir,{recursive:true,force:true});idx.projects=idx.projects.filter(x=>x.id!==id);saveIdx(idx);return res.json({ok:true})}}
+  if(part==='status'&&req.method==='GET'){const st=readJsonFileV48(paths.state,null),bs=k=>{const meta=readJsonFileV48(paths[k].meta,null);return meta&&fs.existsSync(paths[k].data)?{updatedAt:Number(meta.updatedAt||0),size:Number(meta.size||0),name:meta.name||''}:null};return res.json({ok:true,state:st?{updatedAt:Number(st.updatedAt||0)}:null,source:bs('source'),workbookSnapshot:bs('workbookSnapshot')})}
+  if(part==='state'){
+    if(req.method==='GET'){const st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
+    if(req.method==='DELETE'){fs.rmSync(paths.state,{force:true});touch(id);return res.json({ok:true})}
+    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
+  }
+  if(part.startsWith('blob/')){const key=part.split('/')[1],info=paths[key];if(!info)return res.status(404).json({ok:false,error:'파일 키 오류'});if(req.method==='GET'){const meta=readJsonFileV48(info.meta,null);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Content-Type',meta.type||'application/octet-stream');res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',meta.name||'');res.set('X-File-Type',meta.type||'');res.set('X-File-Mode',meta.mode||'');res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));return res.sendFile(info.data)}if(req.method==='DELETE'){fs.rmSync(info.data,{force:true});fs.rmSync(info.meta,{force:true});touch(id);return res.json({ok:true})}if(req.method==='PUT')return rawBodyV48(req).then(buf=>{if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(paths.dir,{recursive:true});const updatedAt=Date.now(),meta={updatedAt,size:buf.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};fs.writeFileSync(info.data,buf);atomicJsonV48(info.meta,meta);if(key==='source'){fs.rmSync(paths.state,{force:true});fs.rmSync(paths.workbookSnapshot.data,{force:true});fs.rmSync(paths.workbookSnapshot.meta,{force:true})}touch(id);res.json({ok:true,updatedAt,size:buf.length})}).catch(e=>res.status(500).json({ok:false,error:e.message}));}
+  next();
+});
+
 // =====================================================================
 // v32 공용 바코드 라벨 보관함 - 안전 복원
 // - 쿠팡 선적 작업 API/저장경로는 위 코드를 그대로 사용합니다.
@@ -848,6 +983,7 @@ function writeLabelFileV32(filePath,arr){
   fs.renameSync(tmp,filePath);
 }
 function requireLabelEditKeyV32(req,res,next){
+  if(req.authUser) return next();
   if(!LABEL_EDIT_KEY) return next();
   const supplied=String(req.get('x-label-edit-key')||'').trim();
   if(supplied!==LABEL_EDIT_KEY) return res.status(403).json({ok:false,code:'EDIT_KEY_REQUIRED',error:'공용 라벨 관리코드가 필요합니다.'});
