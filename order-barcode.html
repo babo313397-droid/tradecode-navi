@@ -1133,7 +1133,8 @@ async function browserDirectPrintJobs(items,namePrefix){
       setProgress('');
       return;
     }
-    printWin.document.write('<!doctype html><html><head><title>인쇄 준비중...</title></head><body style="font-family:sans-serif;padding:24px;">라벨을 준비하는 중입니다...</body></html>');
+    printWin.document.write('<!doctype html><html><head><title>인쇄 준비중...</title></head><body style="font-family:sans-serif;padding:24px;">라벨을 준비하는 중입니다...<script src="/auth-client.js"></script>
+</body></html>');
     printWin.document.close();
 
     const first=items[0].row.label;
@@ -1245,6 +1246,7 @@ ${body}
   });
 })();
 <\/script>
+<script src="/auth-client.js"></script>
 </body>
 </html>`);
     printWin.document.close();
@@ -1481,5 +1483,6 @@ initOrderBarcodeV44().then(()=>window.loadOrderServerV46?.()).catch(e=>console.w
 })();
 // ===== /v46 =====
 </script>
+<script src="/auth-client.js"></script>
 </body>
 </html>
