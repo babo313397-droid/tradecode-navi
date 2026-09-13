@@ -1009,6 +1009,7 @@ function saveProjectsV18(index){
   writeAtomic(COUPANG_PROJECTS_PATH,JSON.stringify({version:53,projects}));
   // 마지막 정상 비어있지 않은 인덱스를 별도 안전본으로 보관합니다.
   if(projects.length){try{writeAtomic(COUPANG_PROJECTS_SAFE_V53,JSON.stringify({version:53,projects}))}catch(_){}}
+  try{if(typeof saveProjectRegistryV57==='function')saveProjectRegistryV57(projects)}catch(_){}
 }
 function recoverProjectsIndexV53(){
   ensureCoupangSharedDir();fs.mkdirSync(COUPANG_PROJECTS_DIR,{recursive:true});
@@ -1030,8 +1031,9 @@ function recoverProjectsIndexV53(){
   return {version:53,projects:rebuilt};
 }
 function readProjectsV18(){
-  const raw=validProjectIndexV53(readJsonSafe(COUPANG_PROJECTS_PATH));
-  if(raw&&raw.projects.length)return recoverProjectsIndexV53();
+  try{
+    if(typeof mergeAllCoupangRootsV57==='function')return mergeAllCoupangRootsV57();
+  }catch(e){console.warn('[v57 coupang safety] 전체 저장소 병합 실패, 현재 저장소로 폴백:',e.message)}
   return recoverProjectsIndexV53();
 }
 function newProjectIdV18(){return 'p_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);}
@@ -1138,6 +1140,166 @@ function recoverCoupangFromAlternateRootsV55(){
   return {idx,recovered:idx.projects.length>0,sourceRoot:best.root};
 }
 
+
+// =====================================================================
+// v57: 모든 과거 쿠팡 저장루트 병합 + 프로젝트 이름/폴더 영구 복구
+// 문제: 한 저장루트에 일부 프로젝트만 남아 있으면 v55는 "비어 있지 않다"고 판단해
+//      다른 루트의 최신 프로젝트를 가져오지 않았습니다.
+// 해결: 서버 시작/목록 조회/저장 전마다 발견 가능한 모든 루트의 프로젝트를 ID 기준으로
+//      합치고, 현재 루트에 없는 프로젝트 폴더를 복사합니다. 같은 ID가 여러 루트에 있으면
+//      더 최신 파일만 안전백업 후 가져옵니다. 어떤 원본도 삭제하지 않습니다.
+// =====================================================================
+const V57_PROJECT_REGISTRY_FILE=path.join(AUTH_DIR_V48,'coupang-project-registry.json');
+const V57_PROJECT_REGISTRY_PREV=V57_PROJECT_REGISTRY_FILE+'.prev';
+function readProjectRegistryV57(){
+  const x=validProjectIndexV53(readJsonSafe(V57_PROJECT_REGISTRY_FILE))||validProjectIndexV53(readJsonSafe(V57_PROJECT_REGISTRY_PREV));
+  return x&&Array.isArray(x.projects)?x:{version:57,projects:[]};
+}
+function saveProjectRegistryV57(projects){
+  try{
+    fs.mkdirSync(path.dirname(V57_PROJECT_REGISTRY_FILE),{recursive:true});
+    if(fs.existsSync(V57_PROJECT_REGISTRY_FILE))try{fs.copyFileSync(V57_PROJECT_REGISTRY_FILE,V57_PROJECT_REGISTRY_PREV)}catch(_){}
+    const payload={version:57,updatedAt:Date.now(),projects:(projects||[]).map(p=>({id:p.id,name:p.name||'',status:p.status==='archived'?'archived':'active',createdAt:Number(p.createdAt||0),updatedAt:Number(p.updatedAt||0)}))};
+    atomicJsonV48(V57_PROJECT_REGISTRY_FILE,payload);
+    try{const mirror=path.join(COUPANG_SHARED_DIR,'_auth','coupang-project-registry.json');atomicJsonV48(mirror,payload)}catch(_){}
+  }catch(e){console.warn('[v57 coupang safety] 프로젝트 이름 레지스트리 저장 실패:',e.message)}
+}
+function v57ProjectIndexAtRoot(root){
+  const rows=[];
+  for(const f of ['projects.json','projects.json.safe','projects.json.prev']){
+    const x=validProjectIndexV53(readJsonSafe(path.join(root,f)));
+    if(x&&Array.isArray(x.projects))rows.push(...x.projects);
+  }
+  try{
+    const b=path.join(root,'_project-index-backups');
+    if(fs.existsSync(b)){
+      const names=fs.readdirSync(b).filter(n=>/^projects-.*\.json$/i.test(n)).sort().slice(-30);
+      for(const n of names){const x=validProjectIndexV53(readJsonSafe(path.join(b,n)));if(x?.projects)rows.push(...x.projects)}
+    }
+  }catch(_){}
+  const map=new Map();
+  for(const raw of rows){
+    if(!raw||!safeProjectIdV18(raw.id))continue;
+    const prev=map.get(raw.id);
+    const nu={...raw,id:String(raw.id),name:String(raw.name||'').trim(),status:raw.status==='archived'?'archived':'active',createdAt:Number(raw.createdAt||0),updatedAt:Number(raw.updatedAt||0)};
+    if(!prev || Number(nu.updatedAt||0)>=Number(prev.updatedAt||0))map.set(nu.id,{...(prev||{}),...nu});
+  }
+  return map;
+}
+function v57ProjectDirsAtRoot(root){
+  try{
+    const d=path.join(root,'projects');if(!fs.existsSync(d))return [];
+    return fs.readdirSync(d,{withFileTypes:true}).filter(e=>e.isDirectory()&&safeProjectIdV18(e.name)).map(e=>e.name);
+  }catch(_){return []}
+}
+function v57FileStamp(file){
+  try{
+    let updated=0,size=0;const st=fs.statSync(file);size=st.size;updated=st.mtimeMs;
+    if(/\.json$/i.test(file)){
+      const x=readJsonSafe(file);const n=Number(x?.updatedAt||x?.savedAt||x?.state?.savedAt||0);if(n)updated=Math.max(updated,n);
+    }
+    return {exists:true,updated,size};
+  }catch(_){return {exists:false,updated:0,size:0}}
+}
+function v57CopyNewerFile(src,dst){
+  const a=v57FileStamp(src),b=v57FileStamp(dst);if(!a.exists||!a.size)return false;
+  if(b.exists && a.updated<=b.updated+1500)return false;
+  fs.mkdirSync(path.dirname(dst),{recursive:true});
+  if(b.exists){
+    try{fs.copyFileSync(dst,dst+'.v57-prev')}catch(_){}
+  }
+  fs.copyFileSync(src,dst);return true;
+}
+function v57MergeProjectDir(srcRoot,dstRoot,id){
+  const src=path.join(srcRoot,'projects',id),dst=path.join(dstRoot,'projects',id);if(!fs.existsSync(src))return false;
+  fs.mkdirSync(dst,{recursive:true});let changed=false;
+  for(const rel of ['state.json','source.xlsx.bin','source.meta.json','workbookSnapshot.xlsx.bin','workbookSnapshot.meta.json']){
+    try{changed=v57CopyNewerFile(path.join(src,rel),path.join(dst,rel))||changed}catch(_){}
+  }
+  // 미래 버전에서 추가된 파일도 현재 폴더에 없다면 보존용으로 복사합니다.
+  try{
+    for(const ent of fs.readdirSync(src,{withFileTypes:true})){
+      if(!ent.isFile())continue;const d=path.join(dst,ent.name);if(!fs.existsSync(d)){fs.copyFileSync(path.join(src,ent.name),d);changed=true}
+    }
+  }catch(_){}
+  return changed;
+}
+function v57AllCoupangRoots(){
+  const roots=[];const add=v=>{try{if(v){const r=path.resolve(v);if(!roots.includes(r))roots.push(r)}}catch(_){}};
+  for(const r of nearbyCoupangRootsV55())add(r);add(COUPANG_SHARED_DIR);
+  // 이전 버전이 기록해 둔 선택경로/병합경로 힌트도 계속 따라갑니다.
+  for(let round=0;round<3;round++){
+    for(const root of [...roots]){
+      for(const f of [path.join(root,'coupang-storage-location.json'),path.join(root,'_auth','coupang-storage-location.json'),path.join(root,'_auth','storage-location.json')]){
+        try{
+          const x=readJsonSafe(f);if(!x)continue;
+          add(x.selectedRoot);add(x.coupangRoot);add(x.storageRoot);
+          for(const row of x.sourceRoots||[])add(typeof row==='string'?row:row?.root);
+        }catch(_){}
+      }
+    }
+  }
+  return roots;
+}
+function v57DeletedProjectIds(){
+  const ids=new Set();
+  try{
+    if(fs.existsSync(COUPANG_PROJECTS_TRASH_V53)){
+      for(const e of fs.readdirSync(COUPANG_PROJECTS_TRASH_V53,{withFileTypes:true})){
+        if(!e.isDirectory())continue;const m=e.name.match(/^([A-Za-z0-9_-]{3,80})_\d+$/);if(m)ids.add(m[1]);
+      }
+    }
+  }catch(_){}
+  return [...ids];
+}
+function mergeAllCoupangRootsV57(){
+  ensureCoupangSharedDir();fs.mkdirSync(COUPANG_PROJECTS_DIR,{recursive:true});
+  const roots=v57AllCoupangRoots();if(!roots.includes(COUPANG_SHARED_DIR))roots.unshift(COUPANG_SHARED_DIR);
+  const deleted=new Set(v57DeletedProjectIds());
+  const meta=new Map();const sources=[];
+  const registry=readProjectRegistryV57();
+  for(const p of registry.projects||[]){if(p&&safeProjectIdV18(p.id)&&!deleted.has(p.id))meta.set(p.id,p)}
+  for(const root of roots){
+    const idx=v57ProjectIndexAtRoot(root),dirs=v57ProjectDirsAtRoot(root);if(!idx.size&&!dirs.length)continue;
+    sources.push({root,indexCount:idx.size,dirCount:dirs.length});
+    for(const [id,p] of idx){if(deleted.has(id))continue;const old=meta.get(id);if(!old||Number(p.updatedAt||0)>=Number(old.updatedAt||0))meta.set(id,p)}
+    for(const id of dirs){
+      if(deleted.has(id))continue;
+      try{v57MergeProjectDir(root,COUPANG_SHARED_DIR,id)}catch(e){console.warn('[v57 coupang safety] 프로젝트 병합 실패',id,root,e.message)}
+      if(!meta.has(id))meta.set(id,{id,name:'',status:'active',createdAt:0,updatedAt:0});
+    }
+  }
+  // 현재 저장소의 실제 폴더를 기준으로 최종 목록을 만들되, 모든 과거 인덱스의 이름/상태를 보존합니다.
+  const currentDirs=listProjectDirsV53();const rows=[];
+  for(const id of currentDirs){if(deleted.has(id))continue;rows.push(deriveProjectV53(id,meta.get(id)||{}))}
+  rows.sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
+  const current=validProjectIndexV53(readJsonSafe(COUPANG_PROJECTS_PATH))||{projects:[]};
+  const sig=a=>(a||[]).map(x=>`${x.id}|${x.name}|${x.status}|${Number(x.updatedAt||0)}`).sort().join('\n');
+  if(sig(current.projects)!==sig(rows)){
+    console.warn(`[v57 coupang safety] 전체 저장소 병합: ${current.projects.length}개 -> ${rows.length}개 / 저장소 ${sources.length}곳`);
+    saveProjectsV18({version:57,projects:rows});
+  }else{
+    saveProjectRegistryV57(rows);
+  }
+  try{writeAtomic(path.join(COUPANG_SHARED_DIR,'coupang-storage-location.json'),JSON.stringify({version:57,selectedRoot:COUPANG_SHARED_DIR,projectCount:rows.length,sourceRoots:sources,checkedAt:Date.now()}))}catch(_){}
+  return {version:57,projects:rows,_v57:{sourceRoots:sources,deletedIds:[...deleted]}};
+}
+function v57ProjectAudit(){
+  const roots=v57AllCoupangRoots();if(!roots.includes(COUPANG_SHARED_DIR))roots.unshift(COUPANG_SHARED_DIR);
+  return roots.map(root=>{
+    const idx=v57ProjectIndexAtRoot(root),dirs=v57ProjectDirsAtRoot(root);const names=[];
+    for(const [id,p] of idx)names.push({id,name:p.name||'',updatedAt:Number(p.updatedAt||0)});
+    for(const id of dirs)if(!idx.has(id))names.push({id,name:'(폴더만 발견)',updatedAt:0});
+    return {root,indexCount:idx.size,dirCount:dirs.length,projects:names.sort((a,b)=>b.updatedAt-a.updatedAt)};
+  }).filter(x=>x.indexCount||x.dirCount);
+}
+try{const _v57=mergeAllCoupangRootsV57();console.log(`[v57 coupang safety] 전체 저장소 병합 완료: ${_v57.projects.length}개`)}catch(e){console.warn('[v57 coupang safety] 시작 병합 실패:',e.message)}
+
+app.get('/api/coupang-shared/project-audit',coupangAuth,(req,res)=>{
+  if(!req.authUser||!req.authUser.legacyOwner||req.authUser.role!=='admin')return res.status(403).json({ok:false,error:'기존 관리자 계정만 확인할 수 있습니다.'});
+  const idx=mergeAllCoupangRootsV57();res.set('Cache-Control','no-store');res.json({ok:true,version:57,storageRoot:COUPANG_SHARED_DIR,mergedCount:idx.projects.length,deletedIds:v57DeletedProjectIds(),stores:v57ProjectAudit()});
+});
+
 app.get('/api/coupang-shared/safety-status',coupangAuth,(req,res)=>{
   if(!req.authUser||req.authUser.role!=='admin')return res.status(403).json({ok:false,error:'관리자만 확인할 수 있습니다.'});
   const idx=recoverProjectsIndexV53();
@@ -1146,12 +1308,10 @@ app.get('/api/coupang-shared/safety-status',coupangAuth,(req,res)=>{
 });
 
 app.get('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
-  let recovered={idx:migrateLegacyProjectV18(),recovered:false,sourceRoot:COUPANG_SHARED_DIR};
-  if(!recovered.idx.projects.length)recovered=recoverCoupangFromAlternateRootsV55();
-  const idx=recovered.idx||{projects:[]};
-  const rows=[...idx.projects].sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
+  const idx=mergeAllCoupangRootsV57();
+  const rows=[...(idx.projects||[])].sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
   res.set('Cache-Control','no-store');
-  res.json({ok:true,projects:rows,safety:{version:55,empty:rows.length===0,storageRoot:COUPANG_SHARED_DIR,projectFolderCount:listProjectDirsV53().length,recoveredFromAlternate:!!recovered.recovered,sourceRoot:recovered.sourceRoot||''}});
+  res.json({ok:true,projects:rows,safety:{version:57,empty:rows.length===0,storageRoot:COUPANG_SHARED_DIR,projectFolderCount:listProjectDirsV53().length,mergedAcrossRoots:true,sourceRoots:idx._v57?.sourceRoots||[],deletedProjectIds:idx._v57?.deletedIds||[]}});
 });
 app.post('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
   try{const idx=migrateLegacyProjectV18(),id=newProjectIdV18(),now=Date.now(),name=String(req.body?.name||'').trim().slice(0,120)||`새 선적 작업 ${new Date().toLocaleDateString('ko-KR')}`;const p={id,name,status:'active',createdAt:now,updatedAt:now};fs.mkdirSync(projectPathsV18(id).dir,{recursive:true});idx.projects.push(p);saveProjectsV18(idx);res.json({ok:true,project:p})}catch(err){res.status(500).json({ok:false,error:err.message})}
