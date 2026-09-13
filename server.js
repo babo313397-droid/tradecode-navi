@@ -43,44 +43,115 @@ app.use(express.json({ limit: '5mb' })); // 댓글 + 공용 라벨 JSON 파싱�
 // - 최초 생성 관리자(legacyOwner=true)는 기존 저장소를 그대로 사용합니다.
 // - 이후 계정은 data/users/<userId>/ 아래에 분리 저장합니다.
 // =====================================================================
-// v52: 로그인 계정 파일은 쿠팡 공용 작업과 같은 영구 저장 루트 아래에 고정합니다.
-// 이전 v48~v51 경로의 users.json은 삭제하지 않고, 발견 시 새 고정 위치로 복사해 이어서 사용합니다.
-const AUTH_COUPANG_ROOT_V52 = process.env.COUPANG_SHARED_DIR || path.join(__dirname,'data','coupang-shared');
-const AUTH_DIR_V48 = process.env.TRADECODE_AUTH_DIR || path.join(AUTH_COUPANG_ROOT_V52,'_auth');
-const USERS_FILE_V48 = path.join(AUTH_DIR_V48,'users.json');
-const SECRET_FILE_V48 = path.join(AUTH_DIR_V48,'session-secret.txt');
-const SESSION_COOKIE_V48 = 'tradecode_session';
-const AUTH_LEGACY_DIRS_V52 = [...new Set([
+// v54: 로그인 계정과 쿠팡 작업 데이터의 영구 저장 루트를 서버 시작 전에 하나로 확정합니다.
+// 핵심: server.js가 새 배포 폴더로 교체되어도 기존 프로젝트/계정이 있는 저장소를 먼저 찾아 사용합니다.
+function readJsonLooseV54(file,fallback=null){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch(_){return fallback}}
+function projectCountAtRootEarlyV54(root){
+  try{
+    if(!root)return 0;
+    const idx=readJsonLooseV54(path.join(root,'projects.json'),null);
+    const idxCount=(idx&&Array.isArray(idx.projects))?idx.projects.length:0;
+    const pdir=path.join(root,'projects');let dirCount=0;
+    if(fs.existsSync(pdir))dirCount=fs.readdirSync(pdir,{withFileTypes:true}).filter(e=>e.isDirectory()&&/^[A-Za-z0-9_-]{3,80}$/.test(e.name)).length;
+    const legacy=(fs.existsSync(path.join(root,'state.json'))||fs.existsSync(path.join(root,'source.xlsx.bin')))?1:0;
+    return Math.max(idxCount,dirCount,legacy);
+  }catch(_){return 0}
+}
+function authCountAtRootV54(root){
+  try{const x=readJsonLooseV54(path.join(root,'_auth','users.json'),null);return x&&Array.isArray(x.users)?x.users.length:0}catch(_){return 0}
+}
+function persistentRootCandidatesV54(){
+  const arr=[];const add=v=>{try{if(v){const r=path.resolve(v);if(!arr.includes(r))arr.push(r)}}catch(_){}};
+  add(process.env.TRADECODE_DATA_ROOT);
+  add(process.env.COUPANG_SHARED_DIR);
+  add(path.join(__dirname,'data','coupang-shared'));
+  add(path.join(process.cwd(),'data','coupang-shared'));
+  add(path.join(__dirname,'..','data','coupang-shared'));
+  add(path.join(process.cwd(),'server','data','coupang-shared'));
+  for(const parent of [...new Set([path.dirname(__dirname),process.cwd(),path.dirname(process.cwd())].map(x=>path.resolve(x)))]){
+    try{
+      for(const e of fs.readdirSync(parent,{withFileTypes:true}).slice(0,250)){
+        if(!e.isDirectory())continue;
+        add(path.join(parent,e.name,'data','coupang-shared'));
+        add(path.join(parent,e.name,'server','data','coupang-shared'));
+      }
+    }catch(_){}
+  }
+  // 이전 버전이 기록해 둔 저장 위치 힌트가 있으면 후보에 추가합니다.
+  for(const root of [...arr]){
+    try{const h=readJsonLooseV54(path.join(root,'_auth','coupang-storage-location.json'),null);if(h?.selectedRoot)add(h.selectedRoot)}catch(_){}
+  }
+  return arr;
+}
+const PERSISTENT_ROOT_CANDIDATES_V54=persistentRootCandidatesV54();
+function discoverPersistentCoupangRootV54(){
+  const explicit=process.env.TRADECODE_DATA_ROOT||process.env.COUPANG_SHARED_DIR||'';
+  let best=explicit?path.resolve(explicit):path.resolve(path.join(__dirname,'data','coupang-shared'));
+  let bestProjects=projectCountAtRootEarlyV54(best),bestAuth=authCountAtRootV54(best);
+  for(const c of PERSISTENT_ROOT_CANDIDATES_V54){
+    const p=projectCountAtRootEarlyV54(c),a=authCountAtRootV54(c);
+    // 쿠팡 프로젝트 수를 최우선, 동률이면 계정 수가 많은 저장소를 선택합니다.
+    if(p>bestProjects || (p===bestProjects && a>bestAuth)){best=c;bestProjects=p;bestAuth=a}
+  }
+  console.log(`[v54 storage] 영구 저장 루트: ${best} / 쿠팡 ${bestProjects}개 / 계정 ${bestAuth}개`);
+  return best;
+}
+const PERSISTENT_COUPANG_ROOT_V54=discoverPersistentCoupangRootV54();
+const AUTH_COUPANG_ROOT_V52=PERSISTENT_COUPANG_ROOT_V54;
+const AUTH_DIR_V48=process.env.TRADECODE_AUTH_DIR?path.resolve(process.env.TRADECODE_AUTH_DIR):path.join(PERSISTENT_COUPANG_ROOT_V54,'_auth');
+const USERS_FILE_V48=path.join(AUTH_DIR_V48,'users.json');
+const SECRET_FILE_V48=path.join(AUTH_DIR_V48,'session-secret.txt');
+const SESSION_COOKIE_V48='tradecode_session';
+const AUTH_BACKUP_DIR_V54=path.join(AUTH_DIR_V48,'_backups');
+const AUTH_LEGACY_DIRS_V52=[...new Set([
   AUTH_DIR_V48,
-  path.join(path.dirname(AUTH_COUPANG_ROOT_V52),'auth'),
+  ...PERSISTENT_ROOT_CANDIDATES_V54.flatMap(r=>[path.join(r,'_auth'),path.join(path.dirname(r),'auth')]),
   path.join(__dirname,'data','auth'),
   path.join(__dirname,'auth')
 ].map(p=>path.resolve(p)))];
 fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
 function readJsonFileV48(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch(_){return fallback}}
 function atomicJsonV48(file,obj){fs.mkdirSync(path.dirname(file),{recursive:true});const t=`${file}.${process.pid}.${Date.now()}.tmp`;fs.writeFileSync(t,JSON.stringify(obj,null,2),'utf8');fs.renameSync(t,file)}
-function authCandidateV52(dir){const file=path.join(dir,'users.json'),x=readJsonFileV48(file,null);return{dir,file,data:(x&&Array.isArray(x.users))?x:null,count:(x&&Array.isArray(x.users))?x.users.length:0}}
+try{atomicJsonV48(path.join(AUTH_DIR_V48,'coupang-storage-location.json'),{version:54,selectedRoot:PERSISTENT_COUPANG_ROOT_V54,checkedAt:Date.now()})}catch(_){}
+function backupAuthUsersV54(){
+  try{
+    if(!fs.existsSync(USERS_FILE_V48))return;
+    fs.mkdirSync(AUTH_BACKUP_DIR_V54,{recursive:true});
+    fs.copyFileSync(USERS_FILE_V48,USERS_FILE_V48+'.prev');
+    const stamp=new Date().toISOString().replace(/[:.]/g,'-');
+    fs.copyFileSync(USERS_FILE_V48,path.join(AUTH_BACKUP_DIR_V54,`users-${stamp}.json`));
+    const rows=fs.readdirSync(AUTH_BACKUP_DIR_V54).filter(x=>/^users-.*\.json$/.test(x)).sort();
+    while(rows.length>30){const x=rows.shift();try{fs.unlinkSync(path.join(AUTH_BACKUP_DIR_V54,x))}catch(_){}}
+  }catch(e){console.warn('[v54 auth] 계정 백업 실패:',e.message)}
+}
+function authCandidateV52(dir){
+  const file=path.join(dir,'users.json'),x=readJsonFileV48(file,null);let mtime=0;
+  try{mtime=fs.statSync(file).mtimeMs}catch(_){}
+  return{dir,file,data:(x&&Array.isArray(x.users))?x:null,count:(x&&Array.isArray(x.users))?x.users.length:0,mtime};
+}
 function recoverAuthFilesV52(){
   try{
     fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
     const candidates=AUTH_LEGACY_DIRS_V52.map(authCandidateV52);
-    const canonical=candidates.find(x=>path.resolve(x.file)===path.resolve(USERS_FILE_V48));
-    const best=[...candidates].sort((a,b)=>b.count-a.count || (a.file===USERS_FILE_V48?-1:1))[0];
-    if((!canonical||canonical.count===0) && best && best.count>0 && path.resolve(best.file)!==path.resolve(USERS_FILE_V48)){
+    const canonical=candidates.find(x=>path.resolve(x.file)===path.resolve(USERS_FILE_V48))||{count:0,mtime:0};
+    const best=[...candidates].sort((a,b)=>b.count-a.count || b.mtime-a.mtime)[0];
+    if(best&&best.count>0&&best.count>Number(canonical.count||0)&&path.resolve(best.file)!==path.resolve(USERS_FILE_V48)){
+      if(fs.existsSync(USERS_FILE_V48))backupAuthUsersV54();
       fs.copyFileSync(best.file,USERS_FILE_V48);
-      console.log(`[v52 auth] 기존 계정 ${best.count}개를 영구 인증 저장소로 연결: ${best.file} -> ${USERS_FILE_V48}`);
+      const bestSecret=path.join(best.dir,'session-secret.txt');
+      if(fs.existsSync(bestSecret))try{fs.copyFileSync(bestSecret,SECRET_FILE_V48)}catch(_){}
+      console.log(`[v54 auth] 기존 계정 ${best.count}개를 영구 인증 저장소로 복구: ${best.file} -> ${USERS_FILE_V48}`);
+    }else if((!canonical||canonical.count===0)&&best&&best.count>0&&path.resolve(best.file)!==path.resolve(USERS_FILE_V48)){
+      fs.copyFileSync(best.file,USERS_FILE_V48);
+      const bestSecret=path.join(best.dir,'session-secret.txt');
+      if(fs.existsSync(bestSecret))try{fs.copyFileSync(bestSecret,SECRET_FILE_V48)}catch(_){}
+      console.log(`[v54 auth] 기존 계정 ${best.count}개를 영구 인증 저장소로 연결: ${best.file} -> ${USERS_FILE_V48}`);
     }
     if(!fs.existsSync(SECRET_FILE_V48)){
-      const dirs=[];
-      if(best?.dir)dirs.push(best.dir);
-      dirs.push(...AUTH_LEGACY_DIRS_V52);
-      for(const dir of [...new Set(dirs)]){
-        const f=path.join(dir,'session-secret.txt');
-        if(path.resolve(f)===path.resolve(SECRET_FILE_V48))continue;
-        try{if(fs.existsSync(f)&&fs.readFileSync(f,'utf8').trim()){fs.copyFileSync(f,SECRET_FILE_V48);break}}catch(_){}
-      }
+      const dirs=[];if(best?.dir)dirs.push(best.dir);dirs.push(...AUTH_LEGACY_DIRS_V52);
+      for(const dir of [...new Set(dirs)]){const f=path.join(dir,'session-secret.txt');if(path.resolve(f)===path.resolve(SECRET_FILE_V48))continue;try{if(fs.existsSync(f)&&fs.readFileSync(f,'utf8').trim()){fs.copyFileSync(f,SECRET_FILE_V48);break}}catch(_){}}
     }
-  }catch(e){console.warn('[v52 auth] 기존 계정 자동 연결 실패:',e.message)}
+  }catch(e){console.warn('[v54 auth] 기존 계정 자동 연결 실패:',e.message)}
 }
 recoverAuthFilesV52();
 function usersV48(){
@@ -88,7 +159,7 @@ function usersV48(){
   if(!x||!Array.isArray(x.users)||x.users.length===0){recoverAuthFilesV52();x=readJsonFileV48(USERS_FILE_V48,{version:48,users:[]})}
   return x&&Array.isArray(x.users)?x:{version:48,users:[]}
 }
-function saveUsersV48(x){atomicJsonV48(USERS_FILE_V48,{version:52,users:x.users||[]})}
+function saveUsersV48(x){backupAuthUsersV54();atomicJsonV48(USERS_FILE_V48,{version:54,users:x.users||[]})}
 function secretV48(){try{const x=fs.readFileSync(SECRET_FILE_V48,'utf8').trim();if(x)return x}catch(_){}const x=crypto.randomBytes(48).toString('hex');fs.writeFileSync(SECRET_FILE_V48,x,{mode:0o600});return x}
 const AUTH_SECRET_V48=String(process.env.TRADECODE_AUTH_SECRET||'').trim()||secretV48();
 function normUserV48(v){return String(v||'').trim().toLowerCase().replace(/[^a-z0-9._-]/g,'').slice(0,60)}
@@ -105,11 +176,12 @@ function publicUserV48(u){return{id:u.id,username:u.username,displayName:u.displ
 function requireLoginApiV48(req,res,next){const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,code:'LOGIN_REQUIRED',error:'로그인이 필요합니다.'});req.authUser=u;next()}
 function requireLoginPageV48(req,res,next){const u=authUserV48(req);if(!u)return res.redirect('/login.html?next='+encodeURIComponent(req.originalUrl||'/'));req.authUser=u;for(const c of identityCookiesV50(req,u))res.append('Set-Cookie',c);next()}
 function isAdminV48(req){return req.authUser&&req.authUser.role==='admin'}
-function userDataRootV48(req){const u=req.authUser;if(!u)throw new Error('login required');if(u.legacyOwner)return null;const parent=process.env.TRADECODE_USER_DATA_DIR||path.join(path.dirname(process.env.COUPANG_SHARED_DIR||path.join(__dirname,'data','coupang-shared')),'users');return path.join(parent,'v50-private',u.id)}
+function userDataRootV48(req){const u=req.authUser;if(!u)throw new Error('login required');if(u.legacyOwner)return null;const parent=process.env.TRADECODE_USER_DATA_DIR?path.resolve(process.env.TRADECODE_USER_DATA_DIR):path.join(path.dirname(PERSISTENT_COUPANG_ROOT_V54),'users');return path.join(parent,'v50-private',u.id)}
 function ensureUserRootV48(req){const r=userDataRootV48(req);if(r)fs.mkdirSync(r,{recursive:true});return r}
 
 app.get('/api/auth/me',(req,res)=>{const u=authUserV48(req);res.set('Cache-Control','no-store');res.json({ok:true,authenticated:!!u,user:u?publicUserV48(u):null,needsBootstrap:usersV48().users.length===0})});
-app.post('/api/auth/bootstrap',(req,res)=>{try{const db=usersV48();if(db.users.length)return res.status(409).json({ok:false,error:'관리자 계정이 이미 생성되어 있습니다.'});const username=normUserV48(req.body?.username),displayName=String(req.body?.displayName||username).trim().slice(0,80),pw=String(req.body?.password||'');if(username.length<3)return res.status(400).json({ok:false,error:'아이디는 3자 이상이어야 합니다.'});if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:'admin',legacyOwner:true,approved:true,approvedAt:Date.now(),disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u),legacyDataAssigned:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.get('/api/auth/safety-status',(req,res)=>{const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,error:'로그인이 필요합니다.'});if(u.role!=='admin')return res.status(403).json({ok:false,error:'관리자만 확인할 수 있습니다.'});const db=usersV48();res.set('Cache-Control','no-store');res.json({ok:true,version:54,persistentRoot:PERSISTENT_COUPANG_ROOT_V54,authDir:AUTH_DIR_V48,userCount:db.users.length,usersFileExists:fs.existsSync(USERS_FILE_V48),prevBackupExists:fs.existsSync(USERS_FILE_V48+'.prev'),backupDir:AUTH_BACKUP_DIR_V54})});
+app.post('/api/auth/bootstrap',(req,res)=>{try{recoverAuthFilesV52();const db=usersV48();if(db.users.length)return res.status(409).json({ok:false,error:'기존 관리자/사용자 계정이 발견되었습니다. 첫 관리자 계정을 새로 만들 수 없습니다. 기존 계정으로 로그인해 주세요.'});const username=normUserV48(req.body?.username),displayName=String(req.body?.displayName||username).trim().slice(0,80),pw=String(req.body?.password||'');if(username.length<3)return res.status(400).json({ok:false,error:'아이디는 3자 이상이어야 합니다.'});if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:'admin',legacyOwner:true,approved:true,approvedAt:Date.now(),disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u),legacyDataAssigned:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.post('/api/auth/login',(req,res)=>{const username=normUserV48(req.body?.username),pw=String(req.body?.password||'');const u=usersV48().users.find(x=>x.username===username&&!x.disabled);if(!u||!verifyPwV48(pw,u))return res.status(401).json({ok:false,error:'아이디 또는 비밀번호가 올바르지 않습니다.'});if(!u.legacyOwner&&u.approved===false)return res.status(403).json({ok:false,code:'APPROVAL_REQUIRED',error:'관리자 승인 대기 중인 계정입니다. 관리자에게 승인을 요청해 주세요.'});setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u)})});
 app.post('/api/auth/logout',(req,res)=>{clearSessionV48(req,res);res.json({ok:true})});
 app.get('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});res.json({ok:true,users:usersV48().users.map(publicUserV48)})});
@@ -691,35 +763,10 @@ function projectCountAtRootV53(root){
   }catch(_){return 0}
 }
 function discoverCoupangSharedDirV53(){
-  const requested=path.resolve(process.env.COUPANG_SHARED_DIR || path.join(__dirname,'data','coupang-shared'));
-  const cand=[];const add=v=>{try{if(v){const r=path.resolve(v);if(!cand.includes(r))cand.push(r)}}catch(_){}};
-  add(requested);
-  add(path.join(__dirname,'data','coupang-shared'));
-  add(path.join(process.cwd(),'data','coupang-shared'));
-  add(path.join(__dirname,'..','data','coupang-shared'));
-  add(path.join(process.cwd(),'server','data','coupang-shared'));
-  // 배포가 버전별 하위 폴더를 만드는 경우를 대비해 부모의 직계 하위 폴더도 제한적으로 검사합니다.
-  for(const parent of [...new Set([path.dirname(__dirname),process.cwd(),path.dirname(process.cwd())].map(x=>path.resolve(x)))]){
-    try{
-      for(const e of fs.readdirSync(parent,{withFileTypes:true}).slice(0,200)){
-        if(!e.isDirectory())continue;
-        add(path.join(parent,e.name,'data','coupang-shared'));
-        add(path.join(parent,e.name,'server','data','coupang-shared'));
-      }
-    }catch(_){}
-  }
-  let best=requested,bestCount=projectCountAtRootV53(requested);
-  for(const c of cand){const n=projectCountAtRootV53(c);if(n>bestCount){best=c;bestCount=n}}
-  if(best!==requested && bestCount>0){
-    console.warn(`[v53 coupang safety] 요청 저장경로에 프로젝트가 없거나 적어 기존 데이터 경로를 자동 선택했습니다: ${best} (${bestCount}개)`);
-  }
-  try{
-    fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
-    atomicJsonV48(path.join(AUTH_DIR_V48,'coupang-storage-location.json'),{version:53,selectedRoot:best,projectCount:bestCount,checkedAt:Date.now()});
-  }catch(_){}
-  return best;
+  // v54부터 인증보다 늦게 별도 경로를 고르지 않습니다. 서버 시작 초기에 확정한 영구 루트를 그대로 사용합니다.
+  return PERSISTENT_COUPANG_ROOT_V54;
 }
-const COUPANG_SHARED_DIR = discoverCoupangSharedDirV53();
+const COUPANG_SHARED_DIR = PERSISTENT_COUPANG_ROOT_V54;
 const COUPANG_SHARED_TOKEN = String(process.env.COUPANG_SHARED_TOKEN || '').trim();
 const COUPANG_STATE_PATH = path.join(COUPANG_SHARED_DIR, 'state.json');
 const COUPANG_BLOBS = {
