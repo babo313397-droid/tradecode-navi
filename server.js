@@ -1020,15 +1020,97 @@ function getProjectOr404V18(req,res){
   const idx=migrateLegacyProjectV18(),project=idx.projects.find(x=>x.id===id);if(!project){res.status(404).json({ok:false,error:'선적 작업을 찾을 수 없습니다.'});return null}return {id,idx,project,paths:projectPathsV18(id)};
 }
 
+
+// =====================================================================
+// v55: 쿠팡 프로젝트 '빈 목록' 방어 + 다른 저장루트 자동 구조복구
+// - 현재 저장소가 비어 있어도 주변의 기존 저장소에 프로젝트 폴더가 남아 있으면 복사 복구합니다.
+// - 기존 파일은 덮어쓰지 않고, 현재 저장소에 없는 프로젝트 폴더만 복사합니다.
+// - 프로젝트 0개 응답에는 safety 메타데이터를 붙여 프론트가 화면을 지우지 않게 합니다.
+// =====================================================================
+function copyDirMissingV55(src,dst){
+  try{
+    if(!fs.existsSync(src))return false;
+    fs.mkdirSync(dst,{recursive:true});
+    let copied=false;
+    for(const ent of fs.readdirSync(src,{withFileTypes:true})){
+      const s=path.join(src,ent.name),d=path.join(dst,ent.name);
+      if(ent.isDirectory())copied=copyDirMissingV55(s,d)||copied;
+      else if(ent.isFile()&&!fs.existsSync(d)){fs.copyFileSync(s,d);copied=true}
+    }
+    return copied;
+  }catch(e){console.warn('[v55 coupang safety] 폴더 복사 실패:',src,e.message);return false}
+}
+function nearbyCoupangRootsV55(){
+  const found=[];const add=v=>{try{if(v){const r=path.resolve(v);if(!found.includes(r))found.push(r)}}catch(_){}};
+  for(const r of (typeof PERSISTENT_ROOT_CANDIDATES_V54!=='undefined'?PERSISTENT_ROOT_CANDIDATES_V54:[]))add(r);
+  add(COUPANG_SHARED_DIR);
+  const starts=[__dirname,path.dirname(__dirname),process.cwd(),path.dirname(process.cwd())];
+  const seen=new Set();
+  function walk(dir,depth){
+    try{
+      dir=path.resolve(dir);if(seen.has(dir)||depth<0)return;seen.add(dir);
+      const direct=path.join(dir,'data','coupang-shared');if(fs.existsSync(direct))add(direct);
+      const direct2=path.join(dir,'server','data','coupang-shared');if(fs.existsSync(direct2))add(direct2);
+      if(depth===0)return;
+      const ents=fs.readdirSync(dir,{withFileTypes:true}).slice(0,220);
+      for(const e of ents){
+        if(!e.isDirectory()||['node_modules','.git','tmp','temp','logs'].includes(e.name.toLowerCase()))continue;
+        const p=path.join(dir,e.name);
+        if(e.name==='coupang-shared'&&path.basename(path.dirname(p))==='data')add(p);
+        else walk(p,depth-1);
+      }
+    }catch(_){}
+  }
+  for(const s of starts)walk(s,2);
+  return found;
+}
+function rootProjectScoreV55(root){
+  try{
+    const idx=validProjectIndexV53(readJsonSafe(path.join(root,'projects.json')))||{projects:[]};
+    const pdir=path.join(root,'projects');
+    const dirs=fs.existsSync(pdir)?fs.readdirSync(pdir,{withFileTypes:true}).filter(e=>e.isDirectory()&&safeProjectIdV18(e.name)).length:0;
+    return {root,indexCount:idx.projects.length,dirCount:dirs,score:Math.max(idx.projects.length,dirs)};
+  }catch(_){return {root,indexCount:0,dirCount:0,score:0}}
+}
+function recoverCoupangFromAlternateRootsV55(){
+  let idx=recoverProjectsIndexV53();
+  if(idx.projects.length||listProjectDirsV53().length)return {idx,recovered:false,sourceRoot:COUPANG_SHARED_DIR};
+  const candidates=nearbyCoupangRootsV55().filter(r=>path.resolve(r)!==path.resolve(COUPANG_SHARED_DIR)).map(rootProjectScoreV55).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+  const best=candidates[0];
+  if(!best)return {idx,recovered:false,sourceRoot:''};
+  console.warn(`[v55 coupang safety] 현재 저장소가 비어 있어 기존 저장소 복구 시도: ${best.root} (${best.score}개) -> ${COUPANG_SHARED_DIR}`);
+  fs.mkdirSync(COUPANG_PROJECTS_DIR,{recursive:true});
+  const srcProjects=path.join(best.root,'projects');
+  if(fs.existsSync(srcProjects)){
+    for(const ent of fs.readdirSync(srcProjects,{withFileTypes:true})){
+      if(!ent.isDirectory()||!safeProjectIdV18(ent.name))continue;
+      const src=path.join(srcProjects,ent.name),dst=path.join(COUPANG_PROJECTS_DIR,ent.name);
+      if(!fs.existsSync(dst))copyDirMissingV55(src,dst);
+    }
+  }
+  // 인덱스/안전본은 참고용으로만 보관하고 실제 목록은 프로젝트 폴더에서 다시 생성합니다.
+  try{
+    const altIdx=path.join(best.root,'projects.json');
+    if(fs.existsSync(altIdx))fs.copyFileSync(altIdx,path.join(COUPANG_SHARED_DIR,'projects.v55-recovered-source.json'));
+  }catch(_){}
+  idx=recoverProjectsIndexV53();
+  return {idx,recovered:idx.projects.length>0,sourceRoot:best.root};
+}
+
 app.get('/api/coupang-shared/safety-status',coupangAuth,(req,res)=>{
   if(!req.authUser||req.authUser.role!=='admin')return res.status(403).json({ok:false,error:'관리자만 확인할 수 있습니다.'});
   const idx=recoverProjectsIndexV53();
   res.set('Cache-Control','no-store');
-  res.json({ok:true,version:53,storageRoot:COUPANG_SHARED_DIR,indexCount:idx.projects.length,projectFolderCount:listProjectDirsV53().length,indexExists:fs.existsSync(COUPANG_PROJECTS_PATH),prevBackupExists:fs.existsSync(COUPANG_PROJECTS_PREV_V53),safeBackupExists:fs.existsSync(COUPANG_PROJECTS_SAFE_V53)});
+  const alt=nearbyCoupangRootsV55().map(rootProjectScoreV55).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,10);res.json({ok:true,version:55,storageRoot:COUPANG_SHARED_DIR,indexCount:idx.projects.length,projectFolderCount:listProjectDirsV53().length,indexExists:fs.existsSync(COUPANG_PROJECTS_PATH),prevBackupExists:fs.existsSync(COUPANG_PROJECTS_PREV_V53),safeBackupExists:fs.existsSync(COUPANG_PROJECTS_SAFE_V53),candidateStores:alt});
 });
 
 app.get('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
-  const idx=migrateLegacyProjectV18();res.set('Cache-Control','no-store');res.json({ok:true,projects:[...idx.projects].sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0))});
+  let recovered={idx:migrateLegacyProjectV18(),recovered:false,sourceRoot:COUPANG_SHARED_DIR};
+  if(!recovered.idx.projects.length)recovered=recoverCoupangFromAlternateRootsV55();
+  const idx=recovered.idx||{projects:[]};
+  const rows=[...idx.projects].sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
+  res.set('Cache-Control','no-store');
+  res.json({ok:true,projects:rows,safety:{version:55,empty:rows.length===0,storageRoot:COUPANG_SHARED_DIR,projectFolderCount:listProjectDirsV53().length,recoveredFromAlternate:!!recovered.recovered,sourceRoot:recovered.sourceRoot||''}});
 });
 app.post('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
   try{const idx=migrateLegacyProjectV18(),id=newProjectIdV18(),now=Date.now(),name=String(req.body?.name||'').trim().slice(0,120)||`새 선적 작업 ${new Date().toLocaleDateString('ko-KR')}`;const p={id,name,status:'active',createdAt:now,updatedAt:now};fs.mkdirSync(projectPathsV18(id).dir,{recursive:true});idx.projects.push(p);saveProjectsV18(idx);res.json({ok:true,project:p})}catch(err){res.status(500).json({ok:false,error:err.message})}
