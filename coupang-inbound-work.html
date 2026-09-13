@@ -3439,6 +3439,112 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 // ===== /v46 =====
 </script>
 
+
+<script id="v55-coupang-zero-list-guard">
+// ===== v55: 서버 재시작/업데이트 중 빈 프로젝트 목록으로 화면이 사라지는 것 방지 =====
+(function(){
+  const scope=(typeof TC_ACCOUNT_SCOPE_V50!=='undefined'?TC_ACCOUNT_SCOPE_V50:{uid:'unknown',legacy:false});
+  const suffix=scope.legacy?'legacy':String(scope.uid||'unknown').replace(/[^A-Za-z0-9._-]/g,'_');
+  const PROJECT_CACHE_KEY_V55='coupangProjectListSafetyV55:'+suffix;
+  let allowEmptyOnceV55=false,retryBusyV55=false,lastNonEmptyAtV55=0;
+
+  function readProjectCacheV55(){
+    try{const x=JSON.parse(localStorage.getItem(PROJECT_CACHE_KEY_V55)||'null');return x&&Array.isArray(x.projects)?x:{projects:[],savedAt:0}}catch(_){return{projects:[],savedAt:0}}
+  }
+  function writeProjectCacheV55(rows){
+    if(!Array.isArray(rows)||!rows.length)return;
+    try{localStorage.setItem(PROJECT_CACHE_KEY_V55,JSON.stringify({version:55,savedAt:Date.now(),projects:rows.map(p=>({id:p.id,name:p.name,status:p.status||'active',createdAt:Number(p.createdAt||0),updatedAt:Number(p.updatedAt||0)}))}))}catch(_){}
+    lastNonEmptyAtV55=Date.now();
+  }
+  function clearProjectCacheV55(){try{localStorage.removeItem(PROJECT_CACHE_KEY_V55)}catch(_){}}
+  function protectedRowsV55(){
+    const cached=readProjectCacheV55().projects||[];
+    if(Array.isArray(projectsV18)&&projectsV18.length)return projectsV18;
+    return cached;
+  }
+  function showProtectedStatusV55(msg){
+    try{setStatus(msg||'⚠ 서버가 작업 목록을 확인하는 동안 이 PC의 안전 복구본을 유지합니다.','busy')}catch(_){}
+    const note=document.getElementById('projectNote');if(note)note.textContent='⚠ 서버 확인 중 · 기존 작업 화면은 안전하게 유지됩니다.';
+  }
+
+  fetchProjectsV18=async function(){
+    const r=await projectFetchV18('/projects');
+    if(!r.ok)throw new Error('선적 작업 목록 조회 실패 ('+r.status+')');
+    const j=await r.json();
+    const serverRows=Array.isArray(j.projects)?j.projects:[];
+    if(serverRows.length){
+      projectsV18=serverRows;writeProjectCacheV55(serverRows);renderProjectSelectV18();return projectsV18;
+    }
+    if(allowEmptyOnceV55){
+      allowEmptyOnceV55=false;projectsV18=[];clearProjectCacheV55();renderProjectSelectV18();return projectsV18;
+    }
+    const keep=protectedRowsV55();
+    if(keep.length){
+      projectsV18=keep;renderProjectSelectV18();showProtectedStatusV55('⚠ 서버가 일시적으로 0개를 반환했습니다. 기존 선적 작업을 지우지 않고 안전 복구본을 유지합니다.');
+      return projectsV18;
+    }
+    projectsV18=[];renderProjectSelectV18();return projectsV18;
+  };
+
+  initProjectsV18=async function(){
+    const cached=readProjectCacheV55().projects||[];
+    let hadProtected=false;
+    try{
+      if(cached.length){
+        projectsV18=cached;
+        let wanted='';try{wanted=localStorage.getItem(COUPANG_LAST_PROJECT_KEY_V50)||''}catch(_){}
+        const p=cached.find(x=>x.id===wanted)||cached.find(x=>x.status!=='archived')||cached[0];
+        if(p){
+          currentProjectIdV18=p.id;renderProjectSelectV18();
+          try{await restorePersistentSession();hadProtected=!!workbook}catch(e){console.warn('v55 local protect restore',e)}
+          if(hadProtected)showProtectedStatusV55('✓ 이 PC의 선적 작업 안전 복구본을 먼저 열었습니다. 서버 목록을 확인 중입니다…');
+        }
+      }
+      const rows=await fetchProjectsV18();
+      if(rows.length){
+        let wanted='';try{wanted=localStorage.getItem(COUPANG_LAST_PROJECT_KEY_V50)||''}catch(_){}
+        const p=rows.find(x=>x.id===wanted)||rows.find(x=>x.id===currentProjectIdV18)||rows.find(x=>x.status!=='archived')||rows[0];
+        if(p){
+          const changed=currentProjectIdV18!==p.id;currentProjectIdV18=p.id;sharedLastStateAt=sharedLastSourceAt=sharedLastSnapshotAt=0;renderProjectSelectV18();
+          if(changed||!workbook)await restorePersistentSession();
+          try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,p.id)}catch(_){}
+          setStatus('✓ 선적 작업 서버 확인 완료 · 자동저장 보호 중','ok');
+        }
+      }else if(!hadProtected&&!workbook){
+        clearWorkspaceForProjectV18('저장된 선적 작업이 없습니다. ＋ 새 선적 작업을 눌러 시작하세요.');renderProjectSelectV18();setStatus('✓ 준비 완료 · 새 선적 작업을 만들어 주세요.','ok');
+      }
+    }catch(e){
+      console.error('v55 project init',e);
+      if(hadProtected||workbook)showProtectedStatusV55('⚠ 서버 재시작/업데이트 중입니다. 현재 작업은 이 PC에 그대로 보호되어 있으며 자동 재연결을 시도합니다.');
+      else setStatus('서버 연결을 기다리는 중입니다. 새 작업을 만들지 말고 잠시 기다려 주세요.','busy');
+    }
+  };
+
+  const deleteBaseV55=window.deleteProjectV18;
+  if(typeof deleteBaseV55==='function')window.deleteProjectV18=async function(){
+    allowEmptyOnceV55=true;
+    try{return await deleteBaseV55.apply(this,arguments)}finally{setTimeout(()=>{allowEmptyOnceV55=false},1500)}
+  };
+
+  async function reconnectV55(){
+    if(retryBusyV55||document.hidden)return;retryBusyV55=true;
+    try{
+      const before=(projectsV18||[]).length;const rows=await fetchProjectsV18();
+      if(rows.length&&currentProjectIdV18&&workbook&&before===0)setStatus('✓ 서버 재연결 완료 · 현재 작업을 유지했습니다.','ok');
+    }catch(_){if(workbook)showProtectedStatusV55('⚠ 서버 업데이트/재시작 중 · 현재 작업은 이 PC에 안전 저장되어 있습니다.')}finally{retryBusyV55=false}
+  }
+  // 작업 중 서버가 재시작되어도 12초마다 현재 상태를 로컬에 확정하고 서버 재연결을 계속 시도합니다.
+  setInterval(()=>{
+    if(currentProjectIdV18&&workbook&&!persistRestoring){try{savePersistentState()}catch(_){}}
+    reconnectV55();
+  },12000);
+
+  // 닫기/새로고침 직전에도 마지막 상태를 로컬 캐시에 먼저 남깁니다.
+  window.addEventListener('pagehide',()=>{if(currentProjectIdV18&&workbook)try{savePersistentState()}catch(_){}});
+})();
+// ===== /v55 =====
+</script>
+
 <script src="/auth-client.js"></script>
 </body>
 </html>
