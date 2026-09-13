@@ -357,7 +357,7 @@ resetAll=function(){resetAllBaseV40();activeDraftIdV40='';setSendEnabledV40();va
 async function initShipmentVaultV40(){
   try{const rows=await refreshVaultSelectV40();let last='';try{last=localStorage.getItem(SHIPMENT_VAULT_LAST_V40)||''}catch(_){}const d=(last&&rows.find(x=>x.id===last))||rows[0];if(d)await applyDraftV40(d);else setSendEnabledV40()}catch(e){console.warn('shipment vault init failed',e);vaultStatusV40('보관함을 열지 못했습니다.',true)}
 }
-initShipmentVaultV40();
+setTimeout(()=>{if(!window.__v46ShipmentInit)initShipmentVaultV40()},0);
 // ===== /v40 =====
 </script>
 
@@ -504,6 +504,58 @@ const resetAllBaseV41=resetAll;
 resetAll=function(){resetAllBaseV41();inputNamesV41=[];renderInputNamesV41()};
 renderInputNamesV41();
 // ===== /v41 =====
+</script>
+
+
+<script id="v46-shared-shipment-vault">
+// ===== v46: 선적 리스트 보관함 공용 서버 저장 =====
+(function(){
+  window.__v46ShipmentInit=true;
+  const API='/api/shipment-list-vault';
+  const localPut=vaultPutV40,localGet=vaultGetV40,localAll=vaultAllV40,localDelete=vaultDeleteV40;
+  const persistBase=persistCurrentDraftV40;
+  let lastServerAt=0;
+  function token(){try{return localStorage.getItem('coupangSharedToken')||''}catch(_){return ''}}
+  async function sf(url=API,opts={},allowPrompt=true){const headers=new Headers(opts.headers||{}),t=token();if(t)headers.set('X-Coupang-Work-Token',t);let r=await fetch(url,{cache:'no-store',...opts,headers});if(r.status===401&&allowPrompt){const pw=prompt('공용 작업 암호를 입력해 주세요.');if(pw){try{localStorage.setItem('coupangSharedToken',pw)}catch(_){};return sf(url,opts,false)}}return r}
+  function fmt(ts){try{return new Date(ts).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}catch(_){return''}}
+  function serverStatus(msg,bad=false){const e=document.getElementById('vaultStatusV40');if(e){e.textContent=msg;e.style.color=bad?'#b42318':'#157347'}}
+  function meta(row){const x={...row};delete x.sourceBlob;return x}
+  async function serverPut(row){
+    if(!row?.id)return row;
+    try{await localPut(row)}catch(_){ }
+    serverStatus('☁ 서버 저장 중…');
+    try{
+      const m=meta(row),r=await sf(API+'/'+encodeURIComponent(row.id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(m)});if(!r.ok)throw new Error('메타 저장 '+r.status);
+      if(row.sourceBlob){const b=await sf(API+'/'+encodeURIComponent(row.id)+'/blob',{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body:row.sourceBlob});if(!b.ok)throw new Error('원본 저장 '+b.status);const bj=await b.json().catch(()=>({}));lastServerAt=Number(bj.updatedAt||Date.now())}else lastServerAt=Date.now();
+      serverStatus(`☁ 서버 저장 완료 · ${fmt(lastServerAt)}`);return row;
+    }catch(e){console.warn('shipment server save',e);serverStatus('⚠ 서버 저장 실패 · 이 PC에는 보관됨',true);return row}
+  }
+  async function serverGet(id){
+    if(!id)return null;
+    try{const r=await sf(API+'/'+encodeURIComponent(id),{});if(r.status===404)return await localGet(id);if(!r.ok)throw new Error('조회 '+r.status);const j=await r.json(),d=j.draft;if(!d)return await localGet(id);const br=await sf(API+'/'+encodeURIComponent(id)+'/blob',{});if(!br.ok)throw new Error('원본 조회 '+br.status);const blob=await br.blob();const row={...d,sourceBlob:blob};try{await localPut(row)}catch(_){};return row}catch(e){console.warn('shipment server get',e);return await localGet(id).catch(()=>null)}
+  }
+  async function serverAll(){try{const r=await sf(API,{});if(!r.ok)throw new Error('목록 '+r.status);const j=await r.json();return Array.isArray(j.drafts)?j.drafts:[]}catch(e){console.warn('shipment server list',e);serverStatus('⚠ 서버 연결 실패 · 이 PC 보관함 표시',true);return await localAll().catch(()=>[])}}
+  async function serverDelete(id){try{const r=await sf(API+'/'+encodeURIComponent(id),{method:'DELETE'});if(!r.ok&&r.status!==404)throw new Error('삭제 '+r.status);serverStatus('☁ 서버 보관본 삭제 완료')}catch(e){serverStatus('⚠ 서버 보관본 삭제 실패',true);throw e}finally{try{await localDelete(id)}catch(_){}}}
+  vaultPutV40=serverPut;vaultGetV40=serverGet;vaultAllV40=serverAll;vaultDeleteV40=serverDelete;
+  persistCurrentDraftV40=async function(opts={}){const row=await persistBase(opts);if(row)serverStatus(`☁ 서버 저장 완료 · ${fmt(lastServerAt||Date.now())}`);return row};
+  window.saveShipmentServerNowV46=async function(){if(!sourceFile)return serverStatus('☁ 저장할 선적 리스트가 없습니다.');try{await persistCurrentDraftV40({manual:false});serverStatus(`☁ 서버 저장 완료 · ${fmt(lastServerAt||Date.now())}`)}catch(e){serverStatus('⚠ 서버 저장 실패',true)}};
+
+  async function migrate(){
+    try{
+      const rr=await sf(API,{});if(!rr.ok)return;const jj=await rr.json(),server=Array.isArray(jj.drafts)?jj.drafts:[],map=new Map(server.map(x=>[x.id,x]));const local=await localAll().catch(()=>[]);
+      for(const d of local){const s=map.get(d.id);if(!s||Number(d.savedAt||0)>Number(s.savedAt||0)+1000){await serverPut(d)}}
+    }catch(e){console.warn('shipment local migration',e)}
+  }
+  async function init(){
+    const row=document.querySelector('.vault-row');if(row&&!document.getElementById('shipmentServerSaveBtnV46')){const b=document.createElement('button');b.id='shipmentServerSaveBtnV46';b.className='btn green';b.type='button';b.textContent='☁ 지금 저장';b.onclick=window.saveShipmentServerNowV46;const st=document.getElementById('vaultStatusV40');row.insertBefore(b,st||null)}
+    const info=document.querySelector('.vault-info');if(info)info.innerHTML='원본 파일과 센터의 팔레트/밀크런 선택 상태를 <b>공용 서버에 함께 보관</b>합니다. 다른 PC·다른 인터넷 회선에서도 같은 보관함을 볼 수 있습니다.';
+    serverStatus('☁ 공용 보관함 확인 중…');await migrate();
+    try{const rows=await refreshVaultSelectV40();let wanted='';try{wanted=localStorage.getItem(SHIPMENT_VAULT_LAST_V40)||''}catch(_){};const d=(wanted&&rows.find(x=>x.id===wanted))||rows[0];if(d){const full=await serverGet(d.id);if(full)await applyDraftV40(full)}serverStatus(rows.length?`☁ 공용 보관함 ${rows.length}건 연결됨`:'☁ 공용 보관함 연결됨 · 보관본 없음')}catch(e){serverStatus('⚠ 공용 보관함 연결 실패',true)}
+  }
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&sourceFile)window.saveShipmentServerNowV46()});
+  setTimeout(init,20);
+})();
+// ===== /v46 =====
 </script>
 
 </body>
