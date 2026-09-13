@@ -2243,5 +2243,26 @@
 
   initializeSharedLabelPage();
 </script>
+<script id="v46-shared-barcode-working-state">
+// ===== v46: 바코드 라벨 현재 작성중 상태 공용 서버 저장 =====
+(function(){
+  const API='/api/shared-workspace/barcode-label';let timer=null,saving=false,queued=false,lastAt=0;
+  function token(){try{return localStorage.getItem('coupangSharedToken')||''}catch(_){return ''}}
+  async function sf(opts={},allowPrompt=true){const headers=new Headers(opts.headers||{}),t=token();if(t)headers.set('X-Coupang-Work-Token',t);let r=await fetch(API,{cache:'no-store',...opts,headers});if(r.status===401&&allowPrompt){const pw=prompt('공용 작업 암호를 입력해 주세요.');if(pw){try{localStorage.setItem('coupangSharedToken',pw)}catch(_){};return sf(opts,false)}}return r}
+  function fmt(ts){try{return new Date(ts).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}catch(_){return''}}
+  function status(msg,bad=false){const e=document.getElementById('barcodeServerStatusV46')||document.getElementById('workingStateStatus');if(!e)return;e.textContent=msg;e.style.color=bad?'#b42318':'#157347'}
+  function payload(){let defaults=null;try{defaults=typeof getUserDefaults==='function'?getUserDefaults():null}catch(_){};return{version:46,savedAt:Date.now(),working:typeof captureFormState==='function'?captureFormState():{},defaults}}
+  async function saveNow(manual=false,keepalive=false){if(saving){queued=true;return}if(!workingStateEnabled&&!manual)return;saving=true;status('☁ 서버 저장 중…');try{const body=payload();const r=await sf({method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:body}),keepalive:!!keepalive});if(!r.ok)throw new Error('서버 저장 '+r.status);const j=await r.json();lastAt=Number(j.updatedAt||Date.now());status(`☁ 서버 저장 완료 · ${fmt(lastAt)}`)}catch(e){console.warn('barcode shared work save',e);status('⚠ 서버 저장 실패 · 이 PC에는 임시 저장됨',true)}finally{saving=false;if(queued){queued=false;setTimeout(()=>saveNow(false),50)}}}
+  window.saveBarcodeServerNowV46=()=>saveNow(true);
+  function queue(delay=250){clearTimeout(timer);timer=setTimeout(()=>{timer=null;saveNow(false)},delay)}
+  async function load(){try{const r=await sf({});if(r.status===404){const local=typeof getWorkingState==='function'?getWorkingState():null;if(local){workingStateEnabled=true;await saveNow(false)}else status('☁ 서버 저장 대기');return}if(!r.ok)throw new Error('서버 조회 '+r.status);const j=await r.json(),st=j.state||{};lastAt=Number(j.updatedAt||0);if(st.defaults){try{localStorage.setItem(LABEL_DEFAULTS_KEY,JSON.stringify(st.defaults))}catch(_){}}if(st.working&&typeof restoreFormState==='function'){workingStateEnabled=true;restoreFormState(st.working);try{localStorage.setItem(LABEL_WORKING_STATE_KEY,JSON.stringify({...st.working,__savedAt:new Date(lastAt||Date.now()).toISOString()}))}catch(_){};status(`☁ 서버 작업 불러옴 · ${fmt(lastAt)}`)}}catch(e){console.warn('barcode shared work load',e);status('⚠ 서버 연결 실패 · 이 PC 저장본 사용',true)}}
+  function install(){const old=document.getElementById('workingStateStatus');if(old){old.textContent='☁ 공용 서버 작업 상태 확인 중…';const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;margin:-2px 0 10px;flex-wrap:wrap';const b=document.createElement('button');b.type='button';b.className='btn-secondary';b.style.cssText='padding:6px 10px;font-size:11px';b.textContent='☁ 지금 저장';b.onclick=()=>saveNow(true);const st=document.createElement('span');st.id='barcodeServerStatusV46';st.className='help';st.style.cssText='color:#157347;font-weight:800';st.textContent='☁ 서버 확인 중…';row.append(b,st);old.replaceWith(row)}
+    try{formIds.forEach(id=>{const n=el(id);if(n){n.addEventListener('input',()=>queue(300));n.addEventListener('change',()=>queue(100))}})}catch(_){}
+    load();
+  }
+  window.addEventListener('pagehide',()=>saveNow(false,true));document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveNow(false,true)});setTimeout(install,0);
+})();
+// ===== /v46 =====
+</script>
 </body>
 </html>
