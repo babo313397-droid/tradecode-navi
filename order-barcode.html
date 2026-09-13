@@ -470,17 +470,55 @@ async function extractExcelCellColors(buf){
     const styleSheet=stylesDoc.documentElement;
     const fillsNode=xmlFirstByLocalName(styleSheet,'fills');
     const cellXfsNode=xmlFirstByLocalName(styleSheet,'cellXfs');
+    const cellStyleXfsNode=xmlFirstByLocalName(styleSheet,'cellStyleXfs');
+    const cellStylesNode=xmlFirstByLocalName(styleSheet,'cellStyles');
     const fillEls=xmlChildrenByLocalName(fillsNode,'fill');
     const xfEls=xmlChildrenByLocalName(cellXfsNode,'xf');
+    const styleXfEls=xmlChildrenByLocalName(cellStyleXfsNode,'xf');
+    const cellStyleEls=xmlChildrenByLocalName(cellStylesNode,'cellStyle');
+
+    const strongerColorClass=(...classes)=>{
+      // 혹시 직접 채우기와 셀 스타일이 동시에 잡히면 빨강을 최우선으로 한다.
+      if(classes.includes('red'))return 'red';
+      if(classes.includes('yellow'))return 'yellow';
+      return '';
+    };
 
     const fillClasses=fillEls.map(fill=>{
       const pattern=xmlFirstByLocalName(fill,'patternFill');
       if(!pattern)return '';
       const fg=xmlFirstByLocalName(pattern,'fgColor');
       const bg=xmlFirstByLocalName(pattern,'bgColor');
-      return classifyXmlColorNode(fg)||classifyXmlColorNode(bg)||'';
+      return strongerColorClass(classifyXmlColorNode(fg),classifyXmlColorNode(bg));
     });
-    const styleClasses=xfEls.map(xf=>fillClasses[Number(xf.getAttribute('fillId'))||0]||'');
+
+    // Excel의 [홈 > 셀 스타일]로 지정된 색상도 읽는다.
+    // cellXfs의 xfId는 cellStyleXfs의 부모 스타일을 가리킨다.
+    const styleXfClasses=styleXfEls.map(xf=>fillClasses[Number(xf.getAttribute('fillId'))||0]||'');
+
+    // 기본 Excel 셀 스타일은 builtinId로도 확실하게 판정한다.
+    // 26=좋음(Good, 녹색→웹 흰색), 27=나쁨(Bad, 빨강), 28=보통(Neutral, 노랑)
+    const namedStyleClassByXfId=new Map();
+    for(const cs of cellStyleEls){
+      const xfId=Number(cs.getAttribute('xfId'));
+      if(!Number.isFinite(xfId))continue;
+      const builtinId=Number(cs.getAttribute('builtinId'));
+      const name=String(cs.getAttribute('name')||'').trim().toLowerCase();
+      let cls='';
+      if(builtinId===27 || /(^|\s)(bad|red)(\s|$)|나쁨|빨강/.test(name)) cls='red';
+      else if(builtinId===28 || /neutral|yellow|보통|노랑/.test(name)) cls='yellow';
+      else if(builtinId===26 || /good|좋음|green|녹색/.test(name)) cls='';
+      cls=strongerColorClass(cls,styleXfClasses[xfId]||'');
+      namedStyleClassByXfId.set(xfId,cls);
+    }
+
+    const styleClasses=xfEls.map(xf=>{
+      const directFill=fillClasses[Number(xf.getAttribute('fillId'))||0]||'';
+      const parentXfId=Number(xf.getAttribute('xfId'));
+      const inheritedFill=Number.isFinite(parentXfId)?(styleXfClasses[parentXfId]||''):'';
+      const namedClass=Number.isFinite(parentXfId)?(namedStyleClassByXfId.get(parentXfId)||''):'';
+      return strongerColorClass(directFill,inheritedFill,namedClass);
+    });
 
     const wbFile=zip.file('xl/workbook.xml');
     const relFile=zip.file('xl/_rels/workbook.xml.rels');
