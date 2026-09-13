@@ -39,77 +39,6 @@ app.use(express.json({ limit: '5mb' })); // 댓글 + 공용 라벨 JSON 파싱�
 
 
 // =====================================================================
-// v61: Render Persistent Disk canonical storage (strict, no fallback)
-// - /var/data 가 마운트되어 있으면 모든 운영 데이터의 정본은 /var/data/tradecode 입니다.
-// - 코드 배포 폴더와 데이터 저장소를 완전히 분리합니다.
-// - 기존 v48~v59 위치는 복구/마이그레이션 후보로만 읽고, 새 저장은 canonical 아래에만 합니다.
-// =====================================================================
-// v61: 운영 데이터는 반드시 Render Persistent Disk에만 저장합니다.
-// 코드 배포 폴더/홈 디렉터리로의 자동 폴백을 금지해, 배포 후 계정/작업이 사라지는 일을 막습니다.
-const V60_DEFAULT_DISK_ROOT = '/var/data';
-const TRADECODE_PERSIST_ROOT_V60 = path.resolve(
-  process.env.TRADECODE_PERSIST_ROOT || path.join(V60_DEFAULT_DISK_ROOT,'tradecode')
-);
-const V60_COUPANG_ROOT = path.join(TRADECODE_PERSIST_ROOT_V60,'coupang-shared');
-const V60_AUTH_ROOT = path.join(TRADECODE_PERSIST_ROOT_V60,'auth');
-const V60_USERS_ROOT = path.join(TRADECODE_PERSIST_ROOT_V60,'users');
-const V60_SNAPSHOT_ROOT = path.join(TRADECODE_PERSIST_ROOT_V60,'pre-v60-snapshot');
-function ensureV60PersistentRoot(){
-  fs.mkdirSync(TRADECODE_PERSIST_ROOT_V60,{recursive:true});
-  const probe=path.join(TRADECODE_PERSIST_ROOT_V60,'.write-test-'+process.pid);
-  fs.writeFileSync(probe,String(Date.now()));fs.unlinkSync(probe);
-}
-let V60_PERSIST_WRITABLE=false;
-try{
-  // Render에서는 /var/data가 실제 영구 디스크입니다. 환경변수로 별도 절대경로를 지정한 경우만 예외로 허용합니다.
-  if(!process.env.TRADECODE_PERSIST_ROOT && !fs.existsSync(V60_DEFAULT_DISK_ROOT)){
-    throw new Error('/var/data 영구 디스크가 보이지 않습니다. 데이터 보호를 위해 서버 시작을 중단합니다.');
-  }
-  ensureV60PersistentRoot();V60_PERSIST_WRITABLE=true;
-}catch(e){
-  console.error('[v61 storage] 영구 저장소 쓰기 실패:',e.message);
-  throw e;
-}
-function copyMissingTreeV60(src,dst){
-  try{
-    if(!src||!fs.existsSync(src))return false;
-    const st=fs.statSync(src);
-    if(st.isDirectory()){
-      fs.mkdirSync(dst,{recursive:true});let changed=false;
-      for(const ent of fs.readdirSync(src,{withFileTypes:true})){
-        changed=copyMissingTreeV60(path.join(src,ent.name),path.join(dst,ent.name))||changed;
-      }
-      return changed;
-    }
-    if(!fs.existsSync(dst)){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);return true}
-  }catch(e){console.warn('[v61 migration] copy skip:',src,e.message)}
-  return false;
-}
-function legacySnapshotCandidatesV60(){
-  const rows=[];const add=v=>{try{if(v){const r=path.resolve(v);if(!rows.includes(r))rows.push(r)}}catch(_){}};
-  add(path.join(os.homedir()||'/opt/render','.tradecode-navi'));
-  add(path.join(__dirname,'data'));add(path.join(process.cwd(),'data'));
-  add(path.join(V60_SNAPSHOT_ROOT,'home-tradecode'));
-  add(path.join(V60_SNAPSHOT_ROOT,'project-data'));
-  return rows;
-}
-function migrateSimplePersistentDataV60(){
-  let changed=false;
-  for(const base of legacySnapshotCandidatesV60()){
-    // 직원 개인 작업
-    changed=copyMissingTreeV60(path.join(base,'users'),V60_USERS_ROOT)||changed;
-    // 과거 ~/.tradecode-navi 는 users가 바로 하위에 존재합니다.
-    if(path.basename(base)==='.tradecode-navi')changed=copyMissingTreeV60(path.join(base,'users'),V60_USERS_ROOT)||changed;
-    // 서버 data 폴더 안의 공용 라벨
-    changed=copyMissingTreeV60(path.join(base,'shared-barcode'),path.join(TRADECODE_PERSIST_ROOT_V60,'shared-barcode'))||changed;
-    // 쿠팡 저장소 전체를 비파괴 복사합니다. 이미 영구 디스크에 있는 파일은 덮어쓰지 않습니다.
-    changed=copyMissingTreeV60(path.join(base,'coupang-shared'),V60_COUPANG_ROOT)||changed;
-  }
-  if(changed)console.log('[v61 migration] 기존 보조 데이터를 영구 디스크로 비파괴 복사했습니다.');
-}
-migrateSimplePersistentDataV60();
-
-// =====================================================================
 // v50: 계정별 로그인 + 사용자별 작업공간 (직원 데이터 완전 분리)
 // - 기존 데이터는 삭제/이동하지 않습니다.
 // - 최초 생성 관리자(legacyOwner=true)는 기존 저장소를 그대로 사용합니다.
@@ -134,16 +63,12 @@ function authCountAtRootV54(root){
 }
 function persistentRootCandidatesV54(){
   const arr=[];const add=v=>{try{if(v){const r=path.resolve(v);if(!arr.includes(r))arr.push(r)}}catch(_){}};
-  add(V60_COUPANG_ROOT);
   add(process.env.TRADECODE_DATA_ROOT);
   add(process.env.COUPANG_SHARED_DIR);
   add(path.join(__dirname,'data','coupang-shared'));
   add(path.join(process.cwd(),'data','coupang-shared'));
   add(path.join(__dirname,'..','data','coupang-shared'));
   add(path.join(process.cwd(),'server','data','coupang-shared'));
-  add(path.join(os.homedir()||'/opt/render','.tradecode-navi','coupang-shared'));
-  add(path.join(V60_SNAPSHOT_ROOT,'project-data','coupang-shared'));
-  add(path.join(V60_SNAPSHOT_ROOT,'home-tradecode','coupang-shared'));
   for(const parent of [...new Set([path.dirname(__dirname),process.cwd(),path.dirname(process.cwd())].map(x=>path.resolve(x)))]){
     try{
       for(const e of fs.readdirSync(parent,{withFileTypes:true}).slice(0,250)){
@@ -172,8 +97,7 @@ function discoverPersistentCoupangRootV54(){
   console.log(`[v54 storage] 영구 저장 루트: ${best} / 쿠팡 ${bestProjects}개 / 계정 ${bestAuth}개`);
   return best;
 }
-const PERSISTENT_COUPANG_ROOT_V54=V60_COUPANG_ROOT;
-console.log(`[v61 storage] 쿠팡 영구 정본: ${PERSISTENT_COUPANG_ROOT_V54}`);
+const PERSISTENT_COUPANG_ROOT_V54=discoverPersistentCoupangRootV54();
 // =====================================================================
 // v59: 로그인/직원 계정 영구 저장소
 // - 계정 DB를 배포 코드 폴더(__dirname) 밖, OS 사용자 홈의 고정 폴더에 저장합니다.
@@ -189,25 +113,21 @@ function dirHasEntriesV59(dir){
   try{return fs.existsSync(dir)&&fs.readdirSync(dir).length>0}catch(_){return false}
 }
 
-const TRADECODE_PERSIST_HOME_V59 = TRADECODE_PERSIST_ROOT_V60;
-const AUTH_DIR_V48 = V60_AUTH_ROOT;
+const TRADECODE_PERSIST_HOME_V59 = process.env.TRADECODE_PERSIST_DIR
+  ? path.resolve(process.env.TRADECODE_PERSIST_DIR)
+  : path.resolve(path.join(os.homedir() || path.dirname(__dirname), '.tradecode-navi'));
+const AUTH_DIR_V48 = process.env.TRADECODE_AUTH_DIR
+  ? path.resolve(process.env.TRADECODE_AUTH_DIR)
+  : path.join(TRADECODE_PERSIST_HOME_V59,'auth');
 const USERS_FILE_V48=path.join(AUTH_DIR_V48,'users.json');
 const SECRET_FILE_V48=path.join(AUTH_DIR_V48,'session-secret.txt');
 const AUTH_INIT_FLAG_V59=path.join(AUTH_DIR_V48,'initialized.flag');
 const SYSTEM_INIT_FLAG_V59=path.join(TRADECODE_PERSIST_HOME_V59,'installed.flag');
 const SESSION_COOKIE_V48='tradecode_session';
 const AUTH_BACKUP_DIR_V54=path.join(AUTH_DIR_V48,'_backups');
-const USER_DATA_BASE_V59=V60_USERS_ROOT;
-
-// v61: 계정 시스템 최초 설치 표식.
-// 최초 관리자 생성 후 이 파일은 /var/data에 남으므로, 향후 users.json이 비정상적으로 사라져도
-// '첫 관리자 만들기'로 돌아가지 않고 복구 필요 상태로 멈춥니다.
-const V61_ACCOUNT_INSTALL_FLAG=path.join(TRADECODE_PERSIST_ROOT_V60,'account-system-initialized.flag');
-function v61AccountInitialized(){try{return fs.existsSync(V61_ACCOUNT_INSTALL_FLAG)}catch(_){return false}}
-function markV61AccountInitialized(){
-  try{fs.mkdirSync(path.dirname(V61_ACCOUNT_INSTALL_FLAG),{recursive:true});fs.writeFileSync(V61_ACCOUNT_INSTALL_FLAG,`initialized=${new Date().toISOString()}\n`,'utf8')}
-  catch(e){console.warn('[v61 auth] 설치 표식 저장 실패:',e.message)}
-}
+const USER_DATA_BASE_V59=process.env.TRADECODE_USER_DATA_DIR
+  ? path.resolve(process.env.TRADECODE_USER_DATA_DIR)
+  : path.join(TRADECODE_PERSIST_HOME_V59,'users');
 const AUTH_COUPANG_ROOT_V52=PERSISTENT_COUPANG_ROOT_V54;
 fs.mkdirSync(AUTH_DIR_V48,{recursive:true});
 fs.mkdirSync(USER_DATA_BASE_V59,{recursive:true});
@@ -216,11 +136,6 @@ function scanAuthDirsNearbyV59(){
   const dirs=[];const add=v=>{try{if(v)dirs.push(path.resolve(v))}catch(_){}};
   add(AUTH_DIR_V48);
   add(path.join(TRADECODE_PERSIST_HOME_V59,'auth'));
-  add(path.join(os.homedir()||'/opt/render','.tradecode-navi','auth'));
-  add(path.join(V60_SNAPSHOT_ROOT,'home-tradecode','auth'));
-  add(path.join(V60_SNAPSHOT_ROOT,'project-data','auth'));
-  add(path.join(V60_SNAPSHOT_ROOT,'project-data','coupang-shared','_auth'));
-  add(path.join(V60_SNAPSHOT_ROOT,'tradecode-auth-backup'));
   add(path.join(__dirname,'tradecode-auth-backup'));
   add(path.join(__dirname,'data','auth'));
   add(path.join(__dirname,'data','coupang-shared','_auth'));
@@ -410,7 +325,7 @@ function recoverAuthFilesV52(){
       if(canonical.valid&&canonical.count>0)backupAuthUsersV54();
       atomicJsonV48(USERS_FILE_V48,{version:59,users:merged.users});
       writeAuthInitFlagV59();
-      console.log(`[v61 auth] 계정 병합 복구 완료: ${merged.users.length}개 -> ${USERS_FILE_V48}`);
+      console.log(`[v59 auth] 계정 병합 복구 완료: ${merged.users.length}개 -> ${USERS_FILE_V48}`);
     }else if(canonical.count>0){
       writeAuthInitFlagV59();
     }
@@ -425,7 +340,7 @@ function recoverAuthFilesV52(){
     }
     migratePrivateUserDataV59();
     try{atomicJsonV48(path.join(AUTH_DIR_V48,'storage-location.json'),{
-      version:61,canonical:true,persistentHome:TRADECODE_PERSIST_HOME_V59,authDir:AUTH_DIR_V48,
+      version:59,canonical:true,persistentHome:TRADECODE_PERSIST_HOME_V59,authDir:AUTH_DIR_V48,
       usersFile:USERS_FILE_V48,userDataBase:USER_DATA_BASE_V59,coupangRoot:PERSISTENT_COUPANG_ROOT_V54,checkedAt:Date.now()
     })}catch(_){}
   }catch(e){console.warn('[v59 auth] 기존 계정 자동 복구 실패:',e.message)}
@@ -447,7 +362,6 @@ function mirrorAuthFilesV56(){
   }
 }
 recoverAuthFilesV52();
-try{const _v61db=readJsonFileV48(USERS_FILE_V48,{users:[]});if(Array.isArray(_v61db.users)&&_v61db.users.length)markV61AccountInitialized()}catch(_){}
 function usersV48(){
   let x=readJsonFileV48(USERS_FILE_V48,{version:59,users:[]});
   if(!x||!Array.isArray(x.users)||x.users.length===0){
@@ -458,8 +372,8 @@ function usersV48(){
 }
 function saveUsersV48(x){
   backupAuthUsersV54();
-  atomicJsonV48(USERS_FILE_V48,{version:61,users:x.users||[]});
-  if((x.users||[]).length){writeAuthInitFlagV59();markV61AccountInitialized()}
+  atomicJsonV48(USERS_FILE_V48,{version:59,users:x.users||[]});
+  if((x.users||[]).length)writeAuthInitFlagV59();
   mirrorAuthFilesV56();
 }
 function secretV48(){
@@ -471,7 +385,7 @@ function secretV48(){
 }
 const AUTH_SECRET_V48=String(process.env.TRADECODE_AUTH_SECRET||'').trim()||secretV48();
 try{mirrorAuthFilesV56()}catch(_){}
-console.log(`[v61 auth] 영구 인증 저장소: ${AUTH_DIR_V48} / 계정 ${usersV48().users.length}개`);
+console.log(`[v59 auth] 영구 인증 저장소: ${AUTH_DIR_V48} / 계정 ${usersV48().users.length}개`);
 
 function normUserV48(v){return String(v||'').trim().toLowerCase().replace(/[^a-z0-9._-]/g,'').slice(0,60)}
 function hashPwV48(pw,salt=crypto.randomBytes(16).toString('hex')){const hash=crypto.scryptSync(String(pw),salt,64).toString('hex');return{salt,hash}}
@@ -490,19 +404,10 @@ function isAdminV48(req){return req.authUser&&req.authUser.role==='admin'}
 function userDataRootV48(req){const u=req.authUser;if(!u)throw new Error('login required');if(u.legacyOwner)return null;return path.join(USER_DATA_BASE_V59,'v50-private',u.id)}
 function ensureUserRootV48(req){const r=userDataRootV48(req);if(r)fs.mkdirSync(r,{recursive:true});return r}
 
-app.get('/api/auth/me',(req,res)=>{recoverAuthFilesV52();const u=authUserV48(req),db=usersV48(),installed=v61AccountInitialized();res.set('Cache-Control','no-store');res.json({ok:true,authenticated:!!u,user:u?publicUserV48(u):null,needsBootstrap:db.users.length===0&&!installed,recoveryRequired:db.users.length===0&&installed,authVersion:61,persistent:true})});
-app.get('/api/auth/storage-status',(req,res)=>{recoverAuthFilesV52();const db=usersV48(),cands=authDbCandidatesV59();res.set('Cache-Control','no-store');res.json({ok:true,version:61,userCount:db.users.length,historyFound:authHistoryExistsV56(),accountInitialized:v61AccountInitialized(),recoveryRequired:db.users.length===0&&v61AccountInitialized(),persistentHome:TRADECODE_PERSIST_HOME_V59,canonicalAuthDir:AUTH_DIR_V48,usersFile:USERS_FILE_V48,userDataBase:USER_DATA_BASE_V59,candidateDbCount:cands.length,candidates:cands.map(x=>({file:x.file,count:x.count,mtime:x.mtime,kind:x.kind})).sort((a,b)=>b.count-a.count||b.mtime-a.mtime).slice(0,30)})});
-app.get('/api/storage/v61-status',(req,res)=>{
-  recoverAuthFilesV52();
-  let projects=0;try{projects=(mergeAllCoupangRootsV57().projects||[]).length}catch(_){}
-  let labels=0;try{const a=readJsonFileV48(path.join(TRADECODE_PERSIST_ROOT_V60,'shared-barcode','labels.json'),[]);labels=Array.isArray(a)?a.length:0}catch(_){}
-  let shipmentDrafts=0;try{const x=readJsonFileV48(path.join(PERSISTENT_COUPANG_ROOT_V54,'_shared-workspaces','shipment-list-vault','index.json'),{drafts:[]});shipmentDrafts=Array.isArray(x.drafts)?x.drafts.length:0}catch(_){}
-  res.set('Cache-Control','no-store');
-  res.json({ok:true,version:61,strictPersistent:true,persistentRoot:TRADECODE_PERSIST_ROOT_V60,persistentWritable:V60_PERSIST_WRITABLE,accountInitialized:v61AccountInitialized(),authDir:AUTH_DIR_V48,usersFile:USERS_FILE_V48,userDataBase:USER_DATA_BASE_V59,coupangRoot:PERSISTENT_COUPANG_ROOT_V54,userCount:usersV48().users.length,projectCount:projects,labelCount:labels,shipmentDraftCount:shipmentDrafts});
-});
-app.get('/api/storage/v60-status',(req,res)=>{recoverAuthFilesV52();let projects=0;try{projects=(mergeAllCoupangRootsV57().projects||[]).length}catch(_){};res.set('Cache-Control','no-store');res.json({ok:true,version:61,persistentRoot:TRADECODE_PERSIST_ROOT_V60,persistentWritable:V60_PERSIST_WRITABLE,authDir:AUTH_DIR_V48,userDataBase:USER_DATA_BASE_V59,coupangRoot:PERSISTENT_COUPANG_ROOT_V54,userCount:usersV48().users.length,projectCount:projects,snapshotRoot:V60_SNAPSHOT_ROOT,snapshotExists:dirHasEntriesV59(V60_SNAPSHOT_ROOT)})});
-app.get('/api/auth/safety-status',(req,res)=>{const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,error:'로그인이 필요합니다.'});if(u.role!=='admin')return res.status(403).json({ok:false,error:'관리자만 확인할 수 있습니다.'});const db=usersV48();res.set('Cache-Control','no-store');res.json({ok:true,version:60,persistentHome:TRADECODE_PERSIST_HOME_V59,persistentRoot:PERSISTENT_COUPANG_ROOT_V54,authDir:AUTH_DIR_V48,userCount:db.users.length,usersFileExists:fs.existsSync(USERS_FILE_V48),prevBackupExists:fs.existsSync(USERS_FILE_V48+'.prev'),backupDir:AUTH_BACKUP_DIR_V54,userDataBase:USER_DATA_BASE_V59})});
-app.post('/api/auth/bootstrap',(req,res)=>{try{recoverAuthFilesV52();const db=usersV48();if(db.users.length||v61AccountInitialized())return res.status(409).json({ok:false,error:'이미 계정 시스템이 초기화된 서버입니다. 새 관리자 생성은 차단되었습니다.'});const username=normUserV48(req.body?.username),displayName=String(req.body?.displayName||username).trim().slice(0,80),pw=String(req.body?.password||'');if(username.length<3)return res.status(400).json({ok:false,error:'아이디는 3자 이상이어야 합니다.'});if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:'admin',legacyOwner:true,approved:true,approvedAt:Date.now(),disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u),legacyDataAssigned:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.get('/api/auth/me',(req,res)=>{recoverAuthFilesV52();const u=authUserV48(req),db=usersV48(),history=authHistoryExistsV56();res.set('Cache-Control','no-store');res.json({ok:true,authenticated:!!u,user:u?publicUserV48(u):null,needsBootstrap:db.users.length===0&&!history,recoveryRequired:db.users.length===0&&history,authVersion:59})});
+app.get('/api/auth/storage-status',(req,res)=>{recoverAuthFilesV52();const db=usersV48(),cands=authDbCandidatesV59();res.set('Cache-Control','no-store');res.json({ok:true,version:59,userCount:db.users.length,historyFound:authHistoryExistsV56(),recoveryRequired:db.users.length===0&&authHistoryExistsV56(),persistentHome:TRADECODE_PERSIST_HOME_V59,canonicalAuthDir:AUTH_DIR_V48,usersFile:USERS_FILE_V48,userDataBase:USER_DATA_BASE_V59,candidateDbCount:cands.length,candidates:cands.map(x=>({file:x.file,count:x.count,mtime:x.mtime,kind:x.kind})).sort((a,b)=>b.count-a.count||b.mtime-a.mtime).slice(0,30)})});
+app.get('/api/auth/safety-status',(req,res)=>{const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,error:'로그인이 필요합니다.'});if(u.role!=='admin')return res.status(403).json({ok:false,error:'관리자만 확인할 수 있습니다.'});const db=usersV48();res.set('Cache-Control','no-store');res.json({ok:true,version:59,persistentHome:TRADECODE_PERSIST_HOME_V59,persistentRoot:PERSISTENT_COUPANG_ROOT_V54,authDir:AUTH_DIR_V48,userCount:db.users.length,usersFileExists:fs.existsSync(USERS_FILE_V48),prevBackupExists:fs.existsSync(USERS_FILE_V48+'.prev'),backupDir:AUTH_BACKUP_DIR_V54,userDataBase:USER_DATA_BASE_V59})});
+app.post('/api/auth/bootstrap',(req,res)=>{try{recoverAuthFilesV52();const db=usersV48();if(db.users.length||authHistoryExistsV56()||operationalDataExistsV59())return res.status(409).json({ok:false,error:'이 서버는 이미 사용 이력이 있습니다. 새 관리자 계정 생성은 차단되었습니다. 기존 계정 DB를 복구해야 합니다.'});const username=normUserV48(req.body?.username),displayName=String(req.body?.displayName||username).trim().slice(0,80),pw=String(req.body?.password||'');if(username.length<3)return res.status(400).json({ok:false,error:'아이디는 3자 이상이어야 합니다.'});if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:'admin',legacyOwner:true,approved:true,approvedAt:Date.now(),disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u),legacyDataAssigned:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.post('/api/auth/login',(req,res)=>{const username=normUserV48(req.body?.username),pw=String(req.body?.password||'');const u=usersV48().users.find(x=>x.username===username&&!x.disabled);if(!u||!verifyPwV48(pw,u))return res.status(401).json({ok:false,error:'아이디 또는 비밀번호가 올바르지 않습니다.'});if(!u.legacyOwner&&u.approved===false)return res.status(403).json({ok:false,code:'APPROVAL_REQUIRED',error:'관리자 승인 대기 중인 계정입니다. 관리자에게 승인을 요청해 주세요.'});setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u)})});
 app.post('/api/auth/logout',(req,res)=>{clearSessionV48(req,res);res.json({ok:true})});
 app.get('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});res.json({ok:true,users:usersV48().users.map(publicUserV48)})});
@@ -1247,6 +1152,12 @@ const COUPANG_PROJECTS_PREV_V53 = path.join(COUPANG_SHARED_DIR,'projects.json.pr
 const COUPANG_PROJECTS_SAFE_V53 = path.join(COUPANG_SHARED_DIR,'projects.json.safe');
 const COUPANG_PROJECTS_BACKUP_DIR_V53 = path.join(COUPANG_SHARED_DIR,'_project-index-backups');
 const COUPANG_PROJECTS_TRASH_V53 = path.join(COUPANG_SHARED_DIR,'_project-trash');
+// v61 hotfix: 삭제한 프로젝트 ID를 영구 기록해 과거 저장소/백업 병합이 다시 살려내지 못하게 합니다.
+const COUPANG_DELETED_REGISTRY_V61 = path.join(COUPANG_SHARED_DIR,'_deleted-projects.json');
+function readDeletedRegistryV61(){const x=readJsonSafe(COUPANG_DELETED_REGISTRY_V61);return x&&Array.isArray(x.deleted)?x:{version:61,deleted:[]}}
+function saveDeletedRegistryV61(x){try{writeAtomic(COUPANG_DELETED_REGISTRY_V61,JSON.stringify({version:61,deleted:x.deleted||[]}))}catch(e){console.warn('[v61 delete] 삭제기록 저장 실패:',e.message)}}
+function recordDeletedProjectV61(id,project={}){id=safeProjectIdV18(id);if(!id)return false;const db=readDeletedRegistryV61(),now=Date.now(),old=db.deleted.find(x=>String(x.id)===id);const row={id,name:String(project?.name||old?.name||'').slice(0,180),deletedAt:now,updatedAt:Number(project?.updatedAt||old?.updatedAt||0)};db.deleted=db.deleted.filter(x=>String(x.id)!==id);db.deleted.push(row);db.deleted=db.deleted.sort((a,b)=>Number(b.deletedAt||0)-Number(a.deletedAt||0)).slice(0,5000);saveDeletedRegistryV61(db);return true}
+function deletedProjectIdsRegistryV61(){return readDeletedRegistryV61().deleted.map(x=>String(x.id||'')).filter(Boolean)}
 function safeProjectIdV18(id){id=String(id||'');return /^[A-Za-z0-9_-]{3,80}$/.test(id)?id:null;}
 function validProjectIndexV53(x){return x&&Array.isArray(x.projects)?x:null}
 function listProjectDirsV53(){
@@ -1522,16 +1433,11 @@ function v57AllCoupangRoots(){
   return roots;
 }
 function v57DeletedProjectIds(){
-  const ids=new Set();
-  try{
-    if(fs.existsSync(COUPANG_PROJECTS_TRASH_V53)){
-      for(const e of fs.readdirSync(COUPANG_PROJECTS_TRASH_V53,{withFileTypes:true})){
-        if(!e.isDirectory())continue;const m=e.name.match(/^([A-Za-z0-9_-]{3,80})_\d+$/);if(m)ids.add(m[1]);
-      }
-    }
-  }catch(_){}
+  const ids=new Set(deletedProjectIdsRegistryV61());
+  try{if(fs.existsSync(COUPANG_PROJECTS_TRASH_V53)){for(const e of fs.readdirSync(COUPANG_PROJECTS_TRASH_V53,{withFileTypes:true})){if(!e.isDirectory())continue;const m=e.name.match(/^([A-Za-z0-9_-]{3,80})_\d+$/);if(m)ids.add(m[1])}}}catch(_){}
   return [...ids];
 }
+
 function mergeAllCoupangRootsV57(){
   ensureCoupangSharedDir();fs.mkdirSync(COUPANG_PROJECTS_DIR,{recursive:true});
   const roots=v57AllCoupangRoots();if(!roots.includes(COUPANG_SHARED_DIR))roots.unshift(COUPANG_SHARED_DIR);
@@ -1561,7 +1467,7 @@ function mergeAllCoupangRootsV57(){
   }else{
     saveProjectRegistryV57(rows);
   }
-  try{writeAtomic(path.join(COUPANG_SHARED_DIR,'coupang-storage-location.json'),JSON.stringify({version:60,selectedRoot:COUPANG_SHARED_DIR,projectCount:rows.length,sourceRoots:sources,checkedAt:Date.now()}))}catch(_){}
+  try{writeAtomic(path.join(COUPANG_SHARED_DIR,'coupang-storage-location.json'),JSON.stringify({version:57,selectedRoot:COUPANG_SHARED_DIR,projectCount:rows.length,sourceRoots:sources,checkedAt:Date.now()}))}catch(_){}
   return {version:57,projects:rows,_v57:{sourceRoots:sources,deletedIds:[...deleted]}};
 }
 function v57ProjectAudit(){
@@ -1591,7 +1497,7 @@ app.get('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
   const idx=mergeAllCoupangRootsV57();
   const rows=[...(idx.projects||[])].sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
   res.set('Cache-Control','no-store');
-  res.json({ok:true,projects:rows,safety:{version:57,empty:rows.length===0,storageRoot:COUPANG_SHARED_DIR,projectFolderCount:listProjectDirsV53().length,mergedAcrossRoots:true,sourceRoots:idx._v57?.sourceRoots||[],deletedProjectIds:idx._v57?.deletedIds||[]}});
+  res.json({ok:true,projects:rows,safety:{version:61,empty:rows.length===0,storageRoot:COUPANG_SHARED_DIR,projectFolderCount:listProjectDirsV53().length,mergedAcrossRoots:true,sourceRoots:idx._v57?.sourceRoots||[],deletedProjectIds:idx._v57?.deletedIds||[]}});
 });
 app.post('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
   try{const idx=migrateLegacyProjectV18(),id=newProjectIdV18(),now=Date.now(),name=String(req.body?.name||'').trim().slice(0,120)||`새 선적 작업 ${new Date().toLocaleDateString('ko-KR')}`;const p={id,name,status:'active',createdAt:now,updatedAt:now};fs.mkdirSync(projectPathsV18(id).dir,{recursive:true});idx.projects.push(p);saveProjectsV18(idx);res.json({ok:true,project:p})}catch(err){res.status(500).json({ok:false,error:err.message})}
@@ -1601,16 +1507,18 @@ app.patch('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
 });
 app.delete('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
   try{
-    const found=getProjectOr404V18(req,res);if(!found)return;const {id,idx,paths}=found;
-    // v53: 삭제 버튼을 눌러도 프로젝트 폴더는 즉시 영구삭제하지 않고 휴지통으로 이동합니다.
-    if(fs.existsSync(paths.dir)){
-      fs.mkdirSync(COUPANG_PROJECTS_TRASH_V53,{recursive:true});
-      const target=path.join(COUPANG_PROJECTS_TRASH_V53,`${id}_${Date.now()}`);
-      try{fs.renameSync(paths.dir,target)}catch(e){fs.cpSync(paths.dir,target,{recursive:true});fs.rmSync(paths.dir,{recursive:true,force:true})}
-    }
-    idx.projects=idx.projects.filter(x=>x.id!==id);saveProjectsV18(idx);res.json({ok:true,safetyTrash:true})
+    const id=safeProjectIdV18(req.params.projectId);if(!id)return res.status(404).json({ok:false,error:'잘못된 작업 ID입니다.'});
+    let project=null;try{const merged=mergeAllCoupangRootsV57();project=(merged.projects||[]).find(x=>x.id===id)||null}catch(_){}
+    // 실제 폴더가 현재 저장소에 없어도 삭제 ID 자체를 먼저 기록합니다.
+    recordDeletedProjectV61(id,project||{});
+    const paths=projectPathsV18(id);
+    if(fs.existsSync(paths.dir)){fs.mkdirSync(COUPANG_PROJECTS_TRASH_V53,{recursive:true});const target=path.join(COUPANG_PROJECTS_TRASH_V53,`${id}_${Date.now()}`);try{fs.renameSync(paths.dir,target)}catch(e){fs.cpSync(paths.dir,target,{recursive:true});fs.rmSync(paths.dir,{recursive:true,force:true})}}
+    const idx=readProjectsV18();idx.projects=(idx.projects||[]).filter(x=>x.id!==id);saveProjectsV18(idx);
+    try{const reg=readProjectRegistryV57();saveProjectRegistryV57((reg.projects||[]).filter(x=>x.id!==id))}catch(_){}
+    const remaining=mergeAllCoupangRootsV57();res.set('Cache-Control','no-store');res.json({ok:true,safetyTrash:true,deletedId:id,existed:!!project,deletedProjectIds:v57DeletedProjectIds(),remainingCount:(remaining.projects||[]).length});
   }catch(err){res.status(500).json({ok:false,error:err.message})}
 });
+
 
 app.get('/api/coupang-shared/projects/:projectId/status',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const {paths}=found;res.set('Cache-Control','no-store');res.json({ok:true,state:projectStateStatusV18(paths),source:projectBlobStatusV18(paths,'source'),workbookSnapshot:projectBlobStatusV18(paths,'workbookSnapshot')})});
 app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
@@ -1721,7 +1629,7 @@ app.use('/api/coupang-shared',(req,res,next)=>{
 // - Supabase public.shared_labels가 있으면 우선 사용합니다.
 // - Supabase가 비어 있거나 미설정이면, '라벨 전용 파일명'의 기존 저장소만 확인합니다.
 // =====================================================================
-const SHARED_LABEL_DIR = path.join(TRADECODE_PERSIST_ROOT_V60, 'shared-barcode');
+const SHARED_LABEL_DIR = process.env.SHARED_LABEL_DIR || path.join(path.dirname(COUPANG_SHARED_DIR), 'shared-barcode');
 const SHARED_LABELS_PATH = process.env.SHARED_LABELS_PATH || path.join(SHARED_LABEL_DIR, 'labels.json');
 const PRODUCT_CATALOG_PATH = path.join(SHARED_LABEL_DIR, 'product-catalog.json');
 const LABEL_EDIT_KEY = String(process.env.SHARED_LABEL_EDIT_KEY || process.env.LABEL_EDIT_KEY || '').trim();
@@ -2082,7 +1990,7 @@ app.get('/barcode-label', (req, res) => {
 // 쿠팡 입고 작업은 기존 /api/coupang-shared 프로젝트 저장소를 그대로 사용합니다.
 // 저장 위치는 COUPANG_SHARED_DIR 내부라 기존 공용 선적작업과 같은 영구 디스크를 사용합니다.
 // =====================================================================
-const SHARED_WORKSPACE_DIR_V46 = path.join(COUPANG_SHARED_DIR, '_shared-workspaces');
+const SHARED_WORKSPACE_DIR_V46 = process.env.SHARED_WORKSPACE_DIR || path.join(COUPANG_SHARED_DIR, '_shared-workspaces');
 const WORKSPACE_KEYS_V46 = new Set(['barcode-label','order-barcode']);
 function ensureDirV46(dir){ fs.mkdirSync(dir,{recursive:true}); }
 function safeWorkspaceKeyV46(v){ v=String(v||''); return WORKSPACE_KEYS_V46.has(v)?v:null; }
