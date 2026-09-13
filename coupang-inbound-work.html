@@ -704,7 +704,7 @@ async function sharedRemoteGet(key){
 
 async function sharedSendState(value){
   try{
-    const send={...value,boxDraft:null};
+    const send={...value};
     const r=await sharedFetch('/state',{method:'PUT',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(send)});
     if(!r.ok)throw new Error('shared state save '+r.status);const j=await r.json();sharedLastStateAt=Math.max(sharedLastStateAt,Number(j.updatedAt||0));
   }catch(e){console.warn('shared state save failed; local cache kept',e)}
@@ -738,9 +738,9 @@ async function persistGet(key){
   const remote=await sharedRemoteGet(key);
   if(remote!==undefined&&remote!==null){
     if(key==='state'){
-      // Active tab and unfinished scan list belong to each PC, not to the whole team.
+      // 화면 탭 위치는 PC별로 유지합니다. v46 첫 전환 시 서버에 아직 없는 더 최신 로컬 미완료 박스는 1회 복구합니다.
       if(local?.activeSheet)remote.activeSheet=local.activeSheet;
-      if(local?.boxDraft)remote.boxDraft=local.boxDraft;
+      if(!remote?.boxDraft&&local?.boxDraft&&Number(local?.savedAt||0)>Number(remote?.savedAt||0))remote.boxDraft=local.boxDraft;
     }
     try{await localPersistPut(key,remote)}catch(_){}
     return remote;
@@ -1617,7 +1617,7 @@ persistGet=async function(key){
   let local;try{local=await localPersistGet(localProjectKeyV18(key))}catch(e){console.warn('local project cache read failed',e)}
   const remote=await sharedRemoteGet(key);
   if(remote!==undefined&&remote!==null){
-    if(key==='state'){if(local?.activeSheet)remote.activeSheet=local.activeSheet;if(local?.boxDraft)remote.boxDraft=local.boxDraft;}
+    if(key==='state'){if(local?.activeSheet)remote.activeSheet=local.activeSheet;if(!remote?.boxDraft&&local?.boxDraft&&Number(local?.savedAt||0)>Number(remote?.savedAt||0))remote.boxDraft=local.boxDraft;}
     try{await localPersistPut(localProjectKeyV18(key),remote)}catch(_){}
     return remote;
   }
@@ -1648,7 +1648,7 @@ sharedRemoteGet=async function(key){
 sharedSendState=async function(value){
   if(!currentProjectIdV18)return;
   try{
-    const send={...value,boxDraft:null};
+    const send={...value};
     const r=await sharedFetch(projectApiV18('/state'),{method:'PUT',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(send)});
     if(!r.ok)throw new Error('project state save '+r.status);const j=await r.json();sharedLastStateAt=Math.max(sharedLastStateAt,Number(j.updatedAt||0));
   }catch(e){console.warn('project state save failed',e)}
@@ -3385,6 +3385,51 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
   requestAnimationFrame(updateMissingBoxAlertV34);
 })();
 // ===== /v34 =====
+</script>
+
+
+<script id="v46-server-save-safety">
+// ===== v46: 쿠팡 입고 작업 서버저장 확인 안전장치 =====
+(function(){
+  let autoStatusBusyV46=false,lastConfirmedV46=0;
+  function fmtV46(ts){try{return new Date(ts).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}catch(_){return''}}
+  function statusV46(msg,bad=false){const e=document.getElementById('serverSaveStatusV46');if(e){e.textContent=msg;e.style.color=bad?'#b42318':'#157347'}}
+  async function confirmStatusV46(){
+    try{const st=await sharedStatus();const at=Number(st?.state?.updatedAt||0);if(at){lastConfirmedV46=at;statusV46(`☁ 서버 저장 완료 · ${fmtV46(at)}`);return at}if(currentProjectIdV18)statusV46('☁ 서버 연결됨 · 첫 저장 대기');return 0}catch(e){statusV46('⚠ 서버 확인 실패',true);return 0}
+  }
+  const saveBaseV46=savePersistentState;
+  savePersistentState=async function(){
+    if(autoStatusBusyV46)return saveBaseV46.apply(this,arguments);
+    autoStatusBusyV46=true;statusV46('☁ 서버 저장 중…');
+    try{await saveBaseV46.apply(this,arguments);try{await sharedDrainStateQueue()}catch(_){};await confirmStatusV46()}
+    catch(e){console.warn('v46 server save',e);statusV46('⚠ 서버 저장 실패 · 이 PC 캐시는 유지됨',true)}finally{autoStatusBusyV46=false}
+  };
+  window.saveCoupangServerNowV46=async function(){
+    if(!currentProjectIdV18||!workbook){statusV46('☁ 저장할 선적 작업을 먼저 선택해 주세요.');return}
+    const btn=document.getElementById('serverSaveNowV46');if(btn)btn.disabled=true;statusV46('☁ 서버에 지금 저장 중…');setStatus('☁ 서버에 현재 작업을 저장하는 중…','busy');
+    try{
+      try{await syncDirtyPalletsForSave()}catch(_){}
+      await savePersistentState();
+      // 직접 수정한 셀/추가 행까지 복구되도록 수동 저장 시에는 엑셀 스냅샷도 함께 저장합니다.
+      await saveWorkbookSnapshotNow();
+      try{await sharedDrainStateQueue()}catch(_){}
+      const at=await confirmStatusV46();setStatus(`✓ 서버 저장 완료${at?' · '+fmtV46(at):''} · 다른 PC에서도 같은 선적 작업을 열 수 있습니다.`,'ok');
+    }catch(e){console.error(e);statusV46('⚠ 서버 저장 실패',true);setStatus('서버 저장 실패: '+(e.message||e),'bad')}
+    finally{if(btn)btn.disabled=false}
+  };
+  function installV46(){
+    const bar=document.getElementById('projectBar');if(bar&&!document.getElementById('serverSaveNowV46')){const b=document.createElement('button');b.id='serverSaveNowV46';b.type='button';b.textContent='☁ 지금 저장';b.style.cssText='background:#217346;color:#fff;border-color:#217346';b.onclick=window.saveCoupangServerNowV46;const st=document.createElement('span');st.id='serverSaveStatusV46';st.style.cssText='font-size:10px;font-weight:900;color:#157347;white-space:nowrap';st.textContent='☁ 서버 확인 중…';bar.append(b,st)}
+    confirmStatusV46();
+    // 기존 버전에서 이 PC에만 남아 있던 미완료 박스 작업도 서버로 승격합니다.
+    setTimeout(()=>{if(workbook&&currentProjectIdV18)try{savePersistentState()}catch(_){}},700);
+  }
+  const switchBaseV46=window.switchProjectV18;
+  if(typeof switchBaseV46==='function')window.switchProjectV18=async function(){const r=await switchBaseV46.apply(this,arguments);setTimeout(confirmStatusV46,80);return r};
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&workbook){try{savePersistentState()}catch(_){}}});
+  setInterval(()=>{if(!document.hidden&&currentProjectIdV18)confirmStatusV46()},15000);
+  setTimeout(installV46,0);
+})();
+// ===== /v46 =====
 </script>
 
 </body>
