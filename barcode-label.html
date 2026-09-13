@@ -350,8 +350,16 @@
   let previewMode = 'fit';
   const el = id => document.getElementById(id);
 
+  // v52: 같은 PC에서 관리자/직원 계정을 바꿔 써도 브라우저 캐시가 섞이지 않도록 계정별 키를 사용합니다.
+  function tcCookieV52(name){
+    try{return decodeURIComponent((document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='))||'').slice(name.length+1))}catch(_){return''}
+  }
+  const TC_UID_V52=tcCookieV52('tradecode_uid')||'anonymous';
+  const TC_LEGACY_V52=tcCookieV52('tradecode_legacy')==='1';
+  function tcScopedKeyV52(base){return TC_LEGACY_V52?base:`${base}::${TC_UID_V52}`}
+
   // 마지막 작업 상태 자동저장
-  const LABEL_WORKING_STATE_KEY='tradecodeBarcodeLabelWorkingStateV2';
+  const LABEL_WORKING_STATE_KEY=tcScopedKeyV52('tradecodeBarcodeLabelWorkingStateV2');
   let workingStateEnabled=false;
   let workingStateSaveTimer=null;
 
@@ -778,10 +786,10 @@
   // - 바코드 우선, 상품번호 보조 키로 발주서와 매칭
   // - 추후 Supabase 연결 시 이 저장 함수만 서버DB 방식으로 교체 가능
   // ---------------------------------------------------------
-  const LEGACY_LABEL_LIBRARY_KEY='tradecodeLabelLibraryV1';
-  const LABEL_LIBRARY_KEY='tradecodeSharedLabelCacheV1';
-  const LABEL_DEFAULTS_KEY='tradecodeLabelDefaultsV1';
-  const SHARED_EDIT_KEY_STORE='tradecodeSharedLabelEditKeyV1';
+  const LEGACY_LABEL_LIBRARY_KEY=tcScopedKeyV52('tradecodeLabelLibraryV1');
+  const LABEL_LIBRARY_KEY=tcScopedKeyV52('tradecodeSharedLabelCacheV1');
+  const LABEL_DEFAULTS_KEY=tcScopedKeyV52('tradecodeLabelDefaultsV1');
+  const SHARED_EDIT_KEY_STORE=tcScopedKeyV52('tradecodeSharedLabelEditKeyV1');
   let savedLibraryView=[];
   let sharedLabelCache=[];
   let sharedEditKeyRequired=false;
@@ -890,7 +898,9 @@
       if(!res.ok||!data.ok) throw new Error(data.error||'공용 라벨 조회 실패');
       sharedEditKeyRequired=!!data.editKeyRequired;
       const serverLabels=Array.isArray(data.labels)?data.labels:[];
-      if(serverLabels.length===0 && localProtected.length>0){
+      // 최초 관리자만 예전 PC 로컬 라벨 구조를 복구 후보로 사용합니다.
+      // 직원 계정은 서버가 0개라고 응답하면 반드시 0개로 표시하여 관리자 캐시 노출을 막습니다.
+      if(TC_LEGACY_V52 && serverLabels.length===0 && localProtected.length>0){
         sharedLabelCache=localProtected;
         if(!silent)setSaveStatus(`⚠ 서버 라벨은 0개지만 이 PC의 실제 저장 라벨 ${localProtected.length}개를 보호해서 표시합니다. '이 PC 기존 라벨 공용으로 옮기기'를 누르면 서버로 복원됩니다.`,false);
         return true;
@@ -905,7 +915,7 @@
       console.error(err);
       const localProtected=collectExactLocalLabelsV32();
       if(localProtected.length)sharedLabelCache=localProtected; else loadCachedSharedLabels();
-      if(!silent) setSaveStatus(`공용 서버 연결 실패 · 이 PC의 실제 저장 라벨 ${sharedLabelCache.length}개를 보호해서 표시합니다.`,false);
+      if(!silent) setSaveStatus(`${TC_LEGACY_V52?'공용':'내'} 서버 연결 실패 · 이 계정의 PC 저장 라벨 ${sharedLabelCache.length}개를 표시합니다.`,false);
       return false;
     }
   }
