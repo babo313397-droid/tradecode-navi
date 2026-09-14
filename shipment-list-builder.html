@@ -175,11 +175,20 @@ function itemKey(sec,it){
   const pn=compact(it.productNumber),bc=compact(it.barcode),identity=(pn&&bc)?`${pn}|${bc}`:(pn||bc||compact(it.productName));
   return `${sec.company}|${compact(baseCenter(it.center))}|${identity}`;
 }
+// 센터명 기준 자연 오름차순 정렬 (예: 안성5 → 안성8 → 인천14 → 평택1)
+// 기존 합산/업체구분/색상/팔레트·밀크런 처리 로직은 그대로 두고 결과 행 순서만 정렬합니다.
+const CENTER_SORTER_V61=new Intl.Collator('ko-KR',{numeric:true,sensitivity:'base'});
+function compareCenterV61(a,b){
+  const ca=baseCenter(a?.center??a),cb=baseCenter(b?.center??b);
+  const c=CENTER_SORTER_V61.compare(ca,cb);
+  return c||((Number(a?.firstOrder)||0)-(Number(b?.firstOrder)||0));
+}
 function buildGroups(){
   groupedSections=[];
   for(const sec of parsedSections){
     const map=new Map(),out=[];
     for(const it of sec.items){const key=itemKey(sec,it);if(!map.has(key)){const x={...it,qty:0,mergedRows:0};map.set(key,x);out.push(x)}const x=map.get(key);x.qty+=Number(it.qty)||0;x.mergedRows++;}
+    out.sort(compareCenterV61);
     groupedSections.push({...sec,items:out});
   }
 }
