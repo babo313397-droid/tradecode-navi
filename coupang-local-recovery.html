@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>쿠팡 입고 작업 브라우저 긴급 복구</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Malgun Gothic",sans-serif;background:#f4f7fa;color:#142332;margin:0;padding:24px}.wrap{max-width:1100px;margin:auto}.card{background:#fff;border:1px solid #dce5ed;border-radius:14px;padding:20px;margin:14px 0}.warn{background:#fff4e5;border-color:#f2c879}.good{background:#edf9f1;border-color:#a9d8b8}.bad{background:#fff0f0;border-color:#e7b1b1}button{border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer;background:#0b5f92;color:#fff;margin-right:8px;margin-bottom:8px}button.green{background:#167447}button.gray{background:#5c6d7c}pre{white-space:pre-wrap;word-break:break-word;background:#0d1720;color:#e8f0f6;padding:14px;border-radius:10px;max-height:420px;overflow:auto;font-size:12px}.row{padding:9px 0;border-bottom:1px solid #edf1f4}.small{font-size:12px;color:#607080}.pill{display:inline-block;padding:3px 7px;border-radius:99px;background:#eaf2f8;margin:2px;font-size:11px}.blobbtn{background:#6b4f9b;padding:7px 10px;font-size:12px}h1{margin:0 0 6px}h2{font-size:18px;margin:0 0 12px}
+</style>
+</head>
+<body><div class="wrap">
+<h1>쿠팡 입고 작업 브라우저 긴급 복구</h1>
+<div class="small">이 페이지는 <b>읽기/다운로드만</b> 합니다. IndexedDB·localStorage를 삭제하거나 수정하지 않습니다.</div>
+<div id="originCard" class="card warn"></div>
+<div class="card">
+  <button onclick="inspectAll()">1. 이 PC 복구데이터 검사</button>
+  <button class="green" id="exportBtn" onclick="exportAll()" disabled>2. 전체 복구 JSON 다운로드</button>
+  <div id="summary" style="margin-top:10px"></div>
+</div>
+<div class="card"><h2>프로젝트 목록 캐시</h2><div id="projectCaches"></div></div>
+<div class="card"><h2>IndexedDB 복구 데이터</h2><div id="dbList"></div></div>
+<div class="card"><h2>검사 로그</h2><pre id="log"></pre></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);let INSPECTED=null;
+function log(s){$('log').textContent+=(s+'\n')}
+function safeName(s){return String(s||'file').replace(/[\\/:*?"<>|]+/g,'_').slice(0,120)}
+function downloadBlob(blob,name){const a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),15000)}
+function relevantLocalStorage(){const out={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i)||'';if(/coupang/i.test(k)&&!/token|password|secret/i.test(k)){try{out[k]=localStorage.getItem(k)}catch(_){}}}return out}
+function parseProjectCaches(ls){const rows=[];for(const [k,v] of Object.entries(ls)){if(!/coupangProjectListSafetyV5[57]/.test(k))continue;try{const x=JSON.parse(v);for(const p of (x.projects||[]))rows.push({cacheKey:k,...p})}catch(_){}}const m=new Map();for(const p of rows){if(p.id&&!m.has(p.id))m.set(p.id,p)}return [...m.values()]}
+async function listDbNames(){if(indexedDB.databases){try{return (await indexedDB.databases()).map(x=>x.name).filter(Boolean)}catch(_){}}return ['CoupangInboundWorkDB'];}
+function openExistingDb(name){return new Promise((resolve,reject)=>{let created=false;const req=indexedDB.open(name);req.onupgradeneeded=()=>{created=true};req.onsuccess=()=>{const db=req.result;if(created&&db.objectStoreNames.length===0){db.close();indexedDB.deleteDatabase(name);return resolve(null)}resolve(db)};req.onerror=()=>reject(req.error)})}
+function getAllEntries(db,storeName){return new Promise((resolve,reject)=>{const tx=db.transaction(storeName,'readonly'),st=tx.objectStore(storeName),arr=[];const r=st.openCursor();r.onsuccess=e=>{const c=e.target.result;if(!c)return resolve(arr);arr.push({key:c.key,value:c.value});c.continue()};r.onerror=()=>reject(r.error)})}
+function blobMeta(v){if(v instanceof Blob)return {blob:v,name:'blob',type:v.type||'',size:v.size};if(v&&v.blob instanceof Blob)return {blob:v.blob,name:v.name||'file',type:v.type||v.blob.type||'',size:v.blob.size,mode:v.mode||'',savedAt:v.savedAt||0};return null}
+async function inspectAll(){
+  $('log').textContent='';$('dbList').innerHTML='';$('projectCaches').innerHTML='';$('exportBtn').disabled=true;
+  const ls=relevantLocalStorage(),projects=parseProjectCaches(ls);log('localStorage 관련 키: '+Object.keys(ls).length);log('프로젝트 목록 캐시: '+projects.length+'건');
+  if(projects.length){$('projectCaches').innerHTML=projects.map(p=>`<div class="row"><b>${String(p.name||'(이름없음)')}</b><div class="small">ID: ${p.id} · ${p.status||'active'} · cache: ${p.cacheKey}</div></div>`).join('')}else $('projectCaches').innerHTML='<div class="small">프로젝트 목록 캐시가 없습니다.</div>';
+  const names=(await listDbNames()).filter(n=>/^CoupangInboundWorkDB(?:-|$)/.test(n));const dbDump=[];let totalEntries=0,totalBlobs=0;
+  for(const name of names){try{const db=await openExistingDb(name);if(!db)continue;const stores=[...db.objectStoreNames];const storeDump=[];for(const s of stores){const entries=await getAllEntries(db,s);totalEntries+=entries.length;for(const e of entries)if(blobMeta(e.value))totalBlobs++;storeDump.push({name:s,entries})}db.close();dbDump.push({name,stores:storeDump})}catch(e){log('DB 오류 '+name+': '+e.message)}}
+  INSPECTED={at:new Date().toISOString(),origin:location.origin,localStorage:ls,projects,databases:dbDump};
+  const host=$('dbList');if(!dbDump.length)host.innerHTML='<div class="small">쿠팡 IndexedDB를 찾지 못했습니다.</div>';else{
+    for(const d of dbDump){const box=document.createElement('div');box.className='row';let html=`<b>${d.name}</b>`;for(const s of d.stores){html+=`<div class="small">store: ${s.name} · ${s.entries.length}개</div>`;for(const e of s.entries){const bm=blobMeta(e.value);html+=`<div style="margin:5px 0 5px 12px"><span class="pill">${String(e.key)}</span>`;if(bm){const id='b_'+Math.random().toString(36).slice(2);html+=` <button class="blobbtn" id="${id}">Excel/Blob 다운로드 (${Math.round(bm.size/1024)}KB)</button>`;setTimeout(()=>{const el=document.getElementById(id);if(el)el.onclick=()=>downloadBlob(bm.blob,safeName(bm.name||String(e.key))+(/\.xlsx$/i.test(bm.name||'')?'':'.bin'))},0)}html+='</div>'} }box.innerHTML=html;host.appendChild(box)}
+  }
+  $('summary').innerHTML=`<b>발견 결과:</b> 프로젝트 캐시 ${projects.length}건 · IndexedDB ${dbDump.length}개 · 저장항목 ${totalEntries}개 · Blob/Excel ${totalBlobs}개`;
+  $('exportBtn').disabled=!(projects.length||totalEntries);log('검사 완료');
+}
+async function encode(v){if(v instanceof Blob){const ab=await v.arrayBuffer();let bin='';const u=new Uint8Array(ab),step=0x8000;for(let i=0;i<u.length;i+=step)bin+=String.fromCharCode(...u.subarray(i,i+step));return {__type:'Blob',type:v.type||'',size:v.size,base64:btoa(bin)}}if(Array.isArray(v)){const a=[];for(const x of v)a.push(await encode(x));return a}if(v&&typeof v==='object'){const o={};for(const [k,x] of Object.entries(v))o[k]=await encode(x);return o}return v}
+async function exportAll(){if(!INSPECTED)return;const btn=$('exportBtn');btn.disabled=true;btn.textContent='복구파일 만드는 중…';try{const out={version:1,...INSPECTED,databases:[]};for(const d of INSPECTED.databases){const dd={name:d.name,stores:[]};for(const s of d.stores){const ss={name:s.name,entries:[]};for(const e of s.entries)ss.entries.push({key:e.key,value:await encode(e.value)});dd.stores.push(ss)}out.databases.push(dd)}const blob=new Blob([JSON.stringify(out)],{type:'application/json'});const ts=new Date().toISOString().replace(/[:.]/g,'-');downloadBlob(blob,`coupang-browser-recovery-${ts}.json`);log('전체 복구 JSON 다운로드 완료: '+Math.round(blob.size/1024)+'KB')}catch(e){alert('복구파일 생성 실패: '+e.message);log('내보내기 오류: '+e.stack)}finally{btn.disabled=false;btn.textContent='2. 전체 복구 JSON 다운로드'}}
+const ok=location.protocol==='https:'&&/tool\.dasaba\.co\.kr$/i.test(location.hostname);$('originCard').className='card '+(ok?'good':'bad');$('originCard').innerHTML=ok?'<b>✓ 정상 도메인입니다.</b> 이 브라우저 프로필에 남아 있는 쿠팡 작업 캐시를 검사할 수 있습니다.':'<b>⚠ 반드시 https://tool.dasaba.co.kr 에 올려서 열어야 합니다.</b> 로컬 파일(file://)로 열면 기존 브라우저 저장소를 볼 수 없습니다.';if(ok)inspectAll();
+</script></body></html>
