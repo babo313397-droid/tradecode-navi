@@ -523,6 +523,9 @@ const PRIVATE_API_PREFIXES_V48=['/api/shared-labels','/api/shared-workspace','/a
 app.use((req,res,next)=>{if(PRIVATE_API_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'/')))return requireLoginApiV48(req,res,next);next()});
 
 // v50: 직원 계정 쿠팡 API는 레거시 공용 라우트보다 먼저 개인 저장소에서 처리합니다.
+// v64: 직원 계정의 Excel blob 업로드는 express.raw로 확실히 수신합니다.
+// 프로젝트 시간만 생성되고 실제 선적 엑셀이 비는 현상을 방지합니다.
+const accountCoupangBlobRawV64=express.raw({type:'application/octet-stream',limit:'80mb'});
 // 최초 관리자(legacyOwner)는 next()로 기존 저장소를 그대로 사용합니다.
 // 계정별 쿠팡 선적 프로젝트. 최초 관리자는 기존 프로젝트 저장소를 그대로 사용합니다.
 app.use('/api/coupang-shared',(req,res,next)=>{
@@ -532,15 +535,18 @@ app.use('/api/coupang-shared',(req,res,next)=>{
   const touch=id=>{const idx=readIdx(),p=idx.projects.find(x=>x.id===id);if(p){p.updatedAt=Date.now();saveIdx(idx)}return p};
   if(req.path==='/projects'&&req.method==='GET'){const idx=readIdx();return res.json({ok:true,projects:[...idx.projects].sort((a,b)=>b.updatedAt-a.updatedAt)})}
   if(req.path==='/projects'&&req.method==='POST'){const idx=readIdx(),id=newId(),now=Date.now(),p={id,name:String(req.body?.name||'새 선적 작업').slice(0,120),status:'active',createdAt:now,updatedAt:now};fs.mkdirSync(pp(id).dir,{recursive:true});idx.projects.push(p);saveIdx(idx);return res.json({ok:true,project:p})}
-  const m=req.path.match(/^\/projects\/([A-Za-z0-9_-]+)(?:\/(status|state|blob\/source|blob\/workbookSnapshot))?$/);if(!m)return next();const id=m[1],part=m[2]||'',idx=readIdx(),proj=idx.projects.find(x=>x.id===id);if(!proj)return res.status(404).json({ok:false,error:'선적 작업을 찾을 수 없습니다.'});const paths=pp(id);
-  if(!part){if(req.method==='PATCH'){if(req.body?.name!==undefined)proj.name=String(req.body.name||proj.name).slice(0,120);if(req.body?.status!==undefined)proj.status=req.body.status==='archived'?'archived':'active';proj.updatedAt=Date.now();saveIdx(idx);return res.json({ok:true,project:proj})}if(req.method==='DELETE'){fs.rmSync(paths.dir,{recursive:true,force:true});idx.projects=idx.projects.filter(x=>x.id!==id);saveIdx(idx);return res.json({ok:true})}}
+  const m=req.path.match(/^\/projects\/([A-Za-z0-9_-]+)(?:\/(status|state|blob\/source|blob\/workbookSnapshot))?$/);if(!m)return next();const id=m[1],part=m[2]||'',idx=readIdx(),proj=idx.projects.find(x=>x.id===id),paths=pp(id);
+  // v70: 계정별 프로젝트 삭제도 멱등 처리. 이미 목록에서 사라진 항목을 다시 삭제해도 성공으로 응답합니다.
+  if(!part&&req.method==='DELETE'){fs.rmSync(paths.dir,{recursive:true,force:true});idx.projects=idx.projects.filter(x=>x.id!==id);saveIdx(idx);return res.json({ok:true,idempotent:true,alreadyMissing:!proj})}
+  if(!proj)return res.status(404).json({ok:false,error:'선적 작업을 찾을 수 없습니다.'});
+  if(!part){if(req.method==='PATCH'){if(req.body?.name!==undefined)proj.name=String(req.body.name||proj.name).slice(0,120);if(req.body?.status!==undefined)proj.status=req.body.status==='archived'?'archived':'active';proj.updatedAt=Date.now();saveIdx(idx);return res.json({ok:true,project:proj})}}
   if(part==='status'&&req.method==='GET'){const st=readJsonFileV48(paths.state,null),bs=k=>{const meta=readJsonFileV48(paths[k].meta,null);return meta&&fs.existsSync(paths[k].data)?{updatedAt:Number(meta.updatedAt||0),size:Number(meta.size||0),name:meta.name||''}:null};return res.json({ok:true,state:st?{updatedAt:Number(st.updatedAt||0)}:null,source:bs('source'),workbookSnapshot:bs('workbookSnapshot')})}
   if(part==='state'){
     if(req.method==='GET'){const st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
     if(req.method==='DELETE'){fs.rmSync(paths.state,{force:true});touch(id);return res.json({ok:true})}
     if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
   }
-  if(part.startsWith('blob/')){const key=part.split('/')[1],info=paths[key];if(!info)return res.status(404).json({ok:false,error:'파일 키 오류'});if(req.method==='GET'){const meta=readJsonFileV48(info.meta,null);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Content-Type',meta.type||'application/octet-stream');res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',meta.name||'');res.set('X-File-Type',meta.type||'');res.set('X-File-Mode',meta.mode||'');res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));return res.sendFile(info.data)}if(req.method==='DELETE'){fs.rmSync(info.data,{force:true});fs.rmSync(info.meta,{force:true});touch(id);return res.json({ok:true})}if(req.method==='PUT')return rawBodyV48(req).then(buf=>{if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(paths.dir,{recursive:true});const updatedAt=Date.now(),meta={updatedAt,size:buf.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};fs.writeFileSync(info.data,buf);atomicJsonV48(info.meta,meta);if(key==='source'){fs.rmSync(paths.state,{force:true});fs.rmSync(paths.workbookSnapshot.data,{force:true});fs.rmSync(paths.workbookSnapshot.meta,{force:true})}touch(id);res.json({ok:true,updatedAt,size:buf.length})}).catch(e=>res.status(500).json({ok:false,error:e.message}));}
+  if(part.startsWith('blob/')){const key=part.split('/')[1],info=paths[key];if(!info)return res.status(404).json({ok:false,error:'파일 키 오류'});if(req.method==='GET'){const meta=readJsonFileV48(info.meta,null);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Cache-Control','no-store');res.set('Content-Type',meta.type||'application/octet-stream');res.set('Content-Length',String(fs.statSync(info.data).size));res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',meta.name||'');res.set('X-File-Type',meta.type||'');res.set('X-File-Mode',meta.mode||'');res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));return res.sendFile(info.data)}if(req.method==='DELETE'){fs.rmSync(info.data,{force:true});fs.rmSync(info.meta,{force:true});touch(id);return res.json({ok:true})}if(req.method==='PUT'){const writeBlobV64=()=>{try{const buf=Buffer.isBuffer(req.body)?req.body:Buffer.from(req.body||'');if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(paths.dir,{recursive:true});const updatedAt=Date.now(),meta={updatedAt,size:buf.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};fs.writeFileSync(info.data,buf);atomicJsonV48(info.meta,meta);if(key==='source'){fs.rmSync(paths.state,{force:true});fs.rmSync(paths.workbookSnapshot.data,{force:true});fs.rmSync(paths.workbookSnapshot.meta,{force:true})}touch(id);return res.json({ok:true,updatedAt,size:buf.length,accountScoped:true})}catch(e){return res.status(500).json({ok:false,error:e.message})}};if(Buffer.isBuffer(req.body))return writeBlobV64();return accountCoupangBlobRawV64(req,res,err=>{if(err)return res.status(err.type==='entity.too.large'?413:400).json({ok:false,error:err.message||'파일 업로드를 읽지 못했습니다.'});return writeBlobV64()})}}
   next();
 });
 
@@ -1628,14 +1634,32 @@ app.patch('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
 });
 app.delete('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
   try{
-    const found=getProjectOr404V18(req,res);if(!found)return;const {id,idx,paths}=found;
-    // v53: 삭제 버튼을 눌러도 프로젝트 폴더는 즉시 영구삭제하지 않고 휴지통으로 이동합니다.
+    // v70: 삭제는 멱등 처리합니다. 서버 현재 인덱스에 이미 없더라도 404로 실패시키지 않고
+    // 삭제 tombstone을 남겨 v57의 과거 저장루트/백업 병합에서 다시 살아나는 것을 차단합니다.
+    const id=safeProjectIdV18(req.params.projectId);
+    if(!id)return res.status(404).json({ok:false,error:'잘못된 작업 ID입니다.'});
+
+    let idx;
+    try{idx=readProjectsV18()}catch(_){idx=recoverProjectsIndexV53()}
+    if(!idx||!Array.isArray(idx.projects))idx={version:70,projects:[]};
+    const paths=projectPathsV18(id);
+
+    fs.mkdirSync(COUPANG_PROJECTS_TRASH_V53,{recursive:true});
+    const target=path.join(COUPANG_PROJECTS_TRASH_V53,`${id}_${Date.now()}`);
     if(fs.existsSync(paths.dir)){
-      fs.mkdirSync(COUPANG_PROJECTS_TRASH_V53,{recursive:true});
-      const target=path.join(COUPANG_PROJECTS_TRASH_V53,`${id}_${Date.now()}`);
       try{fs.renameSync(paths.dir,target)}catch(e){fs.cpSync(paths.dir,target,{recursive:true});fs.rmSync(paths.dir,{recursive:true,force:true})}
+    }else{
+      // 실제 폴더가 없어도 빈 tombstone 폴더를 남겨 과거 저장루트의 동일 ID가 재병합되지 않게 합니다.
+      fs.mkdirSync(target,{recursive:true});
     }
-    idx.projects=idx.projects.filter(x=>x.id!==id);saveProjectsV18(idx);res.json({ok:true,safetyTrash:true})
+    try{atomicJsonV48(path.join(target,'deleted.json'),{id,deletedAt:Date.now(),deletedBy:req.authUser?.id||'',reason:'user-delete-v70'})}catch(_){}
+
+    idx.projects=idx.projects.filter(x=>String(x.id)!==id);
+    saveProjectsV18(idx);
+    try{const reg=readProjectRegistryV57();saveProjectRegistryV57((reg.projects||[]).filter(x=>String(x.id)!==id))}catch(_){}
+
+    const deletedProjectIds=typeof v57DeletedProjectIds==='function'?v57DeletedProjectIds():[id];
+    return res.json({ok:true,safetyTrash:true,idempotent:true,deletedProjectIds});
   }catch(err){res.status(500).json({ok:false,error:err.message})}
 });
 
@@ -1737,7 +1761,7 @@ app.use('/api/coupang-shared',(req,res,next)=>{
     if(req.method==='DELETE'){fs.rmSync(paths.state,{force:true});touch(id);return res.json({ok:true})}
     if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
   }
-  if(part.startsWith('blob/')){const key=part.split('/')[1],info=paths[key];if(!info)return res.status(404).json({ok:false,error:'파일 키 오류'});if(req.method==='GET'){const meta=readJsonFileV48(info.meta,null);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Content-Type',meta.type||'application/octet-stream');res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',meta.name||'');res.set('X-File-Type',meta.type||'');res.set('X-File-Mode',meta.mode||'');res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));return res.sendFile(info.data)}if(req.method==='DELETE'){fs.rmSync(info.data,{force:true});fs.rmSync(info.meta,{force:true});touch(id);return res.json({ok:true})}if(req.method==='PUT')return rawBodyV48(req).then(buf=>{if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(paths.dir,{recursive:true});const updatedAt=Date.now(),meta={updatedAt,size:buf.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};fs.writeFileSync(info.data,buf);atomicJsonV48(info.meta,meta);if(key==='source'){fs.rmSync(paths.state,{force:true});fs.rmSync(paths.workbookSnapshot.data,{force:true});fs.rmSync(paths.workbookSnapshot.meta,{force:true})}touch(id);res.json({ok:true,updatedAt,size:buf.length})}).catch(e=>res.status(500).json({ok:false,error:e.message}));}
+  if(part.startsWith('blob/')){const key=part.split('/')[1],info=paths[key];if(!info)return res.status(404).json({ok:false,error:'파일 키 오류'});if(req.method==='GET'){const meta=readJsonFileV48(info.meta,null);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Cache-Control','no-store');res.set('Content-Type',meta.type||'application/octet-stream');res.set('Content-Length',String(fs.statSync(info.data).size));res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',meta.name||'');res.set('X-File-Type',meta.type||'');res.set('X-File-Mode',meta.mode||'');res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));return res.sendFile(info.data)}if(req.method==='DELETE'){fs.rmSync(info.data,{force:true});fs.rmSync(info.meta,{force:true});touch(id);return res.json({ok:true})}if(req.method==='PUT'){const writeBlobV64=()=>{try{const buf=Buffer.isBuffer(req.body)?req.body:Buffer.from(req.body||'');if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(paths.dir,{recursive:true});const updatedAt=Date.now(),meta={updatedAt,size:buf.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};fs.writeFileSync(info.data,buf);atomicJsonV48(info.meta,meta);if(key==='source'){fs.rmSync(paths.state,{force:true});fs.rmSync(paths.workbookSnapshot.data,{force:true});fs.rmSync(paths.workbookSnapshot.meta,{force:true})}touch(id);return res.json({ok:true,updatedAt,size:buf.length,accountScoped:true})}catch(e){return res.status(500).json({ok:false,error:e.message})}};if(Buffer.isBuffer(req.body))return writeBlobV64();return accountCoupangBlobRawV64(req,res,err=>{if(err)return res.status(err.type==='entity.too.large'?413:400).json({ok:false,error:err.message||'파일 업로드를 읽지 못했습니다.'});return writeBlobV64()})}}
   next();
 });
 
