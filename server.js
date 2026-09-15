@@ -545,6 +545,25 @@ app.use('/api/coupang-shared',(req,res,next)=>{
 });
 
 
+// v63: 로그인 보호 화면에서는 auth-client.js를 항상 붙여 사이드 메뉴의 "발주서 작성" 버튼과 계정 표시가 페이지마다 사라지지 않게 합니다.
+// HTML 원본 기능은 수정하지 않고 응답 직전에 스크립트 태그만 추가합니다.
+const AUTH_HTML_PAGES_V63={
+  '/barcode-label':'barcode-label.html','/barcode-label.html':'barcode-label.html',
+  '/order-barcode':'order-barcode.html','/order-barcode.html':'order-barcode.html',
+  '/shipment-list-builder':'shipment-list-builder.html','/shipment-list-builder.html':'shipment-list-builder.html',
+  '/coupang-inbound-work':'coupang-inbound-work.html','/coupang-inbound-work.html':'coupang-inbound-work.html',
+  '/purchase-order':'purchase-order.html','/purchase-order.html':'purchase-order.html'
+};
+app.get(Object.keys(AUTH_HTML_PAGES_V63),(req,res,next)=>{
+  try{
+    const name=AUTH_HTML_PAGES_V63[req.path];if(!name)return next();
+    const f=path.join(__dirname,name);if(!fs.existsSync(f))return next();
+    let html=fs.readFileSync(f,'utf8');
+    if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script></body>');
+    res.set('Cache-Control','no-store');return res.type('html').send(html);
+  }catch(e){console.warn('[v63 auth html] 주입 실패:',e.message);return next()}
+});
+
 // 상세페이지 자동 제작 화면도 기존 파일을 교체하지 않고 로그인 보호 + 계정 표시 스크립트만 삽입합니다.
 app.get('/detail-maker',(req,res,next)=>{const candidates=[path.join(__dirname,'detail-maker.html'),path.join(__dirname,'detail-maker','index.html')];const f=candidates.find(x=>fs.existsSync(x));if(!f)return next();let html=fs.readFileSync(f,'utf8');if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script><script src="/detail-auth-workspace.js"></script></body>');res.type('html').send(html)});
 
@@ -2172,32 +2191,39 @@ app.delete('/api/shipment-list-vault/:id',coupangAuth,(req,res)=>{
 
 
 // =====================================================================
-// v62: 발주서 작성 / 제품 목록 관리
-// - 회사 공용 제품 마스터는 Render Persistent Disk에 영구 저장합니다.
-// - 기존 쿠팡 입고 작업, 선적 리스트, 계정 데이터와 저장경로를 완전히 분리합니다.
-// - 제품번호 우선, 바코드 보조 기준으로 동일 제품을 갱신합니다.
+// v63: 발주서 작성 / 제품 목록 관리 - 로그인 계정별 제품 마스터
+// - 최초 관리자(legacyOwner)는 기존 /var/data/tradecode/purchase-order/product-master 를 그대로 사용합니다.
+// - 그 외 계정은 /var/data/tradecode/users/v50-private/<user-id>/purchase-order/product-master 를 사용합니다.
+// - 기존 관리자 제품목록/사진은 이동/삭제/복사하지 않습니다.
 // =====================================================================
 const PURCHASE_ORDER_ROOT_V62 = path.join(TRADECODE_PERSIST_ROOT_V60, 'purchase-order');
 const PURCHASE_PRODUCT_ROOT_V62 = path.join(PURCHASE_ORDER_ROOT_V62, 'product-master');
-const PURCHASE_PRODUCT_FILE_V62 = path.join(PURCHASE_PRODUCT_ROOT_V62, 'products.json');
-const PURCHASE_IMAGE_ROOT_V62 = path.join(PURCHASE_PRODUCT_ROOT_V62, 'images');
-function ensurePurchaseDirsV62(){
-  fs.mkdirSync(PURCHASE_IMAGE_ROOT_V62,{recursive:true});
+function purchasePathsV63(req){
+  const u=req?.authUser;if(!u)throw new Error('로그인이 필요합니다.');
+  let root;
+  if(u.legacyOwner){
+    root=PURCHASE_PRODUCT_ROOT_V62;
+  }else{
+    const userRoot=ensureUserRootV48(req);if(!userRoot)throw new Error('계정별 저장소를 확인하지 못했습니다.');
+    root=path.join(userRoot,'purchase-order','product-master');
+  }
+  return {root,file:path.join(root,'products.json'),images:path.join(root,'images'),legacyOwner:!!u.legacyOwner,userId:String(u.id||'')};
 }
-ensurePurchaseDirsV62();
-function purchaseReadV62(){
+function ensurePurchaseDirsV62(req){const p=purchasePathsV63(req);fs.mkdirSync(p.images,{recursive:true});return p}
+function purchaseReadV62(req){
+  const p=purchasePathsV63(req);
   try{
-    if(!fs.existsSync(PURCHASE_PRODUCT_FILE_V62)) return [];
-    const x=JSON.parse(fs.readFileSync(PURCHASE_PRODUCT_FILE_V62,'utf8')||'[]');
+    if(!fs.existsSync(p.file)) return [];
+    const x=JSON.parse(fs.readFileSync(p.file,'utf8')||'[]');
     return Array.isArray(x)?x:(Array.isArray(x?.items)?x.items:[]);
-  }catch(e){console.warn('[v62 purchase] 제품목록 읽기 실패:',e.message);return []}
+  }catch(e){console.warn('[v63 purchase] 제품목록 읽기 실패:',e.message);return []}
 }
-function purchaseWriteV62(items){
-  ensurePurchaseDirsV62();
-  try{if(fs.existsSync(PURCHASE_PRODUCT_FILE_V62))fs.copyFileSync(PURCHASE_PRODUCT_FILE_V62,PURCHASE_PRODUCT_FILE_V62+'.prev')}catch(_){}
-  const tmp=`${PURCHASE_PRODUCT_FILE_V62}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp,JSON.stringify({version:62,updatedAt:Date.now(),items},null,2),'utf8');
-  fs.renameSync(tmp,PURCHASE_PRODUCT_FILE_V62);
+function purchaseWriteV62(req,items){
+  const p=ensurePurchaseDirsV62(req);
+  try{if(fs.existsSync(p.file))fs.copyFileSync(p.file,p.file+'.prev')}catch(_){}
+  const tmp=`${p.file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp,JSON.stringify({version:63,updatedAt:Date.now(),accountId:p.userId,legacyOwner:p.legacyOwner,items},null,2),'utf8');
+  fs.renameSync(tmp,p.file);
 }
 function cleanTextV62(v,max=500){return String(v??'').trim().slice(0,max)}
 function cleanBarcodeV62(v){return cleanTextV62(v,160).replace(/\s+/g,'').toUpperCase()}
@@ -2223,20 +2249,20 @@ function purchaseFindIndexV62(items,raw){
   return i;
 }
 function nextPurchaseSortV62(items){return items.reduce((m,x)=>Math.max(m,Number(x.sortIndex||0)),0)+1}
-function savePurchaseImageV62(item,image){
+function savePurchaseImageV62(req,item,image){
   if(!image||!image.base64)return item;
   const ext=imageExtV62(image.ext||image.extension||image.type);if(!ext)throw new Error('제품 사진은 JPG/JPEG 또는 PNG만 사용할 수 있습니다.');
   let buf;try{buf=Buffer.from(String(image.base64||'').replace(/^data:[^,]+,/,''),'base64')}catch(_){throw new Error('제품 사진 데이터가 올바르지 않습니다.')}
   if(!buf.length)throw new Error('빈 제품 사진은 저장할 수 없습니다.');
   if(buf.length>2*1024*1024)throw new Error('제품 사진 1장은 2MB 이하로 올려주세요.');
-  ensurePurchaseDirsV62();
+  const p=ensurePurchaseDirsV62(req);
   const name=`${String(item.id).replace(/[^A-Za-z0-9_-]/g,'_')}.${ext}`;
-  const dest=path.join(PURCHASE_IMAGE_ROOT_V62,name),tmp=`${dest}.${process.pid}.${Date.now()}.tmp`;
+  const dest=path.join(p.images,name),tmp=`${dest}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmp,buf);fs.renameSync(tmp,dest);
-  if(item.imageFile&&item.imageFile!==name){try{fs.rmSync(path.join(PURCHASE_IMAGE_ROOT_V62,path.basename(item.imageFile)),{force:true})}catch(_){}}
+  if(item.imageFile&&item.imageFile!==name){try{fs.rmSync(path.join(p.images,path.basename(item.imageFile)),{force:true})}catch(_){}}
   item.imageFile=name;item.imageExt=ext;return item;
 }
-function upsertPurchaseProductV62(items,raw,{allowImage=true}={}){
+function upsertPurchaseProductV62(req,items,raw,{allowImage=true}={}){
   const now=Date.now(),pn=cleanProductNoV62(raw?.productNumber),bc=cleanBarcodeV62(raw?.barcode),name=cleanTextV62(raw?.productName,500);
   if(!pn&&!bc)throw new Error('상품번호 또는 바코드가 필요합니다.');
   if(!name)throw new Error('상품명이 필요합니다.');
@@ -2244,44 +2270,44 @@ function upsertPurchaseProductV62(items,raw,{allowImage=true}={}){
   if(idx>=0){
     item={...items[idx],productNumber:pn||items[idx].productNumber||'',barcode:bc||items[idx].barcode||'',productName:name,cavity:cleanCavityV62(raw?.cavity??items[idx].cavity),updatedAt:now};
     if(Number(raw?.sortIndex)>0)item.sortIndex=Number(raw.sortIndex);
-    if(allowImage&&raw?.image?.base64)savePurchaseImageV62(item,raw.image);
+    if(allowImage&&raw?.image?.base64)savePurchaseImageV62(req,item,raw.image);
     items[idx]=item;
   }else{
     item={id:`prd_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`,productNumber:pn,barcode:bc,productName:name,cavity:cleanCavityV62(raw?.cavity),sortIndex:Number(raw?.sortIndex)>0?Number(raw.sortIndex):nextPurchaseSortV62(items),imageFile:'',imageExt:'',createdAt:now,updatedAt:now};
-    if(allowImage&&raw?.image?.base64)savePurchaseImageV62(item,raw.image);
+    if(allowImage&&raw?.image?.base64)savePurchaseImageV62(req,item,raw.image);
     items.push(item);idx=items.length-1;
   }
   return {item,index:idx};
 }
 app.get('/api/purchase-products',requireLoginApiV48,(req,res)=>{
-  const items=purchaseReadV62().map(purchasePublicV62).sort((a,b)=>(a.sortIndex-b.sortIndex)||a.productName.localeCompare(b.productName,'ko'));
-  res.set('Cache-Control','no-store');res.json({ok:true,count:items.length,items,persistent:true,storage:PURCHASE_PRODUCT_FILE_V62});
+  const p=purchasePathsV63(req),items=purchaseReadV62(req).map(purchasePublicV62).sort((a,b)=>(a.sortIndex-b.sortIndex)||a.productName.localeCompare(b.productName,'ko'));
+  res.set('Cache-Control','no-store');res.json({ok:true,count:items.length,items,persistent:true,accountScoped:true,legacyOwner:p.legacyOwner});
 });
 app.get('/api/purchase-products/status',requireLoginApiV48,(req,res)=>{
-  const items=purchaseReadV62();res.set('Cache-Control','no-store');res.json({ok:true,count:items.length,persistent:true,root:PURCHASE_PRODUCT_ROOT_V62,imageCount:items.filter(x=>x.imageFile).length});
+  const p=purchasePathsV63(req),items=purchaseReadV62(req);res.set('Cache-Control','no-store');res.json({ok:true,count:items.length,persistent:true,accountScoped:true,legacyOwner:p.legacyOwner,imageCount:items.filter(x=>x.imageFile).length});
 });
 app.get('/api/purchase-products/image/:file',requireLoginApiV48,(req,res)=>{
   const name=safePurchaseImageNameV62(req.params.file);if(!name)return res.status(404).end();
-  const file=path.join(PURCHASE_IMAGE_ROOT_V62,name);if(!fs.existsSync(file))return res.status(404).end();
+  const p=purchasePathsV63(req),file=path.join(p.images,name);if(!fs.existsSync(file))return res.status(404).end();
   res.set('Cache-Control','private, max-age=86400');res.type(name.endsWith('.png')?'png':'jpeg');res.sendFile(file);
 });
 app.post('/api/purchase-products/import',requireLoginApiV48,(req,res)=>{
   try{
     const incoming=Array.isArray(req.body?.items)?req.body.items:[];if(!incoming.length)return res.status(400).json({ok:false,error:'가져올 제품이 없습니다.'});
     if(incoming.length>100)return res.status(400).json({ok:false,error:'한 번에 최대 100개씩 가져올 수 있습니다.'});
-    const items=purchaseReadV62();let inserted=0,updated=0,images=0;
+    const items=purchaseReadV62(req);let inserted=0,updated=0,images=0;
     for(const raw of incoming){
-      const existed=purchaseFindIndexV62(items,raw)>=0;const result=upsertPurchaseProductV62(items,raw);if(existed)updated++;else inserted++;if(result.item.imageFile&&raw?.image?.base64)images++;
+      const existed=purchaseFindIndexV62(items,raw)>=0;const result=upsertPurchaseProductV62(req,items,raw);if(existed)updated++;else inserted++;if(result.item.imageFile&&raw?.image?.base64)images++;
     }
-    purchaseWriteV62(items);res.json({ok:true,inserted,updated,images,count:items.length});
+    purchaseWriteV62(req,items);res.json({ok:true,inserted,updated,images,count:items.length,accountScoped:true});
   }catch(e){res.status(400).json({ok:false,error:e.message})}
 });
 app.post('/api/purchase-products',requireLoginApiV48,(req,res)=>{
-  try{const items=purchaseReadV62();const existed=purchaseFindIndexV62(items,req.body||{})>=0;const {item}=upsertPurchaseProductV62(items,req.body||{});purchaseWriteV62(items);res.json({ok:true,created:!existed,item:purchasePublicV62(item),count:items.length})}
+  try{const items=purchaseReadV62(req);const existed=purchaseFindIndexV62(items,req.body||{})>=0;const {item}=upsertPurchaseProductV62(req,items,req.body||{});purchaseWriteV62(req,items);res.json({ok:true,created:!existed,item:purchasePublicV62(item),count:items.length,accountScoped:true})}
   catch(e){res.status(400).json({ok:false,error:e.message})}
 });
 app.delete('/api/purchase-products/:id',requireLoginApiV48,(req,res)=>{
-  try{const items=purchaseReadV62(),idx=items.findIndex(x=>String(x.id||'')===String(req.params.id||''));if(idx<0)return res.status(404).json({ok:false,error:'제품을 찾지 못했습니다.'});const [item]=items.splice(idx,1);if(item.imageFile)try{fs.rmSync(path.join(PURCHASE_IMAGE_ROOT_V62,path.basename(item.imageFile)),{force:true})}catch(_){};purchaseWriteV62(items);res.json({ok:true,count:items.length})}catch(e){res.status(500).json({ok:false,error:e.message})}
+  try{const p=purchasePathsV63(req),items=purchaseReadV62(req),idx=items.findIndex(x=>String(x.id||'')===String(req.params.id||''));if(idx<0)return res.status(404).json({ok:false,error:'제품을 찾지 못했습니다.'});const [item]=items.splice(idx,1);if(item.imageFile)try{fs.rmSync(path.join(p.images,path.basename(item.imageFile)),{force:true})}catch(_){};purchaseWriteV62(req,items);res.json({ok:true,count:items.length,accountScoped:true})}catch(e){res.status(500).json({ok:false,error:e.message})}
 });
 
 
