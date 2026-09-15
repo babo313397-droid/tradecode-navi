@@ -113,6 +113,7 @@
 
 <script>
 let sourceFile=null, sourceWorkbook=null, sourceSheet=null, parsedSections=[], groupedSections=[], centerRules=new Map(), centerColors=new Map();
+let repeatedSourceRowsRemovedV65=0;
 let centerChoiceConfirmed=false,wizardStage='pallet',wizardPallet=new Set(),wizardMilkrun=new Set();
 const $=id=>document.getElementById(id);
 function norm(v){return String(v??'').replace(/\u00a0/g,' ').trim().replace(/\s+/g,' ')}
@@ -144,6 +145,26 @@ function assignCenterColors(){
 function setStatus(text,kind=''){const s=$('status');s.textContent=text;s.className='status '+kind}
 function isShipmentTitle(a,b,c,d,e){const t=norm(a);return !!t && /선적(?:건)?/.test(t) && (!norm(b)&&!norm(c)&&!norm(d)&&!norm(e)||/\d+월/.test(t))}
 function rowTemplate(ws,rowNo){const row=ws.getRow(rowNo);return {height:row.height,cells:Array.from({length:7},(_,i)=>({style:clone(row.getCell(i+1).style),numFmt:row.getCell(i+1).numFmt,alignment:clone(row.getCell(i+1).alignment)}))}}
+// v65: 같은 원본 파일을 이름만 달리해서 다시 올렸을 때 통합 원본이 2배/3배가 되는 문제 방지.
+// 개별 중복 상품행은 정상 발주일 수 있으므로 지우지 않고, "파일 전체 행 순서가 완전히 반복"될 때만 한 번으로 복구합니다.
+function sourceRowSignatureV65(it){
+  return [compact(it?.productNumber),compact(it?.barcode),compact(it?.productName),compact(baseCenter(it?.center)),String(Number(it?.qty)||0)].join('\u241f');
+}
+function collapseRepeatedWholeSourceV65(items){
+  const a=Array.isArray(items)?items:[];
+  for(const repeats of [3,2]){
+    if(a.length<2||a.length%repeats)continue;
+    const block=a.length/repeats;let same=true;
+    for(let i=block;i<a.length;i++)if(sourceRowSignatureV65(a[i])!==sourceRowSignatureV65(a[i%block])){same=false;break}
+    if(same)return {items:a.slice(0,block),removed:a.length-block,repeats};
+  }
+  return {items:a,removed:0,repeats:1};
+}
+function repairRepeatedSourceBlocksV65(sections){
+  repeatedSourceRowsRemovedV65=0;
+  for(const sec of sections||[]){const r=collapseRepeatedWholeSourceV65(sec.items);if(r.removed){sec.items=r.items;repeatedSourceRowsRemovedV65+=r.removed}}
+  return sections;
+}
 async function parseSource(file){
   setStatus('엑셀을 읽고 동일 상품을 찾는 중입니다…');
   const wb=new ExcelJS.Workbook();await wb.xlsx.load(await file.arrayBuffer());
@@ -161,10 +182,10 @@ async function parseSource(file){
     }
   }
   if(!sections.some(s=>s.items.length))throw new Error('A~E열에서 상품번호/제품명/바코드/센터/수량 형식의 데이터를 찾지 못했습니다.');
-  parsedSections=sections.filter(s=>s.items.length);
+  parsedSections=repairRepeatedSourceBlocksV65(sections.filter(s=>s.items.length));
   buildCenterRules();buildGroups();renderAll();
   centerChoiceConfirmed=false;$('downloadBtn').disabled=true;
-  setStatus(`✓ ${file.name} 분석 완료 · 먼저 팔레트/밀크런 센터를 선택해 주세요.`,'ok');
+  setStatus(`✓ ${file.name} 분석 완료${repeatedSourceRowsRemovedV65?` · 동일 원본 반복 ${repeatedSourceRowsRemovedV65.toLocaleString()}행 자동 제외`:''} · 먼저 팔레트/밀크런 센터를 선택해 주세요.`,'ok');
   showCenterWizard();
 }
 function buildCenterRules(){
@@ -393,7 +414,9 @@ setTimeout(()=>{if(!window.__v46ShipmentInit)initShipmentVaultV40()},0);
 <script id="v41-multi-source-files">
 // ===== v41: multiple source files (KoreaOne / Bomnalae / Chatong) =====
 let inputNamesV41=[];
+let inputHashesV65=[];
 let combiningV41=false;
+async function fileHashV65(file){try{const b=await file.arrayBuffer(),d=await crypto.subtle.digest('SHA-256',b);return Array.from(new Uint8Array(d),x=>x.toString(16).padStart(2,'0')).join('')}catch(_){return ''}}
 
 function detectCompanyV41(text){
   const t=norm(text);
@@ -510,6 +533,21 @@ function mergeSectionsByCompanyV41(parts){
   }
   return [...byCompany.values()].sort((a,b)=>companyOrderV41(a.company)-companyOrderV41(b.company)||a.firstOrder-b.firstOrder);
 }
+async function makeNormalizedCurrentSourceV65(){
+  if(!parsedSections?.length)return sourceFile;
+  const out=new ExcelJS.Workbook();out.creator='TradeCode Navi';out.created=new Date();out.modified=new Date();
+  const ws=out.addWorksheet(sourceSheet?.name||'Sheet2');const widths=[11.2,39.9,17.4,12,9,7.4,7.7];
+  for(let c=1;c<=7;c++)ws.getColumn(c).width=sourceSheet?.getColumn(c)?.width||widths[c-1]||10;
+  let rn=1;
+  for(const sec of parsedSections){
+    const tr=ws.getRow(rn);tr.height=sec.titleTpl?.height||33;
+    for(let c=1;c<=7;c++){const t=sec.titleTpl?.cells?.[c-1];if(t)copyTplToCellV41(t,tr.getCell(c));else fallbackTitleStyle(tr.getCell(c))}
+    tr.getCell(1).value=sec.title||`${sec.company||'코리아원'} 선적건`;try{ws.mergeCells(rn,1,rn,5)}catch(_){};rn++;
+    for(const it of sec.items||[]){const rr=ws.getRow(rn);rr.height=it.rowTpl?.height||33;for(let c=1;c<=7;c++){const t=it.rowTpl?.cells?.[c-1];if(t)copyTplToCellV41(t,rr.getCell(c));else fallbackDataStyle(rr.getCell(c))}rr.getCell(1).value=clone(it.productNumberValue)??it.productNumber;rr.getCell(2).value=clone(it.productNameValue)??it.productName;rr.getCell(3).value=clone(it.barcodeValue)??it.barcode;rr.getCell(4).value=baseCenter(it.center);if(it.centerStyle)rr.getCell(4).style=clone(it.centerStyle);rr.getCell(5).value=Number(it.qty)||0;rr.getCell(6).value=null;rr.getCell(7).value=null;rn++}
+  }
+  const buf=await out.xlsx.writeBuffer(),name=sourceFile?.name||'통합선적.xlsx';
+  return new File([buf],name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',lastModified:Date.now()});
+}
 async function makeCombinedSourceV41(files){
   const unique=[];const seen=new Set();
   for(const f of files){
@@ -547,23 +585,34 @@ function openWizardWithPreservedV41(types){
 }
 async function acceptFilesV41(newFiles){
   if(combiningV41)return;
-  let fresh=[...(newFiles||[])].filter(f=>/\.(xlsx|xlsm)$/i.test(f.name||''));fresh=fresh.filter(f=>!inputNamesV41.includes(f.name));if(!fresh.length)return alert('추가할 새 Excel 파일이 없습니다. 이미 올린 같은 이름의 파일은 중복 합산을 막기 위해 제외했습니다.');
+  const candidates=[...(newFiles||[])].filter(f=>/\.(xlsx|xlsm)$/i.test(f.name||''));
+  if(!candidates.length)return alert('Excel .xlsx 또는 .xlsm 파일을 넣어주세요.');
   combiningV41=true;
   try{
+    // v65: 파일명에 (1), (2) 등이 붙어도 실제 내용이 같으면 같은 원본으로 봅니다.
+    const fresh=[],freshHashes=[],seenNow=new Set();
+    for(const f of candidates){const h=await fileHashV65(f);if(h&&(inputHashesV65.includes(h)||seenNow.has(h)))continue;if(h)seenNow.add(h);fresh.push(f);freshHashes.push(h)}
+    if(!fresh.length){setStatus('✓ 이미 올린 동일한 원본 파일이라 중복 합산하지 않았습니다.','ok');return alert('이미 올린 동일한 원본 파일입니다. 파일명만 달라도 내용이 같으면 중복 합산하지 않습니다.')}
     const oldTypes=centerTypesSnapshotV40();
-    // 현재 리스트가 있으면 그 통합 원본에 새 파일을 추가합니다. 새 선적건은 '초기화' 후 올리면 됩니다.
-    const inputs=(sourceFile&&groupedSections?.length)?[sourceFile,...fresh]:fresh;
+    // 현재 화면의 정리 전 원본행(parsedSections)을 다시 파일로 만들어 사용합니다.
+    // 저장된 과거 통합 파일에 같은 원본이 2번 들어가 있더라도 여기서 재증식하지 않습니다.
+    const currentNormalized=(sourceFile&&groupedSections?.length)?await makeNormalizedCurrentSourceV65():null;
+    const inputs=currentNormalized?[currentNormalized,...fresh]:fresh;
     const combined=await makeCombinedSourceV41(inputs);
     const wasExisting=!!(sourceFile&&groupedSections?.length&&activeDraftIdV40);
-    sourceFile=combined.file;inputNamesV41=(inputNamesV41.length?inputNamesV41:[]).concat(fresh.map(f=>f.name));
-    inputNamesV41=[...new Set(inputNamesV41)];renderInputNamesV41();
+    sourceFile=combined.file;
+    inputNamesV41=(inputNamesV41.length?inputNamesV41:[]).concat(fresh.map(f=>f.name));inputNamesV41=[...new Set(inputNamesV41)];
+    inputHashesV65=[...new Set(inputHashesV65.concat(freshHashes.filter(Boolean)))];renderInputNamesV41();
     await parseSourceBaseV40(combined.file);
+    const removed=repeatedSourceRowsRemovedV65;
+    // 동일 원본 전체가 반복되어 있었으면 화면뿐 아니라 보관되는 내부 원본도 즉시 정상화합니다.
+    if(removed>0)sourceFile=await makeNormalizedCurrentSourceV65();
     document.getElementById('centerWizard')?.classList.remove('show');
     if(!wasExisting){activeDraftIdV40=newDraftIdV40();selectedDraftIdV40=activeDraftIdV40}
     openWizardWithPreservedV41(oldTypes);
     await persistCurrentDraftV40({manual:false}).catch(e=>console.warn('v41 autosave failed',e));
     setSendEnabledV40();
-    setStatus(`✓ 원본 ${inputNamesV41.length}개 취합 완료 · 센터 구분을 확인해 주세요.`, 'ok');
+    setStatus(`✓ 원본 ${inputNamesV41.length}개 취합 완료${removed?` · 동일 원본 반복 ${removed.toLocaleString()}행 자동 제외`:''} · 센터 구분을 확인해 주세요.`, 'ok');
   }catch(e){console.error(e);setStatus('파일 취합 실패: '+(e.message||e),'bad');alert('원본 파일을 취합하지 못했습니다.\n'+(e.message||e))}
   finally{combiningV41=false}
 }
@@ -571,12 +620,12 @@ async function acceptFilesV41(newFiles){
 // v40 보관함에 원본 파일명 목록도 같이 저장합니다. 실제 복구 데이터는 기존 통합 Excel blob을 그대로 사용합니다.
 const persistCurrentDraftBaseV41=persistCurrentDraftV40;
 persistCurrentDraftV40=async function(opts={}){
-  const row=await persistCurrentDraftBaseV41(opts);if(row){row.inputNamesV41=[...inputNamesV41];await vaultPutV40(row).catch(()=>{});}return row;
+  const row=await persistCurrentDraftBaseV41(opts);if(row){row.inputNamesV41=[...inputNamesV41];row.inputHashesV65=[...inputHashesV65];await vaultPutV40(row).catch(()=>{});}return row;
 };
 const applyDraftBaseV41=applyDraftV40;
-applyDraftV40=async function(d){inputNamesV41=Array.isArray(d?.inputNamesV41)&&d.inputNamesV41.length?[...d.inputNamesV41]:[d?.fileName||'통합 선적 리스트'];const ret=await applyDraftBaseV41(d);renderInputNamesV41();return ret};
+applyDraftV40=async function(d){inputNamesV41=Array.isArray(d?.inputNamesV41)&&d.inputNamesV41.length?[...d.inputNamesV41]:[d?.fileName||'통합 선적 리스트'];inputHashesV65=Array.isArray(d?.inputHashesV65)?[...d.inputHashesV65]:[];const ret=await applyDraftBaseV41(d);const removed=repeatedSourceRowsRemovedV65;if(removed>0){sourceFile=await makeNormalizedCurrentSourceV65();await persistCurrentDraftV40({manual:false}).catch(e=>console.warn('v65 repaired draft save failed',e));setStatus(`✓ 중복된 동일 원본 ${removed.toLocaleString()}행을 자동 제외해 보관본도 수정했습니다.`,'ok')}renderInputNamesV41();return ret};
 const resetAllBaseV41=resetAll;
-resetAll=function(){resetAllBaseV41();inputNamesV41=[];renderInputNamesV41()};
+resetAll=function(){resetAllBaseV41();inputNamesV41=[];inputHashesV65=[];renderInputNamesV41()};
 renderInputNamesV41();
 // ===== /v41 =====
 </script>
