@@ -426,6 +426,31 @@ function detectCompanyV41(text){
   return '';
 }
 function companyOrderV41(c){return c==='코리아원'?0:c==='봄날애'?1:c==='차통익스프레스'?2:9}
+
+// v66: 업체를 자동 판별하지 못했을 때 로그인 권한별 입력 방식
+// - 관리자: 기존 운영 방식 유지(코리아원/봄날애/차통익스프레스 중 선택)
+// - 일반 계정: 제한 없이 실제 업체명을 직접 입력하고 그 이름으로 작업 데이터에 등록
+async function currentTradecodeUserV66(){
+  if(window.TRADECODE_USER)return window.TRADECODE_USER;
+  try{
+    const r=await fetch('/api/auth/me',{cache:'no-store'});
+    const j=await r.json();
+    if(j&&j.authenticated&&j.user){window.TRADECODE_USER=j.user;return j.user}
+  }catch(_){}
+  return null;
+}
+async function askCompanyForUnknownFileV66(fileName){
+  const u=await currentTradecodeUserV66();
+  if(u&&u.role==='admin'){
+    const ans=prompt(`“${fileName}”의 업체를 구분하지 못했습니다.\n코리아원 / 봄날애 / 차통익스프레스 중 하나를 입력해 주세요.`,'코리아원');
+    return detectCompanyV41(ans)||'코리아원';
+  }
+  const ans=prompt(`“${fileName}”의 업체를 구분하지 못했습니다.\n업체명을 입력해 주세요.`,'');
+  if(ans===null)throw new Error(`${fileName}: 업체명 입력이 취소되었습니다.`);
+  const company=norm(ans).trim();
+  if(!company)throw new Error(`${fileName}: 업체명을 입력해 주세요.`);
+  return company.slice(0,80);
+}
 function cleanFileBaseV41(name){return String(name||'').replace(/\.(xlsx|xlsm)$/i,'').trim()}
 function ensureCompanyTitleV41(company,title,fileName){
   let t=norm(title)||cleanFileBaseV41(fileName)||`${company} 선적건`;
@@ -473,8 +498,7 @@ async function extractSectionsV41(file){
     hint=detectCompanyV41(probe);
   }
   if(!hint){
-    const ans=prompt(`“${file.name}”의 업체를 구분하지 못했습니다.\n코리아원 / 봄날애 / 차통익스프레스 중 하나를 입력해 주세요.`,'코리아원');
-    hint=detectCompanyV41(ans)||'코리아원';
+    hint=await askCompanyForUnknownFileV66(file.name);
   }
 
   // v64: 기존 선적 리스트(A:E) + 쿠팡 PO_FOR_CONFIRM 형식을 모두 지원.
