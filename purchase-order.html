@@ -50,7 +50,7 @@
       <div class="shot-cavity">
         <div class="shot-title">제품목록 캡처 이미지로 신규 제품 추가</div>
         <div id="shotDrop" class="dropzone shot-drop">
-          <div><strong>제품목록 화면 캡처(PNG/JPG/WEBP)를 여기에 끌어놓으세요</strong><small>여러 장 가능 · 각 행의 열을 따로 확대 인식해 제품 사진 / 상품번호 / 상품명 / 바코드를 읽고, “2개 1세트” 등은 캐비티까지 자동 설정합니다. 정확도를 위해 행별 분석은 조금 더 시간이 걸릴 수 있습니다.</small></div>
+          <div><strong>제품목록 화면 캡처(PNG/JPG/WEBP)를 여기에 끌어놓으세요</strong><small>여러 장 가능 · AI Vision이 제품 사진 / 상품번호 / 상품명 / 바코드를 표 전체 문맥으로 읽고, “2개 1세트” 등은 캐비티까지 자동 설정합니다. 기존 브라우저 OCR보다 정확도를 우선합니다.</small></div>
         </div>
         <div class="row" style="margin-top:8px">
           <button class="btn primary" type="button" onclick="$('shotFiles').click()">캡처 이미지 여러 장 선택</button>
@@ -59,7 +59,7 @@
           <span id="shotStatus" class="status">캡처 이미지를 올리면 신규 제품 후보를 분석합니다.</span>
         </div>
         <div id="shotFileChips" class="files-chips"></div>
-        <div class="shot-note"><b>신규 등록용:</b> 캡처에서 인식한 제품은 저장 전에 아래 미리보기에서 상품번호·상품명·바코드·캐비티를 수정할 수 있습니다. 이미 제품목록에 있는 상품은 기본적으로 저장 체크가 해제되어 기존 데이터가 덮어써지지 않습니다. 제품 사진은 캡처의 왼쪽 이미지 칸을 자동 잘라 저장합니다.</div>
+        <div class="shot-note"><b>신규 등록용:</b> 캡처의 글자는 서버의 AI Vision으로 읽고, 제품 사진은 왼쪽 이미지 칸을 자동 잘라 저장합니다. 저장 전 미리보기에서 상품번호·상품명·바코드·캐비티를 수정할 수 있으며, 기존 제품은 기본적으로 저장 체크가 해제됩니다. <b>AI 분석은 Render의 기존 ANTHROPIC_API_KEY를 사용합니다.</b></div>
         <div id="shotPreview" class="shot-preview" style="display:none"></div>
       </div>
 
@@ -318,7 +318,54 @@ function renderShotPreview(){
   const rows=shotProductAnalysis;$('saveShotProductsBtn').disabled=!rows.some(x=>x.valid&&!x.existing);if(!rows.length){$('shotPreview').style.display='none';$('shotPreview').innerHTML='';return}
   $('shotPreview').style.display='block';$('shotPreview').innerHTML=`<table><thead><tr><th>저장</th><th>사진</th><th>상품번호</th><th>상품명</th><th>바코드</th><th>캐비티</th><th>상태</th><th>캡처</th></tr></thead><tbody>${rows.map((x,i)=>{const cls=!x.valid?'invalid':x.existing?'existing':'new',checked=x.valid&&!x.existing?'checked':'';return `<tr class="${cls}"><td style="text-align:center"><input id="shotUse_${i}" type="checkbox" ${checked}></td><td style="text-align:center">${x.image?.preview?`<img class="shot-thumb" src="${x.image.preview}">`:'-'}</td><td><input id="shotPn_${i}" type="text" value="${esc(x.productNumber)}"></td><td><input id="shotName_${i}" class="shot-name" type="text" value="${esc(x.productName)}"></td><td><input id="shotBc_${i}" type="text" value="${esc(x.barcode)}"></td><td><input id="shotCav_${i}" type="number" min="1" step="1" value="${x.cavity}"><div style="font-size:8px;color:#71818c;margin-top:3px">${esc(x.cavityReason)}</div></td><td style="text-align:center">${!x.valid?'확인 필요':x.existing?'기존 제품 · 기본 미선택':'신규 추가'}</td><td>${esc((x.sources||[]).join(', '))}</td></tr>`}).join('')}</tbody></table>`
 }
+
+async function shotVisionPayload(file){
+  const okType=/^image\/(png|jpeg|webp)$/i.test(file.type||'');
+  if(okType&&file.size<=2600000)return {mediaType:file.type.toLowerCase(),data:await fileToBase64(file)};
+  const base=await imageFileToCanvas(file),maxW=2400,maxH=3600,scale=Math.min(1,maxW/base.width,maxH/base.height),c=document.createElement('canvas');
+  c.width=Math.max(1,Math.round(base.width*scale));c.height=Math.max(1,Math.round(base.height*scale));const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.drawImage(base,0,0,c.width,c.height);
+  let quality=.94,blob=null;
+  for(let i=0;i<4;i++){
+    blob=await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('캡처 이미지 변환 실패')),'image/jpeg',quality));
+    if(blob.size<=2800000)break;quality-=.08;
+  }
+  const u8=new Uint8Array(await blob.arrayBuffer());return {mediaType:'image/jpeg',data:bytesToBase64(u8)};
+}
+function visionShotRec(row,base,bandInfo,fileName,rowNo){
+  const productNumber=String(row?.productNumber||'').replace(/\D+/g,''),barcode=String(row?.barcode||'').toUpperCase().replace(/[^A-Z0-9]/g,''),productName=cleanShotName(row?.productName||'');
+  if(!productNumber&&!barcode&&!productName)return null;
+  const cav=analyzeCavityName(productName),cavity=cav.cavity||1,existing=findExistingShotProduct(productNumber,barcode),image=bandInfo?.image||null;
+  return {productNumber,barcode,productName,cavity,cavityReason:cav.cavity?cav.reason:'수량표현 없음 → 1',existing,image,sources:[fileName],rowNo,valid:!!((productNumber||barcode)&&productName)};
+}
 async function analyzeShotFiles(files){
+  const arr=[...files].filter(f=>/^image\/(png|jpeg|webp)$/i.test(f.type||'')||/\.(png|jpe?g|webp)$/i.test(f.name||''));if(!arr.length)return alert('제품목록 캡처 이미지(PNG/JPG/WEBP)를 선택해 주세요.');
+  shotFilesState=arr.map(f=>f.name);$('shotFileChips').innerHTML=shotFilesState.map(n=>`<span class="chip">${esc(n)}</span>`).join('');shotProductAnalysis=[];renderShotPreview();
+  const found=new Map();
+  try{
+    for(let i=0;i<arr.length;i++){
+      const f=arr[i];setStatus('shotStatus',`AI Vision 캡처 분석 중… ${i+1}/${arr.length} · ${f.name}`,'work');
+      const base=await imageFileToCanvas(f),bands=detectScreenshotRowBands(base),bandInfos=bands.map(b=>({band:b,image:cropShotProductImage(base,b)})),photoBands=bandInfos.filter(x=>x.image);
+      const payload=await shotVisionPayload(f),j=await apiJson('/api/purchase-order/vision-extract',{method:'POST',body:JSON.stringify(payload)}),rows=Array.isArray(j.rows)?j.rows:[];
+      if(!rows.length)throw new Error(`${f.name}: AI가 제품 행을 찾지 못했습니다. 캡처에 상품번호·상품명·바코드가 보이도록 다시 캡처해 주세요.`);
+      for(let k=0;k<rows.length;k++){
+        const rec=visionShotRec(rows[k],base,photoBands[k]||bandInfos[k]||null,f.name,k+1);if(!rec)continue;
+        const key=shotKey(rec),old=found.get(key);if(!old)found.set(key,rec);else{
+          if(!old.image&&rec.image)old.image=rec.image;if((rec.productName||'').length>(old.productName||'').length)old.productName=rec.productName;
+          if(!old.barcode&&rec.barcode)old.barcode=rec.barcode;if(!old.productNumber&&rec.productNumber)old.productNumber=rec.productNumber;
+          if(!old.sources.includes(f.name))old.sources.push(f.name);old.existing=findExistingShotProduct(old.productNumber,old.barcode);
+          const c=analyzeCavityName(old.productName);old.cavity=c.cavity||old.cavity||1;old.cavityReason=c.cavity?c.reason:'수량표현 없음 → 1';old.valid=!!((old.productNumber||old.barcode)&&old.productName);
+        }
+      }
+    }
+    shotProductAnalysis=[...found.values()];renderShotPreview();const valid=shotProductAnalysis.filter(x=>x.valid),fresh=valid.filter(x=>!x.existing),existing=valid.filter(x=>x.existing),need=shotProductAnalysis.filter(x=>!x.valid);
+    setStatus('shotStatus',`AI Vision 분석 완료 · 신규 ${fresh.length.toLocaleString()}개 / 기존 ${existing.length.toLocaleString()}개 / 확인 필요 ${need.length.toLocaleString()}개`,'ok');
+  }catch(e){
+    console.error(e);shotProductAnalysis=[];renderShotPreview();setStatus('shotStatus','AI Vision 분석 실패: '+e.message,'bad');
+    alert('고정밀 AI 캡처 분석 실패\n'+e.message+'\n\n브라우저 OCR로 자동 전환하지 않았습니다. 잘못 읽은 값이 신규 제품으로 저장되는 것을 막기 위한 조치입니다.');
+  }
+}
+
+async function analyzeShotFilesLocalOcr(files){
   const arr=[...files].filter(f=>/^image\/(png|jpeg|webp)$/i.test(f.type||'')||/\.(png|jpe?g|webp)$/i.test(f.name||''));if(!arr.length)return alert('제품목록 캡처 이미지(PNG/JPG/WEBP)를 선택해 주세요.');
   shotFilesState=arr.map(f=>f.name);$('shotFileChips').innerHTML=shotFilesState.map(n=>`<span class="chip">${esc(n)}</span>`).join('');shotProductAnalysis=[];renderShotPreview();
   try{
