@@ -2284,6 +2284,71 @@ app.delete('/api/purchase-products/:id',requireLoginApiV48,(req,res)=>{
   try{const items=purchaseReadV62(),idx=items.findIndex(x=>String(x.id||'')===String(req.params.id||''));if(idx<0)return res.status(404).json({ok:false,error:'제품을 찾지 못했습니다.'});const [item]=items.splice(idx,1);if(item.imageFile)try{fs.rmSync(path.join(PURCHASE_IMAGE_ROOT_V62,path.basename(item.imageFile)),{force:true})}catch(_){};purchaseWriteV62(items);res.json({ok:true,count:items.length})}catch(e){res.status(500).json({ok:false,error:e.message})}
 });
 
+
+// v62 hotfix: 제품목록 캡처는 브라우저 OCR 대신 기존 ANTHROPIC_API_KEY를 이용한
+// 서버측 AI Vision을 우선 사용합니다. 다른 기능/저장 데이터에는 영향이 없습니다.
+const purchaseVisionLimiterV62 = createRateLimiter({ windowMs: 60000, max: 12 });
+function purchaseVisionMediaTypeV62(v){
+  const x=String(v||'').toLowerCase();
+  return ['image/png','image/jpeg','image/webp','image/gif'].includes(x)?x:'';
+}
+function stripJsonFenceV62(v){
+  let t=String(v||'').trim();
+  t=t.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  const a=t.indexOf('{'),b=t.lastIndexOf('}');
+  if(a>=0&&b>a)t=t.slice(a,b+1);
+  return t;
+}
+app.post('/api/purchase-order/vision-extract',requireLoginApiV48,purchaseVisionLimiterV62,async(req,res)=>{
+  try{
+    if(!ANTHROPIC_KEY)return res.status(503).json({ok:false,error:'ANTHROPIC_API_KEY가 설정되어 있지 않아 AI 캡처 인식을 사용할 수 없습니다.'});
+    const mediaType=purchaseVisionMediaTypeV62(req.body?.mediaType);
+    const data=String(req.body?.data||'').replace(/^data:[^,]+,/, '').replace(/\s+/g,'');
+    if(!mediaType||!data)return res.status(400).json({ok:false,error:'분석할 이미지 데이터가 없습니다.'});
+    let raw;
+    try{raw=Buffer.from(data,'base64')}catch(_){return res.status(400).json({ok:false,error:'이미지 데이터가 올바르지 않습니다.'})}
+    if(!raw.length)return res.status(400).json({ok:false,error:'빈 이미지입니다.'});
+    if(raw.length>3.2*1024*1024)return res.status(413).json({ok:false,error:'캡처 이미지가 너무 큽니다. 3MB 이하로 줄여 다시 시도해 주세요.'});
+
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),90000);
+    let r;
+    try{
+      r=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',signal:controller.signal,
+        headers:{'content-type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'},
+        body:JSON.stringify({
+          model:process.env.PURCHASE_VISION_MODEL||'claude-sonnet-4-6',
+          max_tokens:4096,
+          messages:[{role:'user',content:[
+            {type:'image',source:{type:'base64',media_type:mediaType,data}},
+            {type:'text',text:`이 이미지는 한국어 쇼핑몰의 제품목록 표 캡처입니다. 표의 각 제품 행을 위에서 아래 순서대로 정확히 읽어 주세요.\n\n필요한 필드:\n- productNumber: 상품번호. 숫자만. 보이지 않거나 확신이 없으면 빈 문자열.\n- productName: 화면에 보이는 한국어 상품명을 그대로. 보이지 않는 글자를 추측하지 말 것.\n- barcode: 바코드 문자열. 보통 R로 시작하는 영문+숫자입니다. 보이지 않거나 확신이 없으면 빈 문자열.\n\n규칙:\n1) 헤더, '출력' 버튼, 티켓 숫자 등은 제품 데이터에서 제외합니다.\n2) 제품 행 하나당 객체 하나를 만듭니다.\n3) 숫자 0/O, 1/I처럼 애매하면 문맥으로 억지 보정하지 말고 실제 화면을 우선합니다.\n4) 임의로 상품을 만들거나 누락된 값을 추측하지 마세요.\n5) 설명/마크다운 없이 아래 JSON 형식만 반환하세요.\n{\"rows\":[{\"productNumber\":\"\",\"productName\":\"\",\"barcode\":\"\"}]}`}
+          ]}]
+        })
+      });
+    }finally{clearTimeout(timer)}
+    const body=await r.text();
+    if(!r.ok){
+      let msg=`AI Vision 호출 실패 (${r.status})`;
+      try{const j=JSON.parse(body);msg=j?.error?.message||msg}catch(_){}
+      return res.status(502).json({ok:false,error:msg});
+    }
+    let aj;try{aj=JSON.parse(body)}catch(_){return res.status(502).json({ok:false,error:'AI Vision 응답을 해석하지 못했습니다.'})}
+    const text=(Array.isArray(aj?.content)?aj.content:[]).filter(x=>x?.type==='text').map(x=>x.text||'').join('\n');
+    let parsed;try{parsed=JSON.parse(stripJsonFenceV62(text))}catch(_){return res.status(502).json({ok:false,error:'AI Vision 결과가 JSON 형식이 아닙니다.',raw:text.slice(0,500)})}
+    const rows=(Array.isArray(parsed?.rows)?parsed.rows:[]).slice(0,100).map(x=>({
+      productNumber:cleanProductNoV62(String(x?.productNumber||'').replace(/\D+/g,'')),
+      productName:cleanTextV62(x?.productName,500),
+      barcode:cleanBarcodeV62(x?.barcode)
+    })).filter(x=>x.productNumber||x.productName||x.barcode);
+    res.set('Cache-Control','no-store');
+    res.json({ok:true,rows,model:process.env.PURCHASE_VISION_MODEL||'claude-sonnet-4-6'});
+  }catch(e){
+    const msg=e?.name==='AbortError'?'AI Vision 분석 시간이 초과되었습니다.':e.message;
+    res.status(500).json({ok:false,error:msg});
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`TradeCode Navi 백엔드 프록시 실행 중: http://localhost:${PORT}`);
   console.log(`인증키 설정 여부: ${UNIPASS_KEY ? 'O' : 'X (미설정)'}`);
