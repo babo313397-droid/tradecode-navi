@@ -388,10 +388,14 @@ async function sendToCoupangV40(){
     const listRes=await coupangFetchV40('/projects');if(listRes.ok){const j=await listRes.json();if((j.projects||[]).some(x=>x.name===projectName)&&!confirm(`쿠팡 입고 작업에 “${projectName}” 이름의 작업이 이미 있습니다.\n그래도 새 작업으로 하나 더 만들까요?`)){setSendEnabledV40();return}}
     const create=await coupangFetchV40('/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:projectName})});if(!create.ok)throw new Error('새 선적 작업 생성 실패 ('+create.status+')');const cj=await create.json();createdId=cj?.project?.id||'';if(!createdId)throw new Error('새 선적 작업 ID를 받지 못했습니다.');
     const blob=await makeResultBlobV40(),base=defaultDraftNameV40().replace(/[\\/:*?"<>|]+/g,'_');const filename=`${base}_정리본.xlsx`;
-    const up=await coupangFetchV40('/projects/'+encodeURIComponent(createdId)+'/blob/source',{method:'PUT',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(filename),'X-File-Type':encodeURIComponent(blob.type),'X-File-Mode':encodeURIComponent('source'),'X-Saved-At':String(Date.now())},body:blob});if(!up.ok)throw new Error('정리 엑셀 전송 실패 ('+up.status+')');
+    const sourcePathV67='/projects/'+encodeURIComponent(createdId)+'/blob/source';
+    const putSourceV67=async()=>{const r=await coupangFetchV40(sourcePathV67,{method:'PUT',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(filename),'X-File-Type':encodeURIComponent(blob.type),'X-File-Mode':encodeURIComponent('source'),'X-Saved-At':String(Date.now())},body:blob});if(!r.ok)throw new Error('정리 엑셀 전송 실패 ('+r.status+')');return r};
+    const verifySourceV67=async()=>{const r=await coupangFetchV40('/projects/'+encodeURIComponent(createdId)+'/status',{},false);if(!r.ok)return false;const j=await r.json().catch(()=>null),sz=Number(j?.source?.size||0);return !!j?.source&&sz===Number(blob.size)};
+    await putSourceV67();let verifiedV67=await verifySourceV67();if(!verifiedV67){await new Promise(r=>setTimeout(r,180));await putSourceV67();verifiedV67=await verifySourceV67()}
+    if(!verifiedV67)throw new Error(`정리 엑셀 서버 저장 검증 실패 · 원본 ${blob.size.toLocaleString()} bytes가 서버에 정상 저장되지 않았습니다.`);
     try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,createdId)}catch(_){}const d=activeDraftIdV40?await vaultGetV40(activeDraftIdV40):null;if(d){d.transferredAt=Date.now();d.transferredProjectId=createdId;d.transferredProjectName=projectName;d.savedAt=Date.now();await vaultPutV40(d);await refreshVaultSelectV40(d.id)}
     setStatus(`✓ “${projectName}”을 쿠팡 입고 작업의 새 선적 작업으로 보냈습니다.`,'ok');vaultStatusV40('✓ 쿠팡 전송 완료');
-    if(confirm(`“${projectName}” 새 선적 작업을 만들었습니다.\n지금 쿠팡 입고 작업 화면으로 이동할까요?`))location.href='/coupang-inbound-work.html?v=40';
+    if(confirm(`“${projectName}” 새 선적 작업을 만들었습니다.\n지금 쿠팡 입고 작업 화면으로 이동할까요?`))location.href='/coupang-inbound-work.html?v=40&project='+encodeURIComponent(createdId)+'&sent=1&_='+Date.now();
   }catch(e){console.error(e);if(createdId){try{await coupangFetchV40('/projects/'+encodeURIComponent(createdId),{method:'DELETE'},false)}catch(_){}}setStatus('쿠팡 전송 실패: '+(e.message||e),'bad');alert('쿠팡 입고 작업으로 보내지 못했습니다.\n'+(e.message||e))}finally{setSendEnabledV40()}
 }
 
