@@ -43,7 +43,7 @@
     <div class="panel-title">1. 원본 선적 엑셀 불러오기</div>
     <div class="panel-body">
       <div id="dropzone" class="dropzone">
-        <div><strong>원본 선적 엑셀 1~3개를 여기에 끌어놓으세요</strong><small>코리아원 · 봄날애 · 차통익스프레스 파일을 한 번에 여러 개 올리거나, 한 개씩 추가로 올려도 됩니다.</small><div id="loadedFilesV41" style="margin-top:9px;font-size:10px;color:#31586f;font-weight:800"></div></div>
+        <div><strong>원본 선적 엑셀 또는 PO 발주서 1~3개를 여기에 끌어놓으세요</strong><small>기존 선적 리스트와 PO_FOR_CONFIRM 발주서 모두 지원합니다. 여러 파일을 한 번에 올리거나 한 개씩 추가해도 됩니다.</small><div id="loadedFilesV41" style="margin-top:9px;font-size:10px;color:#31586f;font-weight:800"></div></div>
       </div>
       <div class="buttons">
         <button class="btn primary" onclick="document.getElementById('fileInput').click()">파일 여러 개 선택</button>
@@ -52,7 +52,7 @@
         <button id="resetBtn" class="btn" onclick="resetAll()">초기화</button>
       </div>
       <div id="status" class="status">정리 전 원본 파일을 불러와 주세요.</div>
-      <div class="warn">정리 기준: <b>여러 원본 파일을 하나로 합친 뒤, 같은 업체 + 같은 센터 + 같은 상품번호/바코드</b>인 행의 발주수량(E열)을 합산합니다. 같은 상품이라도 센터가 다르면 서로 합치지 않습니다. <b>센터 셀 색상은 업체+센터별로 자동 지정</b>됩니다.</div>
+      <div class="warn">정리 기준: <b>기존 선적 리스트와 PO 발주서를 함께 지원하며, 여러 파일을 하나로 합친 뒤 같은 업체 + 같은 센터 + 같은 상품번호/바코드</b>인 행의 수량을 합산합니다. PO 파일은 확정수량(또는 발주수량)을 사용합니다. 같은 상품이라도 센터가 다르면 서로 합치지 않습니다. <b>센터 셀 색상은 업체+센터별로 자동 지정</b>됩니다.</div>
       <div class="safe-note"><b>기존 파일은 변경하지 않습니다.</b> 원본 엑셀은 읽기만 하고, 정리 결과는 새 Excel 파일로 다운로드합니다. 쿠팡 입고 작업·바코드 라벨·서버 저장 데이터에도 영향을 주지 않습니다.</div>
     </div>
   </section>
@@ -423,18 +423,65 @@ function copyTplToCellV41(tplCell,dst){
   if(tplCell.numFmt)dst.numFmt=tplCell.numFmt;
   if(tplCell.alignment)dst.alignment=clone(tplCell.alignment);
 }
+function normalizeHeaderV64(v){return norm(v).replace(/\s+/g,'').replace(/[()\[\]{}]/g,'')}
+function findPoHeaderMapV64(ws){
+  const maxR=Math.min(ws.rowCount||0,30),maxC=Math.min(ws.columnCount||0,30);
+  for(let r=1;r<=maxR;r++){
+    const map={};
+    for(let c=1;c<=maxC;c++){
+      const h=normalizeHeaderV64(cellText(ws.getRow(r).getCell(c)));
+      if(!h)continue;
+      if(!map.center&&/^(물류센터|센터|입고센터)$/.test(h))map.center=c;
+      else if(!map.productNumber&&/^(상품번호|상품ID|상품아이디|SKU|SKUID)$/.test(h))map.productNumber=c;
+      else if(!map.barcode&&/^(상품바코드|바코드|상품코드)$/.test(h))map.barcode=c;
+      else if(!map.productName&&/^(상품이름|상품명|제품명)$/.test(h))map.productName=c;
+      else if(!map.qty&&/^(확정수량|발주수량|주문수량|수량)$/.test(h))map.qty=c;
+    }
+    if(map.center&&map.productNumber&&map.barcode&&map.productName&&map.qty)return {row:r,...map};
+  }
+  return null;
+}
 async function extractSectionsV41(file){
   const wb=new ExcelJS.Workbook();await wb.xlsx.load(await file.arrayBuffer());
   const ws=wb.worksheets[0];if(!ws)throw new Error(`${file.name}: 첫 번째 시트를 찾을 수 없습니다.`);
   let hint=detectCompanyV41(file.name);
   if(!hint){
-    let probe='';for(let r=1;r<=Math.min(ws.rowCount,40);r++){for(let c=1;c<=Math.min(ws.columnCount||5,6);c++)probe+=' '+cellText(ws.getRow(r).getCell(c))}
+    let probe='';for(let r=1;r<=Math.min(ws.rowCount,40);r++){for(let c=1;c<=Math.min(ws.columnCount||5,10);c++)probe+=' '+cellText(ws.getRow(r).getCell(c))}
     hint=detectCompanyV41(probe);
   }
   if(!hint){
     const ans=prompt(`“${file.name}”의 업체를 구분하지 못했습니다.\n코리아원 / 봄날애 / 차통익스프레스 중 하나를 입력해 주세요.`,'코리아원');
     hint=detectCompanyV41(ans)||'코리아원';
   }
+
+  // v64: 기존 선적 리스트(A:E) + 쿠팡 PO_FOR_CONFIRM 형식을 모두 지원.
+  // PO는 헤더명으로 열을 찾으므로 열 순서가 바뀌어도 처리합니다.
+  const po=findPoHeaderMapV64(ws);
+  if(po){
+    const sec={company:hint,title:`${hint} 선적건`,titleRow:po.row,titleTpl:null,items:[],sourceName:file.name};
+    for(let r=po.row+1;r<=ws.rowCount;r++){
+      const row=ws.getRow(r);
+      const center=cellText(row.getCell(po.center));
+      const productNumber=cellText(row.getCell(po.productNumber));
+      const barcode=cellText(row.getCell(po.barcode));
+      const productName=cellText(row.getCell(po.productName));
+      const qtyText=cellText(row.getCell(po.qty));
+      const q=num(row.getCell(po.qty).value??qtyText);
+      if(!center||!productNumber||!barcode||!productName||q<=0)continue;
+      sec.items.push({
+        sourceRow:r,
+        productNumberValue:clone(row.getCell(po.productNumber).value),productNumber,
+        productNameValue:clone(row.getCell(po.productName).value),productName,
+        barcodeValue:clone(row.getCell(po.barcode).value),barcode,
+        centerValue:clone(row.getCell(po.center).value),center,
+        qty:q,rowTpl:null,centerStyle:clone(row.getCell(po.center).style),firstOrder:r,sourceName:file.name
+      });
+    }
+    if(!sec.items.length)throw new Error(`${file.name}: PO 파일에서 유효한 상품 행을 찾지 못했습니다.`);
+    return {file,ws,sections:[sec],companyHint:hint,sourceFormat:'po'};
+  }
+
+  // 기존 형식: A 상품번호 / B 제품명 / C 바코드 / D 센터 / E 수량
   const sections=[];let sec=null,currentCompany=hint;
   for(let r=1;r<=ws.rowCount;r++){
     const row=ws.getRow(r),a=cellText(row.getCell(1)),b=cellText(row.getCell(2)),c=cellText(row.getCell(3)),d=cellText(row.getCell(4)),eText=cellText(row.getCell(5)),q=num(row.getCell(5).value??eText);
@@ -447,8 +494,8 @@ async function extractSectionsV41(file){
       sec.items.push({sourceRow:r,productNumberValue:clone(row.getCell(1).value),productNumber:a,productNameValue:clone(row.getCell(2).value),productName:b,barcodeValue:clone(row.getCell(3).value),barcode:c,centerValue:clone(row.getCell(4).value),center:d,qty:q,rowTpl:rowTemplate(ws,r),centerStyle:clone(row.getCell(4).style),firstOrder:r,sourceName:file.name});
     }
   }
-  if(!sections.some(x=>x.items.length))throw new Error(`${file.name}: A~E열에서 상품번호/제품명/바코드/센터/수량 형식의 데이터를 찾지 못했습니다.`);
-  return {file,ws,sections:sections.filter(x=>x.items.length),companyHint:hint};
+  if(!sections.some(x=>x.items.length))throw new Error(`${file.name}: 기존 선적 리스트(A~E) 또는 PO_FOR_CONFIRM 형식의 데이터를 찾지 못했습니다.`);
+  return {file,ws,sections:sections.filter(x=>x.items.length),companyHint:hint,sourceFormat:'shipment'};
 }
 function mergeSectionsByCompanyV41(parts){
   const byCompany=new Map();let seq=0;
@@ -475,7 +522,7 @@ async function makeCombinedSourceV41(files){
   const sections=mergeSectionsByCompanyV41(parts);if(!sections.length)throw new Error('취합할 상품을 찾지 못했습니다.');
   const out=new ExcelJS.Workbook();out.creator='TradeCode Navi';out.created=new Date();out.modified=new Date();
   const ws=out.addWorksheet(parts[0]?.ws?.name||'Sheet2');
-  const first=parts[0]?.ws;const widths=[11.2,39.9,17.4,12,9,7.4,7.7];for(let c=1;c<=7;c++)ws.getColumn(c).width=first?.getColumn(c)?.width||widths[c-1]||10;
+  const first=parts[0]?.ws,firstIsPo=parts[0]?.sourceFormat==='po';const widths=[11.2,39.9,17.4,12,9,7.4,7.7];for(let c=1;c<=7;c++)ws.getColumn(c).width=(!firstIsPo&&first?.getColumn(c)?.width)||widths[c-1]||10;
   let rn=1;
   for(const sec of sections){
     const tr=ws.getRow(rn);tr.height=sec.titleTpl?.height||33;
