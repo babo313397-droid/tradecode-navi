@@ -3607,5 +3607,59 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 
 <script src="/auth-client.js"></script>
+
+<script id="v68-first-transfer-immediate-restore">
+// ===== v68: 선적리스트에서 첫 전송 직후에도 즉시 내용 표시 =====
+// 새 프로젝트 생성 직후 서버에는 source.xlsx가 저장됐지만 첫 화면 진입 타이밍에
+// 1회 복구가 비어 보이는 경우를 막기 위해, 전달받은 프로젝트 ID를 우선 선택하고
+// 서버 source 존재를 확인하면서 짧게 재복구합니다.
+(function(){
+  const initBaseV68=window.initProjectsV18;
+  const switchBaseV68=window.switchProjectV18;
+  let forcedProjectIdV68='';
+  try{forcedProjectIdV68=new URLSearchParams(location.search).get('project')||''}catch(_){}
+
+  const sleepV68=ms=>new Promise(r=>setTimeout(r,ms));
+  async function restoreTransferredProjectV68(id){
+    if(!id)return false;
+    const waits=[0,120,260,520,900,1400];
+    for(let i=0;i<waits.length;i++){
+      if(workbook)return true;
+      if(waits[i])await sleepV68(waits[i]);
+      try{
+        currentProjectIdV18=id;
+        const r=await projectFetchV18('/projects/'+encodeURIComponent(id)+'/status',{},false);
+        if(!r.ok)continue;
+        const st=await r.json().catch(()=>null);
+        if(!st?.source||Number(st.source.size||0)<=0)continue;
+        sharedLastStateAt=sharedLastSourceAt=sharedLastSnapshotAt=0;
+        await restorePersistentSession();
+        if(workbook){
+          try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,id)}catch(_){}
+          renderProjectSelectV18();
+          setStatus('✓ 선적리스트에서 보낸 작업을 바로 불러왔습니다.','ok');
+          return true;
+        }
+      }catch(e){console.warn('v68 first transfer restore retry',i+1,e)}
+    }
+    return !!workbook;
+  }
+
+  if(typeof initBaseV68==='function')window.initProjectsV18=async function(){
+    if(forcedProjectIdV68){try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,forcedProjectIdV68)}catch(_){}}
+    await initBaseV68.apply(this,arguments);
+    const target=forcedProjectIdV68||currentProjectIdV18;
+    if(target&&!workbook)await restoreTransferredProjectV68(target);
+  };
+
+  if(typeof switchBaseV68==='function')window.switchProjectV18=async function(id){
+    const out=await switchBaseV68.apply(this,arguments);
+    if(id&&!workbook)await restoreTransferredProjectV68(id);
+    return out;
+  };
+})();
+// ===== /v68 =====
+</script>
+
 </body>
 </html>
