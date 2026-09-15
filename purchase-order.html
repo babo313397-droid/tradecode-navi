@@ -110,7 +110,7 @@
     <div class="panel-title"><b>2</b>발주서 작성</div>
     <div class="panel-body">
       <div id="poDrop" class="dropzone">
-        <div><strong>쿠팡 발주 PO 엑셀을 1개 이상 여기에 끌어놓으세요</strong><small>여러 파일을 한 번에 올릴 수 있습니다. 같은 상품번호 또는 바코드가 여러 PO에 있으면 발주수량을 모두 합쳐 한 줄로 만듭니다.</small></div>
+        <div><strong>쿠팡 발주 PO 엑셀을 1개 이상 여기에 끌어놓으세요</strong><small>여러 파일을 한 번에 올릴 수 있습니다. 같은 상품번호 또는 바코드가 여러 PO/센터에 있으면 센터는 무시하고 수량을 모두 합쳐 한 줄로 만듭니다.</small></div>
       </div>
       <div class="row" style="margin-top:8px"><button class="btn primary" type="button" onclick="$('poFiles').click()">PO 파일 여러 개 선택</button><input id="poFiles" class="file-input" type="file" accept=".xlsx,.xlsm" multiple><button class="btn" type="button" onclick="resetPo()">PO 초기화</button><span id="poStatus" class="status">PO 파일을 올려주세요.</span></div>
       <div id="poFileChips" class="files-chips"></div>
@@ -133,7 +133,7 @@
       <div id="missingNote" class="bad-note" style="display:none"></div>
       <div class="row" style="margin-bottom:9px"><button id="downloadOrderBtn" class="btn gold" type="button" disabled onclick="downloadOrderWorkbook()">발주서 엑셀 다운로드</button><button class="btn" type="button" onclick="rematchOrders()">제품 목록 다시 매칭</button><span id="downloadStatus" class="status"></span></div>
       <div class="table-wrap"><table class="data-table order-table"><thead><tr><th>순번</th><th>바코드</th><th>상품명</th><th>제품 사진</th><th>캐비티</th><th>발주수량</th><th>실 낱개 구매수량</th><th>상태</th></tr></thead><tbody id="orderPreviewBody"><tr><td colspan="8" class="empty">PO 파일을 올리면 합산 결과가 표시됩니다.</td></tr></tbody></table></div>
-      <div class="warn"><b>합산 기준:</b> 모든 PO의 상품을 사용하며 특정 상품을 제외하지 않습니다. 상품번호가 같으면 같은 제품으로 합산하고, 상품번호가 없거나 일치하지 않을 때는 바코드로 다시 매칭합니다. 최종 발주서에는 동일 제품이 반드시 한 줄만 생성됩니다.</div>
+      <div class="warn"><b>합산 기준:</b> 모든 PO의 상품을 사용하며 특정 상품을 제외하지 않습니다. 센터는 합산 기준에서 제외합니다. 상품번호가 같으면 같은 제품으로 합산하고, 상품번호가 없거나 일치하지 않을 때는 바코드로 다시 매칭합니다. 최종 발주서에는 동일 제품이 반드시 한 줄만 생성됩니다.</div>
     </div>
   </section>
 </main>
@@ -492,8 +492,48 @@ async function importMasterFile(file){
 $('masterFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importMasterFile(f);e.target.value=''});const md=$('masterDrop');['dragenter','dragover'].forEach(n=>md.addEventListener(n,e=>{e.preventDefault();md.classList.add('drag')}));['dragleave','drop'].forEach(n=>md.addEventListener(n,e=>{e.preventDefault();md.classList.remove('drag')}));md.addEventListener('drop',e=>{const all=[...(e.dataTransfer?.files||[])],excel=all.find(x=>/\.(xlsx|xlsm)$/i.test(x.name||'')),imgs=all.filter(x=>/^image\/(png|jpeg|webp)$/i.test(x.type||'')||/\.(png|jpe?g|webp)$/i.test(x.name||''));if(excel)importMasterFile(excel);else if(imgs.length)analyzeShotFiles(imgs);else alert('제품리스트/쿠팡 PO Excel 또는 제품목록 캡처 이미지(PNG/JPG/WEBP)를 올려주세요.')});md.addEventListener('click',()=>$('masterFile').click());
 $('shotFiles').addEventListener('change',e=>{if(e.target.files?.length)analyzeShotFiles(e.target.files);e.target.value=''});const sd=$('shotDrop');['dragenter','dragover'].forEach(n=>sd.addEventListener(n,e=>{e.preventDefault();sd.classList.add('drag')}));['dragleave','drop'].forEach(n=>sd.addEventListener(n,e=>{e.preventDefault();sd.classList.remove('drag')}));sd.addEventListener('drop',e=>{const fs=[...(e.dataTransfer?.files||[])].filter(x=>/^image\/(png|jpeg|webp)$/i.test(x.type||'')||/\.(png|jpe?g|webp)$/i.test(x.name||''));if(fs.length)analyzeShotFiles(fs);else alert('이 칸에는 제품목록 캡처 이미지(PNG/JPG/WEBP)를 올려주세요.')});sd.addEventListener('click',()=>$('shotFiles').click());
 
-function cleanPoRowsFromWorksheet(ws){const out=[];let h=findHeader(ws,['상품번호','상품바코드','상품이름','발주수량']);if(h){const vals=h.vals,idx=n=>vals.findIndex(v=>v===n),pn=idx('상품번호'),bc=idx('상품바코드'),name=idx('상품이름'),qty=idx('발주수량');for(let r=h.row+1;r<=ws.rowCount;r++){const row=ws.getRow(r),p=norm(row.getCell(pn).value),b=norm(row.getCell(bc).value),n=norm(row.getCell(name).value),q=num(row.getCell(qty).value);if((p||b)&&q>0)out.push({productNumber:p,barcode:b,productName:n,qty})}return out}for(let r=1;r<=ws.rowCount;r++){const row=ws.getRow(r),p=norm(row.getCell(1).value),b=norm(row.getCell(2).value),n=norm(row.getCell(3).value),q=num(row.getCell(4).value);if((/^\d+$/.test(p)||b)&&b&&n&&q>0)out.push({productNumber:p,barcode:b,productName:n,qty})}return out}
-async function parsePoFile(file){const wb=new ExcelJS.Workbook();await wb.xlsx.load(await file.arrayBuffer());const preferred=[...wb.worksheets].sort((a,b)=>(a.name==='상품목록'?-1:0)-(b.name==='상품목록'?-1:0));let best=[];for(const ws of preferred){const rows=cleanPoRowsFromWorksheet(ws);if(rows.length>best.length)best=rows;if(ws.name==='상품목록'&&rows.length)break}if(!best.length)throw new Error(`${file.name}: 상품번호/바코드/발주수량을 찾지 못했습니다.`);return best}
+function cleanPoRowsFromWorksheet(ws){
+  const out=[];
+  // 1) 현재 쿠팡 PO 형식: 센터는 읽되 합산 키에는 사용하지 않습니다.
+  //    확정수량을 최우선으로 사용하고, 구형 파일은 발주수량/주문수량/수량도 지원합니다.
+  const h=findHeaderAliases(ws,[['상품번호'],['상품바코드','바코드'],['상품이름','상품명','제품명'],['확정수량','발주수량','주문수량','수량','납품수량']]);
+  if(h){
+    const vals=h.vals;
+    const pn=findAliasCol(vals,['상품번호']);
+    const bc=findAliasCol(vals,['상품바코드','바코드']);
+    const name=findAliasCol(vals,['상품이름','상품명','제품명']);
+    // 확정수량이 있으면 반드시 확정수량을 사용합니다.
+    const qty=findAliasCol(vals,['확정수량','발주수량','주문수량','수량','납품수량']);
+    if(pn>0&&bc>0&&name>0&&qty>0){
+      for(let r=h.row+1;r<=ws.rowCount;r++){
+        const row=ws.getRow(r),p=norm(row.getCell(pn).value),b=norm(row.getCell(bc).value),n=norm(row.getCell(name).value),q=num(row.getCell(qty).value);
+        if((p||b)&&q>0)out.push({productNumber:p,barcode:b,productName:n,qty});
+      }
+      if(out.length)return out;
+    }
+  }
+
+  // 2) 구형 PO 형식(헤더 없음): A:E와 H:L 두 블록을 모두 읽습니다.
+  //    A/H 상품번호, B/I 바코드, C/J 상품명, D/K 발주수량, E/L 단가 구조입니다.
+  // 3) 선적형 5열 자료도 보조 지원: A 상품번호, B 상품명, C 바코드, D 센터, E 수량.
+  for(let r=1;r<=ws.rowCount;r++){
+    const row=ws.getRow(r);
+    const a=norm(row.getCell(1).value),b=norm(row.getCell(2).value),c=norm(row.getCell(3).value),d=norm(row.getCell(4).value),e=num(row.getCell(5).value);
+    const dQty=num(row.getCell(4).value);
+    if((a||c)&&/^\d+(?:\.0+)?$/.test(a)&&b&&c&&dQty>0){
+      out.push({productNumber:a.replace(/\.0+$/,''),barcode:b,productName:c,qty:dQty});
+    }else if((a||c)&&/^\d+(?:\.0+)?$/.test(a)&&b&&c&&e>0){
+      out.push({productNumber:a.replace(/\.0+$/,''),barcode:c,productName:b,qty:e});
+    }
+
+    const hpn=norm(row.getCell(8).value),hbc=norm(row.getCell(9).value),hn=norm(row.getCell(10).value),hq=num(row.getCell(11).value);
+    if((hpn||hbc)&&/^\d+(?:\.0+)?$/.test(hpn)&&hbc&&hn&&hq>0){
+      out.push({productNumber:hpn.replace(/\.0+$/,''),barcode:hbc,productName:hn,qty:hq});
+    }
+  }
+  return out;
+}
+async function parsePoFile(file){const wb=new ExcelJS.Workbook();await wb.xlsx.load(await file.arrayBuffer());const preferred=[...wb.worksheets].sort((a,b)=>(a.name==='상품목록'?-1:0)-(b.name==='상품목록'?-1:0));let best=[];for(const ws of preferred){const rows=cleanPoRowsFromWorksheet(ws);if(rows.length>best.length)best=rows;if(ws.name==='상품목록'&&rows.length)break}if(!best.length)throw new Error(`${file.name}: 상품번호/바코드/확정수량 또는 발주수량을 찾지 못했습니다.`);return best}
 async function acceptPoFiles(files){const arr=[...files].filter(f=>/\.(xlsx|xlsm)$/i.test(f.name||''));if(!arr.length)return alert('Excel PO 파일을 선택해 주세요.');try{setStatus('poStatus','PO 파일을 분석하는 중입니다…','work');poFilesState=[];rawPoRows=[];for(let i=0;i<arr.length;i++){const f=arr[i];setStatus('poStatus',`PO 분석 중… ${i+1}/${arr.length} · ${f.name}`,'work');const rows=await parsePoFile(f);poFilesState.push({name:f.name,count:rows.length});rawPoRows.push(...rows)}renderPoFiles();mergeAndMatch();setStatus('poStatus',`${arr.length}개 파일 · 원본 ${rawPoRows.length.toLocaleString()}행 분석 완료`,'ok')}catch(e){console.error(e);setStatus('poStatus','PO 분석 실패: '+e.message,'bad');alert('PO 분석 실패\n'+e.message)}}
 function renderPoFiles(){$('poFileChips').innerHTML=poFilesState.map(x=>`<span class="chip">${esc(x.name)} · ${x.count.toLocaleString()}행</span>`).join('')}
 function mergeAndMatch(){const pnMap=new Map(),bcMap=new Map(),rows=[];for(const src of rawPoRows){const pn=norm(src.productNumber),bc=norm(src.barcode).replace(/\s+/g,'').toUpperCase();let obj=(pn&&pnMap.get(pn))||(bc&&bcMap.get(bc));if(!obj){obj={productNumber:pn,barcode:bc,poName:src.productName||'',qty:0,firstIndex:rows.length};rows.push(obj)}obj.qty+=num(src.qty);if(pn)pnMap.set(pn,obj);if(bc)bcMap.set(bc,obj)}const masterPN=new Map(),masterBC=new Map();for(const p of products){if(p.productNumber)masterPN.set(norm(p.productNumber),p);if(p.barcode)masterBC.set(norm(p.barcode).replace(/\s+/g,'').toUpperCase(),p)}mergedOrders=rows.map(x=>{const p=(x.productNumber&&masterPN.get(x.productNumber))||(x.barcode&&masterBC.get(x.barcode))||null;const cavity=p?num(p.cavity)||1:0;return {...x,master:p,productName:p?.productName||x.poName||'',barcode:p?.barcode||x.barcode||'',productNumber:p?.productNumber||x.productNumber||'',cavity,pieces:p?x.qty*cavity:0}});renderOrderPreview()}
