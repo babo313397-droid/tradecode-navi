@@ -381,6 +381,33 @@ async function coupangFetchV40(path,opts={},allowPrompt=true){
   try{const r=await fetch('/api/coupang-shared'+path,{...opts,headers,signal:ctrl.signal,cache:'no-store'});if(r.status===401&&allowPrompt){const pw=prompt('쿠팡 공용 작업 암호를 입력해 주세요.');if(pw){try{localStorage.setItem('coupangSharedToken',pw)}catch(_){}return coupangFetchV40(path,opts,false)}}return r}finally{clearTimeout(timer)}
 }
 async function makeResultBlobV40(){const wb=await makeResultWorkbook();const buf=await wb.xlsx.writeBuffer();return new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})}
+async function seedCoupangInboundLocalV69(projectId,blob,filename){
+  // 첫 전송 직후 같은 브라우저에서 쿠팡 입고 화면이 서버 복구보다 먼저 뜨는 경우를 막습니다.
+  // 쿠팡 입고 작업이 원래 사용하는 계정별 IndexedDB에 이번 source를 먼저 심어 둡니다.
+  if(!projectId||!blob)return false;
+  const dbName=TC_ACCOUNT_SCOPE_V50.legacy?'CoupangInboundWorkDB':`CoupangInboundWorkDB-${TC_ACCOUNT_SCOPE_V50.uid}`;
+  try{
+    const db=await new Promise((resolve,reject)=>{
+      const req=indexedDB.open(dbName,1);
+      req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains('kv'))d.createObjectStore('kv')};
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error||new Error('쿠팡 입고 로컬DB 열기 실패'));
+    });
+    const source={name:filename||'선적리스트_정리본.xlsx',type:blob.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',mode:'source',blob,savedAt:Date.now()};
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction('kv','readwrite'),store=tx.objectStore('kv');
+      store.put(source,`project:${projectId}:source`);
+      // 새 프로젝트이므로 혹시 남아 있을 수 있는 동일 ID의 작업상태/스냅샷은 제거합니다.
+      store.delete(`project:${projectId}:state`);
+      store.delete(`project:${projectId}:workbookSnapshot`);
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error||new Error('쿠팡 입고 로컬DB 저장 실패'));
+      tx.onabort=()=>reject(tx.error||new Error('쿠팡 입고 로컬DB 저장 중단'));
+    });
+    try{db.close()}catch(_){}
+    return true;
+  }catch(e){console.warn('first transfer local handoff cache failed',e);return false}
+}
 async function sendToCoupangV40(){
   if(!sourceFile)return alert('먼저 선적 리스트를 불러와 주세요.');if(!centerChoiceConfirmed){showCenterWizard();return}const btn=document.getElementById('sendCoupangBtnV40');btn.disabled=true;
   let createdId='';try{
@@ -393,6 +420,9 @@ async function sendToCoupangV40(){
     const verifySourceV67=async()=>{const r=await coupangFetchV40('/projects/'+encodeURIComponent(createdId)+'/status',{},false);if(!r.ok)return false;const j=await r.json().catch(()=>null),sz=Number(j?.source?.size||0);return !!j?.source&&sz===Number(blob.size)};
     await putSourceV67();let verifiedV67=await verifySourceV67();if(!verifiedV67){await new Promise(r=>setTimeout(r,180));await putSourceV67();verifiedV67=await verifySourceV67()}
     if(!verifiedV67)throw new Error(`정리 엑셀 서버 저장 검증 실패 · 원본 ${blob.size.toLocaleString()} bytes가 서버에 정상 저장되지 않았습니다.`);
+    // v69: 서버 저장이 확인된 바로 그 파일을 쿠팡 입고 작업의 계정별 IndexedDB에도 넘겨 둡니다.
+    // 이렇게 하면 첫 번째 전송 직후에도 두 번째 전송/재조회 없이 즉시 화면을 만들 수 있습니다.
+    await seedCoupangInboundLocalV69(createdId,blob,filename);
     try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,createdId)}catch(_){}const d=activeDraftIdV40?await vaultGetV40(activeDraftIdV40):null;if(d){d.transferredAt=Date.now();d.transferredProjectId=createdId;d.transferredProjectName=projectName;d.savedAt=Date.now();await vaultPutV40(d);await refreshVaultSelectV40(d.id)}
     setStatus(`✓ “${projectName}”을 쿠팡 입고 작업의 새 선적 작업으로 보냈습니다.`,'ok');vaultStatusV40('✓ 쿠팡 전송 완료');
     if(confirm(`“${projectName}” 새 선적 작업을 만들었습니다.\n지금 쿠팡 입고 작업 화면으로 이동할까요?`))location.href='/coupang-inbound-work.html?v=40&project='+encodeURIComponent(createdId)+'&sent=1&_='+Date.now();
