@@ -6,6 +6,7 @@
 <title>발주서 작성 | TradeCode Navi</title>
 <meta name="description" content="제품 목록을 관리하고 쿠팡 발주 PO 여러 개를 합산해 사진 포함 발주서를 자동 생성합니다.">
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
 :root{--navy:#0b2f4f;--navy2:#08253f;--gold:#d6a52b;--bg:#eef2f5;--line:#d4dde4;--green:#217346;--blue:#0b5f92;--red:#b52a2a;--text:#17212b;--muted:#667986}
 *{box-sizing:border-box}html,body{margin:0;background:var(--bg);font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:var(--text)}button,input,select{font:inherit}button{cursor:pointer}
@@ -37,14 +38,26 @@
     <div class="panel-title"><b>1</b>제품 목록 관리</div>
     <div class="panel-body">
       <div id="masterDrop" class="dropzone">
-        <div><strong>기존 제품리스트 엑셀 또는 제품목록 캡처 이미지를 여기에 끌어놓으세요</strong><small>엑셀은 전체 등록/업데이트용 · 캡처 이미지는 제품 사진과 상품번호/바코드만 자동 인식하고, 상품명은 사람이 확인해 입력하는 반자동 신규 등록 방식입니다.</small></div>
+        <div><strong>기존 제품리스트 엑셀 · 쿠팡 PO 제품 엑셀 · 제품목록 캡처 이미지를 여기에 끌어놓으세요</strong><small>기존 제품리스트 엑셀은 전체 업데이트용 · 쿠팡 PO 제품 엑셀은 기존 제품을 제외하고 신규 제품만 미리보기 후 추가 · 캡처 이미지는 반자동 신규 등록 방식입니다.</small></div>
       </div>
       <div class="row" style="margin-top:8px">
-        <button class="btn primary" type="button" onclick="$('masterFile').click()">제품리스트 엑셀 선택</button>
+        <button class="btn primary" type="button" onclick="$('masterFile').click()">제품리스트 / PO 엑셀 선택</button>
         <input id="masterFile" class="file-input" type="file" accept=".xlsx,.xlsm">
         <button class="btn gold" type="button" onclick="$('shotFiles').click()">제품목록 캡처 이미지 선택</button>
         <span id="masterImportStatus" class="status">등록된 제품 목록을 불러오는 중입니다…</span>
       </div>
+      <div id="poMasterBox" class="shot-cavity" style="display:none">
+        <div class="shot-title">쿠팡 PO 제품 엑셀 · 신규 제품 미리보기</div>
+        <div class="row" style="margin-top:2px">
+          <button id="savePoMasterProductsBtn" class="btn green" type="button" onclick="savePoMasterProducts()" disabled>신규 제품 확정 저장</button>
+          <button class="btn" type="button" onclick="clearPoMasterPreview()">미리보기 닫기</button>
+          <span id="poMasterStatus" class="status"></span>
+        </div>
+        <div id="poMasterFileChips" class="files-chips"></div>
+        <div class="shot-note"><b>신규만 추가:</b> 현재 로그인 계정의 제품목록과 <b>상품번호 우선 + 바코드 보조</b>로 비교합니다. 이미 등록된 제품은 자동으로 저장 대상에서 제외합니다. 캐비티는 상품명의 “4개 1세트 / 2p / 3개입 / 2EA / 4매” 같은 표현에서 우선 제안하며, 제품 사진도 함께 보여주므로 저장 전 직접 확인하고 수정할 수 있습니다.</div>
+        <div id="poMasterPreview" class="shot-preview" style="display:none"></div>
+      </div>
+
       <div class="safe"><b>계정별 영구 저장:</b> 제품 목록과 사진은 현재 로그인 계정 전용 Render Persistent Disk 저장소에 보관됩니다. <b>기존 관리자 계정의 현재 제품목록은 그대로 유지</b>되고, 다른 계정에서는 서로의 제품목록이 보이지 않습니다.</div>
 
       <div class="shot-cavity">
@@ -130,7 +143,7 @@ const norm=v=>String(v??'').replace(/\u00a0/g,' ').trim().replace(/\s+/g,' ');
 const compact=v=>norm(v).replace(/\s+/g,'').toLowerCase();
 const num=v=>{const n=Number(String(v??'').replace(/,/g,''));return Number.isFinite(n)?n:0};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let products=[],productPage=1,productPageSize=100,editingProductId='',editingImageFile=null,editingExistingImage='',shotProductAnalysis=[],shotFilesState=[];
+let products=[],productPage=1,productPageSize=100,editingProductId='',editingImageFile=null,editingExistingImage='',shotProductAnalysis=[],shotFilesState=[],poMasterAnalysis=[],poMasterFilesState=[];
 let poFilesState=[],rawPoRows=[],mergedOrders=[];
 function setStatus(id,msg,cls=''){const e=$(id);e.textContent=msg;e.className='status '+cls}
 function isoToday(){const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`}
@@ -363,11 +376,120 @@ function bytesToBase64(data){const u8=data instanceof Uint8Array?data:new Uint8A
 async function saveProduct(){try{const productNumber=norm($('productNumber').value),barcode=norm($('productBarcode').value),productName=norm($('productName').value),cavity=num($('productCavity').value)||1;if(!productNumber&&!barcode)return alert('상품번호 또는 바코드를 입력해 주세요.');if(!productName)return alert('상품명을 입력해 주세요.');setStatus('productEditStatus','저장 중…','work');const body={id:editingProductId||undefined,productNumber,barcode,productName,cavity};if(editingImageFile){body.image={ext:(editingImageFile.type.includes('png')?'png':'jpeg'),base64:await fileToBase64(editingImageFile)}}const j=await apiJson('/api/purchase-products',{method:'POST',body:JSON.stringify(body)});setStatus('productEditStatus',j.created?'신규 제품을 추가했습니다.':'제품 정보를 수정했습니다.','ok');clearProductForm();await loadProducts()}catch(e){console.error(e);setStatus('productEditStatus','저장 실패: '+e.message,'bad')}}
 async function deleteProduct(id){const x=products.find(p=>p.id===id);if(!x||!confirm(`제품을 삭제할까요?\n${x.productName}`))return;try{await apiJson('/api/purchase-products/'+encodeURIComponent(id),{method:'DELETE'});await loadProducts()}catch(e){alert('삭제 실패: '+e.message)}}
 
+function findHeaderAliases(ws,groups){
+  for(let r=1;r<=Math.min(ws.rowCount||30,30);r++){
+    const vals=(ws.getRow(r).values||[]).map(norm);
+    const ok=groups.every(group=>group.some(name=>vals.includes(name)));
+    if(ok)return {row:r,vals};
+  }
+  return null;
+}
+function findAliasCol(vals,names){for(const n of names){const i=vals.findIndex(v=>norm(v)===n);if(i>0)return i}return -1}
+function existingProductFor(productNumber,barcode){
+  const pn=norm(productNumber),bc=norm(barcode).replace(/\s+/g,'').toUpperCase();
+  return products.find(p=>(pn&&norm(p.productNumber)===pn)||(bc&&norm(p.barcode).replace(/\s+/g,'').toUpperCase()===bc))||null;
+}
+function zipResolve(baseFile,target){
+  const raw=String(target||'');if(/^\/?xl\//i.test(raw))return raw.replace(/^\//,'');
+  const base=String(baseFile||'').split('/');base.pop();
+  for(const part of raw.replace(/^\//,'').split('/')){if(!part||part==='.')continue;if(part==='..')base.pop();else base.push(part)}
+  return base.join('/');
+}
+function xmlEls(doc,local){return [...doc.getElementsByTagNameNS('*',local)]}
+function colLettersToNumber(ref){const m=String(ref||'').match(/^([A-Z]+)/i);if(!m)return 0;let n=0;for(const ch of m[1].toUpperCase())n=n*26+(ch.charCodeAt(0)-64);return n}
+async function richCellImageRows(arrayBuffer,sheetName,imageCol){
+  const out=new Map();
+  try{
+    if(!window.JSZip)throw new Error('JSZip 모듈 없음');
+    const zip=await JSZip.loadAsync(arrayBuffer),parser=new DOMParser();
+    const readXml=async p=>{const f=zip.file(p);if(!f)return null;return parser.parseFromString(await f.async('text'),'application/xml')};
+    const wbDoc=await readXml('xl/workbook.xml'),wbRelDoc=await readXml('xl/_rels/workbook.xml.rels');
+    if(!wbDoc||!wbRelDoc)return out;
+    const sheet=xmlEls(wbDoc,'sheet').find(x=>x.getAttribute('name')===sheetName);if(!sheet)return out;
+    const rid=sheet.getAttribute('r:id')||sheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');if(!rid)return out;
+    const wbRel=xmlEls(wbRelDoc,'Relationship').find(x=>x.getAttribute('Id')===rid);if(!wbRel)return out;
+    const sheetPath=zipResolve('xl/workbook.xml',wbRel.getAttribute('Target')),sheetDoc=await readXml(sheetPath);if(!sheetDoc)return out;
+    const rvDoc=await readXml('xl/richData/rdrichvalue.xml'),rvRelDoc=await readXml('xl/richData/richValueRel.xml'),imgRelDoc=await readXml('xl/richData/_rels/richValueRel.xml.rels');
+    if(!rvDoc||!rvRelDoc||!imgRelDoc)return out;
+    const rvList=xmlEls(rvDoc,'rv'),relOrder=xmlEls(rvRelDoc,'rel').map(x=>x.getAttribute('r:id')||x.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id'));
+    const targetByRid=new Map(xmlEls(imgRelDoc,'Relationship').map(x=>[x.getAttribute('Id'),x.getAttribute('Target')]));
+    for(const c of xmlEls(sheetDoc,'c')){
+      const ref=c.getAttribute('r'),vm=Number(c.getAttribute('vm')||0);if(!ref||!vm||colLettersToNumber(ref)!==imageCol)continue;
+      const rowNo=Number((ref.match(/(\d+)$/)||[])[1]||0),rv=rvList[vm-1];if(!rowNo||!rv)continue;
+      const vals=xmlEls(rv,'v');if(!vals.length)continue;const relIndex=Number(vals[0].textContent);if(!Number.isFinite(relIndex))continue;
+      const relId=relOrder[relIndex],target=targetByRid.get(relId);if(!target)continue;
+      const mediaPath=zipResolve('xl/richData/richValueRel.xml',target),f=zip.file(mediaPath);if(!f)continue;
+      const bytes=new Uint8Array(await f.async('uint8array')),ext=(mediaPath.split('.').pop()||'jpeg').toLowerCase().replace('jpg','jpeg');
+      out.set(rowNo,{bytes,ext:ext==='png'?'png':'jpeg'});
+    }
+  }catch(e){console.warn('PO cell image read skip',e)}
+  return out;
+}
+function clearPoMasterPreview(){poMasterAnalysis=[];poMasterFilesState=[];$('poMasterBox').style.display='none';$('poMasterPreview').style.display='none';$('poMasterPreview').innerHTML='';$('poMasterFileChips').innerHTML='';$('savePoMasterProductsBtn').disabled=true;setStatus('poMasterStatus','')}
+function poMasterImagePreview(x){if(!x?.image?.bytes?.length)return'';try{const b64=bytesToBase64(x.image.bytes);return `data:image/${x.image.ext==='png'?'png':'jpeg'};base64,${b64}`}catch(_){return''}}
+function renderPoMasterPreview(){
+  const rows=poMasterAnalysis;$('poMasterBox').style.display=rows.length?'block':'none';$('poMasterPreview').style.display=rows.length?'block':'none';
+  $('poMasterFileChips').innerHTML=poMasterFilesState.map(x=>`<span class="chip">${esc(x.name)} · 후보 ${x.total.toLocaleString()} · 신규 ${x.newCount.toLocaleString()} · 기존 ${x.existingCount.toLocaleString()}</span>`).join('');
+  if(!rows.length){$('poMasterPreview').innerHTML='';$('savePoMasterProductsBtn').disabled=true;return}
+  let newCount=0,existingCount=0;
+  $('poMasterPreview').innerHTML=`<table><thead><tr><th>저장</th><th>사진</th><th>상품번호</th><th>상품명</th><th>바코드</th><th>캐비티</th><th>상태</th></tr></thead><tbody>${rows.map((x,i)=>{const ex=existingProductFor(x.productNumber,x.barcode);x.existing=ex;const isNew=!ex;if(isNew)newCount++;else existingCount++;const pv=x.preview||poMasterImagePreview(x);return `<tr class="${isNew?'new':'existing'}"><td style="text-align:center"><input id="poMasterUse_${i}" type="checkbox" ${isNew?'checked':'disabled'}></td><td style="text-align:center">${pv?`<img class="shot-thumb" src="${pv}">`:'-'}</td><td><input id="poMasterPn_${i}" type="text" value="${esc(x.productNumber)}" oninput="syncPoMasterCandidate(${i},false)" ${isNew?'':'disabled'}></td><td><input id="poMasterName_${i}" class="shot-name" type="text" value="${esc(x.productName)}" onchange="syncPoMasterCandidate(${i},true)" ${isNew?'':'disabled'}></td><td><input id="poMasterBc_${i}" type="text" value="${esc(x.barcode)}" oninput="syncPoMasterCandidate(${i},false)" ${isNew?'':'disabled'}></td><td><input id="poMasterCav_${i}" type="number" min="1" step="1" value="${x.cavity}" ${isNew?'':'disabled'}><div id="poMasterCavReason_${i}" style="font-size:8px;color:#71818c;margin-top:3px">${esc(x.cavityReason||'')}</div></td><td id="poMasterState_${i}" style="text-align:center">${isNew?'신규 추가 대상':'기존 제품 · 등록 제외'}</td></tr>`}).join('')}</tbody></table>`;
+  $('savePoMasterProductsBtn').disabled=!newCount;setStatus('poMasterStatus',`미리보기 · 신규 ${newCount.toLocaleString()}개 / 기존 제외 ${existingCount.toLocaleString()}개 · 캐비티 확인 후 저장하세요.`,'ok');
+}
+function syncPoMasterCandidate(i,fromName){
+  const x=poMasterAnalysis[i];if(!x)return;const pn=norm($(`poMasterPn_${i}`)?.value),bc=norm($(`poMasterBc_${i}`)?.value),name=norm($(`poMasterName_${i}`)?.value);x.productNumber=pn;x.barcode=bc;x.productName=name;
+  if(fromName){const c=analyzeCavityName(name);if(c.cavity){x.cavity=c.cavity;x.cavityReason=c.reason;$(`poMasterCav_${i}`).value=c.cavity;$(`poMasterCavReason_${i}`).textContent=c.reason}else{$(`poMasterCavReason_${i}`).textContent='수량 표현 없음 → 1 (사진 확인 후 수정)'}}
+  const ex=existingProductFor(pn,bc),use=$(`poMasterUse_${i}`),state=$(`poMasterState_${i}`);x.existing=ex;if(ex){if(use){use.checked=false;use.disabled=true}state.textContent='기존 제품 · 등록 제외'}else{if(use)use.disabled=false;state.textContent=(pn||bc)&&name?'신규 추가 대상':'필수값 확인'}
+}
+async function analyzePoMasterWorkbook(file,arrayBuffer,wb,ws,head){
+  const vals=head.vals,pnCol=findAliasCol(vals,['상품번호']),nameCol=findAliasCol(vals,['상품명','상품이름']),bcCol=findAliasCol(vals,['바코드','상품바코드']),imgCol=findAliasCol(vals,['이미지']);
+  if(pnCol<1||nameCol<1||bcCol<1)throw new Error('PO 제품 엑셀에서 상품번호 / 상품명 / 바코드 열을 찾지 못했습니다.');
+  setStatus('masterImportStatus','PO 제품 엑셀의 신규 제품과 사진을 분석하는 중입니다…','work');
+  const imageMap=imgCol>0?await richCellImageRows(arrayBuffer,ws.name,imgCol):new Map(),raw=[];
+  for(let r=head.row+1;r<=ws.rowCount;r++){
+    const row=ws.getRow(r),pn=norm(row.getCell(pnCol).value),bc=norm(row.getCell(bcCol).value),name=norm(row.getCell(nameCol).value);if(!pn&&!bc&&!name)continue;if(!pn&&!bc)continue;
+    const cav=analyzeCavityName(name),image=imageMap.get(r)||null;raw.push({productNumber:pn,barcode:bc,productName:name||bc||pn,cavity:cav.cavity||1,cavityReason:cav.cavity?cav.reason:'수량 표현 없음 → 1 (사진 확인 후 수정)',image,source:file.name,row:r});
+  }
+  if(!raw.length)throw new Error('PO 제품 엑셀에서 등록 후보를 찾지 못했습니다.');
+  const byPn=new Map(),byBc=new Map(),dedup=[];
+  for(const x of raw){const pn=norm(x.productNumber),bc=norm(x.barcode).replace(/\s+/g,'').toUpperCase();let d=(pn&&byPn.get(pn))||(bc&&byBc.get(bc));if(!d){d={...x};dedup.push(d)}else{if(!d.image&&x.image)d.image=x.image;if(!d.productName&&x.productName)d.productName=x.productName}if(pn)byPn.set(pn,d);if(bc)byBc.set(bc,d)}
+  poMasterAnalysis=dedup;for(const x of poMasterAnalysis){x.existing=existingProductFor(x.productNumber,x.barcode);x.preview=poMasterImagePreview(x)}
+  const newCount=poMasterAnalysis.filter(x=>!x.existing).length,existingCount=poMasterAnalysis.length-newCount;poMasterFilesState=[{name:file.name,total:poMasterAnalysis.length,newCount,existingCount}];renderPoMasterPreview();
+  setStatus('masterImportStatus',`PO 제품 엑셀 분석 완료 · 신규 ${newCount.toLocaleString()}개 / 기존 제외 ${existingCount.toLocaleString()}개`,'ok');
+}
+async function savePoMasterProducts(){
+  const selected=[];for(let i=0;i<poMasterAnalysis.length;i++){const use=$(`poMasterUse_${i}`);if(!use?.checked||use.disabled)continue;const src=poMasterAnalysis[i],productNumber=norm($(`poMasterPn_${i}`)?.value),barcode=norm($(`poMasterBc_${i}`)?.value),productName=norm($(`poMasterName_${i}`)?.value),cavity=Math.max(1,Math.floor(num($(`poMasterCav_${i}`)?.value)||1));if(!productNumber&&!barcode)return alert(`${i+1}번째 선택 행은 상품번호 또는 바코드가 필요합니다.`);if(!productName)return alert(`${i+1}번째 선택 행은 상품명이 필요합니다.`);selected.push({productNumber,barcode,productName,cavity,image:src.image?{ext:src.image.ext,base64:bytesToBase64(src.image.bytes)}:undefined})}
+  if(!selected.length)return alert('저장할 신규 제품을 선택해 주세요.');
+  try{
+    const latest=await apiJson('/api/purchase-products');products=Array.isArray(latest.items)?latest.items:[];renderProductList();
+    const unique=[],seenPn=new Set(),seenBc=new Set();let skipped=0;
+    for(const x of selected){const pn=norm(x.productNumber),bc=norm(x.barcode).replace(/\s+/g,'').toUpperCase();if(existingProductFor(pn,bc)||(pn&&seenPn.has(pn))||(bc&&seenBc.has(bc))){skipped++;continue}unique.push(x);if(pn)seenPn.add(pn);if(bc)seenBc.add(bc)}
+    const fresh=unique;if(!fresh.length){alert('선택한 제품이 모두 이미 등록되어 있거나 미리보기 안에서 중복됩니다. 기존 제품은 변경하지 않았습니다.');renderPoMasterPreview();return}
+    if(!confirm(`신규 제품 ${fresh.length.toLocaleString()}개를 제품 목록에 추가할까요?${skipped?`\n중복 확인으로 ${skipped.toLocaleString()}개는 제외됩니다.`:''}\n\n미리보기에서 확인한 값으로 신규 제품만 저장됩니다.`))return;
+    $('savePoMasterProductsBtn').disabled=true;let done=0,inserted=0,updated=0,images=0,batch=[],bytes=20;const MAX_BYTES=2200000,MAX_ITEMS=40;
+    const flush=async()=>{if(!batch.length)return;setStatus('poMasterStatus',`신규 제품 저장 중… ${Math.min(done+batch.length,fresh.length).toLocaleString()} / ${fresh.length.toLocaleString()}`,'work');const j=await apiJson('/api/purchase-products/import',{method:'POST',body:JSON.stringify({items:batch})});done+=batch.length;inserted+=j.inserted||0;updated+=j.updated||0;images+=j.images||0;batch=[];bytes=20};
+    for(const item of fresh){const b=new Blob([JSON.stringify(item)]).size+2;if(batch.length&&(batch.length>=MAX_ITEMS||bytes+b>MAX_BYTES))await flush();batch.push(item);bytes+=b}await flush();await loadProducts();
+    setStatus('poMasterStatus',`저장 완료 · 신규 ${inserted.toLocaleString()}개 / 사진 ${images.toLocaleString()}개${updated?` / 서버 중복감지 ${updated.toLocaleString()}개`:''}`,'ok');poMasterAnalysis=[];poMasterFilesState=[];renderPoMasterPreview();
+  }catch(e){console.error(e);setStatus('poMasterStatus','신규 제품 저장 실패: '+e.message,'bad');alert('신규 제품 저장 실패\n'+e.message)}finally{$('savePoMasterProductsBtn').disabled=!poMasterAnalysis.length}
+}
 function findHeader(ws,required){for(let r=1;r<=Math.min(ws.rowCount||30,30);r++){const vals=(ws.getRow(r).values||[]).map(norm);const set=new Set(vals);if(required.every(k=>set.has(k)))return {row:r,vals}}return null}
 function headerIndex(vals,name){const i=vals.findIndex(v=>norm(v)===name);return i>0?i:vals.findIndex(v=>norm(v)===name)}
 function workbookImageRows(wb,ws){const map=new Map();if(typeof ws.getImages!=='function'||typeof wb.getImage!=='function')return map;for(const d of ws.getImages()){try{const tl=d.range?.tl||{},row=Math.floor(Number(tl.nativeRow??tl.row??0))+1,col=Math.floor(Number(tl.nativeCol??tl.col??0))+1;if(col!==5)continue;const media=wb.getImage(d.imageId);if(!media)continue;let bytes=null;if(media.buffer)bytes=media.buffer instanceof Uint8Array?media.buffer:new Uint8Array(media.buffer);else if(media.base64){const b64=String(media.base64).split(',').pop();const bin=atob(b64);bytes=Uint8Array.from(bin,c=>c.charCodeAt(0))}if(!bytes?.length)continue;map.set(row,{bytes,ext:String(media.extension||'jpeg').toLowerCase()==='jpg'?'jpeg':String(media.extension||'jpeg').toLowerCase()})}catch(e){console.warn('image read skip',e)}}return map}
-async function importMasterFile(file){if(!file||!/\.(xlsx|xlsm)$/i.test(file.name||''))return alert('제품리스트 Excel 파일(.xlsx/.xlsm)을 선택해 주세요.');try{setStatus('masterImportStatus','제품리스트를 읽는 중입니다…','work');const wb=new ExcelJS.Workbook();await wb.xlsx.load(await file.arrayBuffer());let ws=null,head=null;for(const s of wb.worksheets){const h=findHeader(s,['SKU ID','바코드','상품명']);if(h){ws=s;head=h;break}}if(!ws||!head)throw new Error('SKU ID / 바코드 / 상품명 헤더를 찾지 못했습니다.');const vals=head.vals,pnCol=vals.findIndex(v=>v==='SKU ID'),bcCol=vals.findIndex(v=>v==='바코드'),nameCol=vals.findIndex(v=>v==='상품명'),cavCol=vals.findIndex(v=>v==='캐비티');if(pnCol<1||bcCol<1||nameCol<1)throw new Error('제품 목록 열 구성을 확인해 주세요.');const imageMap=workbookImageRows(wb,ws);const source=[];for(let r=head.row+1;r<=ws.rowCount;r++){const row=ws.getRow(r),pn=norm(row.getCell(pnCol).value),bc=norm(row.getCell(bcCol).value),name=norm(row.getCell(nameCol).value);if(!pn&&!bc&&!name)continue;if(!pn&&!bc)continue;source.push({row:r,productNumber:pn,barcode:bc,productName:name||bc||pn,cavity:cavCol>0?(num(row.getCell(cavCol).value)||1):1,sortIndex:r-head.row,image:imageMap.get(r)||null})}if(!source.length)throw new Error('등록할 제품이 없습니다.');let done=0,inserted=0,updated=0,images=0;const MAX_BATCH_BYTES=2500000,MAX_BATCH_ITEMS=60;let batch=[],batchBytes=20;const sendBatch=async()=>{if(!batch.length)return;setStatus('masterImportStatus',`제품 목록 업데이트 중… ${Math.min(done+batch.length,source.length).toLocaleString()} / ${source.length.toLocaleString()}`,'work');const j=await apiJson('/api/purchase-products/import',{method:'POST',body:JSON.stringify({items:batch})});done+=batch.length;inserted+=j.inserted||0;updated+=j.updated||0;images+=j.images||0;batch=[];batchBytes=20};for(const x of source){const item={productNumber:x.productNumber,barcode:x.barcode,productName:x.productName,cavity:x.cavity,sortIndex:x.sortIndex,image:x.image?{ext:(x.image.ext==='png'?'png':'jpeg'),base64:bytesToBase64(x.image.bytes)}:undefined};const itemBytes=new Blob([JSON.stringify(item)]).size+2;if(batch.length&&(batch.length>=MAX_BATCH_ITEMS||batchBytes+itemBytes>MAX_BATCH_BYTES))await sendBatch();batch.push(item);batchBytes+=itemBytes}await sendBatch();setStatus('masterImportStatus',`완료 · ${done.toLocaleString()}개 처리 / 신규 ${inserted.toLocaleString()} / 업데이트 ${updated.toLocaleString()} / 사진 ${images.toLocaleString()}`,'ok');await loadProducts()}catch(e){console.error(e);setStatus('masterImportStatus','제품리스트 가져오기 실패: '+e.message,'bad');alert('제품리스트 가져오기 실패\n'+e.message)}}
-$('masterFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importMasterFile(f);e.target.value=''});const md=$('masterDrop');['dragenter','dragover'].forEach(n=>md.addEventListener(n,e=>{e.preventDefault();md.classList.add('drag')}));['dragleave','drop'].forEach(n=>md.addEventListener(n,e=>{e.preventDefault();md.classList.remove('drag')}));md.addEventListener('drop',e=>{const all=[...(e.dataTransfer?.files||[])],excel=all.find(x=>/\.(xlsx|xlsm)$/i.test(x.name||'')),imgs=all.filter(x=>/^image\/(png|jpeg|webp)$/i.test(x.type||'')||/\.(png|jpe?g|webp)$/i.test(x.name||''));if(excel)importMasterFile(excel);else if(imgs.length)analyzeShotFiles(imgs);else alert('제품리스트 Excel 또는 제품목록 캡처 이미지(PNG/JPG/WEBP)를 올려주세요.')});md.addEventListener('click',()=>$('masterFile').click());
+async function importMasterFile(file){
+  if(!file||!/\.(xlsx|xlsm)$/i.test(file.name||''))return alert('제품리스트 또는 쿠팡 PO Excel 파일(.xlsx/.xlsm)을 선택해 주세요.');
+  try{
+    setStatus('masterImportStatus','엑셀 파일 형식을 확인하는 중입니다…','work');const arrayBuffer=await file.arrayBuffer(),wb=new ExcelJS.Workbook();await wb.xlsx.load(arrayBuffer);
+    let masterWs=null,masterHead=null,poWs=null,poHead=null;
+    for(const s of wb.worksheets){if(!masterHead){const h=findHeader(s,['SKU ID','바코드','상품명']);if(h){masterWs=s;masterHead=h}}if(!poHead){const h=findHeaderAliases(s,[['상품번호'],['상품명','상품이름'],['바코드','상품바코드']]);if(h){poWs=s;poHead=h}}}
+    if(poWs&&poHead&&!masterHead){await analyzePoMasterWorkbook(file,arrayBuffer,wb,poWs,poHead);return}
+    if(!masterWs||!masterHead)throw new Error('지원되는 제품리스트 또는 PO 제품 엑셀 형식을 찾지 못했습니다.');
+    const vals=masterHead.vals,pnCol=vals.findIndex(v=>v==='SKU ID'),bcCol=vals.findIndex(v=>v==='바코드'),nameCol=vals.findIndex(v=>v==='상품명'),cavCol=vals.findIndex(v=>v==='캐비티');if(pnCol<1||bcCol<1||nameCol<1)throw new Error('제품 목록 열 구성을 확인해 주세요.');const imageMap=workbookImageRows(wb,masterWs);const source=[];
+    for(let r=masterHead.row+1;r<=masterWs.rowCount;r++){const row=masterWs.getRow(r),pn=norm(row.getCell(pnCol).value),bc=norm(row.getCell(bcCol).value),name=norm(row.getCell(nameCol).value);if(!pn&&!bc&&!name)continue;if(!pn&&!bc)continue;source.push({row:r,productNumber:pn,barcode:bc,productName:name||bc||pn,cavity:cavCol>0?(num(row.getCell(cavCol).value)||1):1,sortIndex:r-masterHead.row,image:imageMap.get(r)||null})}
+    if(!source.length)throw new Error('등록할 제품이 없습니다.');let done=0,inserted=0,updated=0,images=0;const MAX_BATCH_BYTES=2500000,MAX_BATCH_ITEMS=60;let batch=[],batchBytes=20;
+    const sendBatch=async()=>{if(!batch.length)return;setStatus('masterImportStatus',`제품 목록 업데이트 중… ${Math.min(done+batch.length,source.length).toLocaleString()} / ${source.length.toLocaleString()}`,'work');const j=await apiJson('/api/purchase-products/import',{method:'POST',body:JSON.stringify({items:batch})});done+=batch.length;inserted+=j.inserted||0;updated+=j.updated||0;images+=j.images||0;batch=[];batchBytes=20};
+    for(const x of source){const item={productNumber:x.productNumber,barcode:x.barcode,productName:x.productName,cavity:x.cavity,sortIndex:x.sortIndex,image:x.image?{ext:(x.image.ext==='png'?'png':'jpeg'),base64:bytesToBase64(x.image.bytes)}:undefined};const itemBytes=new Blob([JSON.stringify(item)]).size+2;if(batch.length&&(batch.length>=MAX_BATCH_ITEMS||batchBytes+itemBytes>MAX_BATCH_BYTES))await sendBatch();batch.push(item);batchBytes+=itemBytes}await sendBatch();setStatus('masterImportStatus',`완료 · ${done.toLocaleString()}개 처리 / 신규 ${inserted.toLocaleString()} / 업데이트 ${updated.toLocaleString()} / 사진 ${images.toLocaleString()}`,'ok');await loadProducts()
+  }catch(e){console.error(e);setStatus('masterImportStatus','엑셀 가져오기 실패: '+e.message,'bad');alert('엑셀 가져오기 실패\n'+e.message)}
+}
+$('masterFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importMasterFile(f);e.target.value=''});const md=$('masterDrop');['dragenter','dragover'].forEach(n=>md.addEventListener(n,e=>{e.preventDefault();md.classList.add('drag')}));['dragleave','drop'].forEach(n=>md.addEventListener(n,e=>{e.preventDefault();md.classList.remove('drag')}));md.addEventListener('drop',e=>{const all=[...(e.dataTransfer?.files||[])],excel=all.find(x=>/\.(xlsx|xlsm)$/i.test(x.name||'')),imgs=all.filter(x=>/^image\/(png|jpeg|webp)$/i.test(x.type||'')||/\.(png|jpe?g|webp)$/i.test(x.name||''));if(excel)importMasterFile(excel);else if(imgs.length)analyzeShotFiles(imgs);else alert('제품리스트/쿠팡 PO Excel 또는 제품목록 캡처 이미지(PNG/JPG/WEBP)를 올려주세요.')});md.addEventListener('click',()=>$('masterFile').click());
 $('shotFiles').addEventListener('change',e=>{if(e.target.files?.length)analyzeShotFiles(e.target.files);e.target.value=''});const sd=$('shotDrop');['dragenter','dragover'].forEach(n=>sd.addEventListener(n,e=>{e.preventDefault();sd.classList.add('drag')}));['dragleave','drop'].forEach(n=>sd.addEventListener(n,e=>{e.preventDefault();sd.classList.remove('drag')}));sd.addEventListener('drop',e=>{const fs=[...(e.dataTransfer?.files||[])].filter(x=>/^image\/(png|jpeg|webp)$/i.test(x.type||'')||/\.(png|jpe?g|webp)$/i.test(x.name||''));if(fs.length)analyzeShotFiles(fs);else alert('이 칸에는 제품목록 캡처 이미지(PNG/JPG/WEBP)를 올려주세요.')});sd.addEventListener('click',()=>$('shotFiles').click());
 
 function cleanPoRowsFromWorksheet(ws){const out=[];let h=findHeader(ws,['상품번호','상품바코드','상품이름','발주수량']);if(h){const vals=h.vals,idx=n=>vals.findIndex(v=>v===n),pn=idx('상품번호'),bc=idx('상품바코드'),name=idx('상품이름'),qty=idx('발주수량');for(let r=h.row+1;r<=ws.rowCount;r++){const row=ws.getRow(r),p=norm(row.getCell(pn).value),b=norm(row.getCell(bc).value),n=norm(row.getCell(name).value),q=num(row.getCell(qty).value);if((p||b)&&q>0)out.push({productNumber:p,barcode:b,productName:n,qty})}return out}for(let r=1;r<=ws.rowCount;r++){const row=ws.getRow(r),p=norm(row.getCell(1).value),b=norm(row.getCell(2).value),n=norm(row.getCell(3).value),q=num(row.getCell(4).value);if((/^\d+$/.test(p)||b)&&b&&n&&q>0)out.push({productNumber:p,barcode:b,productName:n,qty})}return out}
