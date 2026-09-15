@@ -492,51 +492,108 @@ async function importMasterFile(file){
 $('masterFile').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importMasterFile(f);e.target.value=''});const md=$('masterDrop');['dragenter','dragover'].forEach(n=>md.addEventListener(n,e=>{e.preventDefault();md.classList.add('drag')}));['dragleave','drop'].forEach(n=>md.addEventListener(n,e=>{e.preventDefault();md.classList.remove('drag')}));md.addEventListener('drop',e=>{const all=[...(e.dataTransfer?.files||[])],excel=all.find(x=>/\.(xlsx|xlsm)$/i.test(x.name||'')),imgs=all.filter(x=>/^image\/(png|jpeg|webp)$/i.test(x.type||'')||/\.(png|jpe?g|webp)$/i.test(x.name||''));if(excel)importMasterFile(excel);else if(imgs.length)analyzeShotFiles(imgs);else alert('제품리스트/쿠팡 PO Excel 또는 제품목록 캡처 이미지(PNG/JPG/WEBP)를 올려주세요.')});md.addEventListener('click',()=>$('masterFile').click());
 $('shotFiles').addEventListener('change',e=>{if(e.target.files?.length)analyzeShotFiles(e.target.files);e.target.value=''});const sd=$('shotDrop');['dragenter','dragover'].forEach(n=>sd.addEventListener(n,e=>{e.preventDefault();sd.classList.add('drag')}));['dragleave','drop'].forEach(n=>sd.addEventListener(n,e=>{e.preventDefault();sd.classList.remove('drag')}));sd.addEventListener('drop',e=>{const fs=[...(e.dataTransfer?.files||[])].filter(x=>/^image\/(png|jpeg|webp)$/i.test(x.type||'')||/\.(png|jpe?g|webp)$/i.test(x.name||''));if(fs.length)analyzeShotFiles(fs);else alert('이 칸에는 제품목록 캡처 이미지(PNG/JPG/WEBP)를 올려주세요.')});sd.addEventListener('click',()=>$('shotFiles').click());
 
+function excelCellValue(v){
+  if(v&&typeof v==='object'){
+    if(Object.prototype.hasOwnProperty.call(v,'result'))return v.result;
+    if(Object.prototype.hasOwnProperty.call(v,'text'))return v.text;
+    if(Array.isArray(v.richText))return v.richText.map(x=>x?.text||'').join('');
+  }
+  return v;
+}
+function normalizePoProductNumber(v){return norm(excelCellValue(v)).replace(/\.0+$/,'')}
+function poQty(v){return num(excelCellValue(v))}
 function cleanPoRowsFromWorksheet(ws){
   const out=[];
-  // 1) 현재 쿠팡 PO 형식: 센터는 읽되 합산 키에는 사용하지 않습니다.
-  //    확정수량을 최우선으로 사용하고, 구형 파일은 발주수량/주문수량/수량도 지원합니다.
-  const h=findHeaderAliases(ws,[['상품번호'],['상품바코드','바코드'],['상품이름','상품명','제품명'],['확정수량','발주수량','주문수량','수량','납품수량']]);
+  // 1) 헤더가 있는 쿠팡 PO는 "확정수량"을 가장 먼저 찾습니다.
+  //    확정수량이 존재하면 발주수량/주문수량/수량 열은 절대 섞어 읽지 않습니다.
+  const h=findHeaderAliases(ws,[['상품번호'],['상품바코드','바코드'],['상품이름','상품명','제품명']]);
   if(h){
     const vals=h.vals;
     const pn=findAliasCol(vals,['상품번호']);
     const bc=findAliasCol(vals,['상품바코드','바코드']);
     const name=findAliasCol(vals,['상품이름','상품명','제품명']);
-    // 확정수량이 있으면 반드시 확정수량을 사용합니다.
-    const qty=findAliasCol(vals,['확정수량','발주수량','주문수량','수량','납품수량']);
+    const confirmedQty=findAliasCol(vals,['확정수량']);
+    const legacyQty=findAliasCol(vals,['발주수량','주문수량','납품수량','수량']);
+    const qty=confirmedQty>0?confirmedQty:legacyQty;
+    const qtyHeader=confirmedQty>0?'확정수량':(qty>0?norm(vals[qty]):'');
     if(pn>0&&bc>0&&name>0&&qty>0){
       for(let r=h.row+1;r<=ws.rowCount;r++){
-        const row=ws.getRow(r),p=norm(row.getCell(pn).value),b=norm(row.getCell(bc).value),n=norm(row.getCell(name).value),q=num(row.getCell(qty).value);
-        if((p||b)&&q>0)out.push({productNumber:p,barcode:b,productName:n,qty});
+        const row=ws.getRow(r);
+        const p=normalizePoProductNumber(row.getCell(pn).value);
+        const b=norm(excelCellValue(row.getCell(bc).value)).replace(/\s+/g,'').toUpperCase();
+        const n=norm(excelCellValue(row.getCell(name).value));
+        const q=poQty(row.getCell(qty).value);
+        if((p||b)&&q>0)out.push({productNumber:p,barcode:b,productName:n,qty:q,sourceRow:r});
       }
-      if(out.length)return out;
+      if(out.length)return {rows:out,qtyHeader,total:out.reduce((s,x)=>s+x.qty,0),sheetName:ws.name};
     }
   }
 
-  // 2) 구형 PO 형식(헤더 없음): A:E와 H:L 두 블록을 모두 읽습니다.
-  //    A/H 상품번호, B/I 바코드, C/J 상품명, D/K 발주수량, E/L 단가 구조입니다.
-  // 3) 선적형 5열 자료도 보조 지원: A 상품번호, B 상품명, C 바코드, D 센터, E 수량.
+  // 2) 헤더가 없는 구형 PO만 아래 고정열 방식으로 읽습니다.
+  //    헤더가 있는 파일에서 이 보조 로직을 중복 실행하지 않습니다.
   for(let r=1;r<=ws.rowCount;r++){
     const row=ws.getRow(r);
-    const a=norm(row.getCell(1).value),b=norm(row.getCell(2).value),c=norm(row.getCell(3).value),d=norm(row.getCell(4).value),e=num(row.getCell(5).value);
-    const dQty=num(row.getCell(4).value);
-    if((a||c)&&/^\d+(?:\.0+)?$/.test(a)&&b&&c&&dQty>0){
-      out.push({productNumber:a.replace(/\.0+$/,''),barcode:b,productName:c,qty:dQty});
-    }else if((a||c)&&/^\d+(?:\.0+)?$/.test(a)&&b&&c&&e>0){
-      out.push({productNumber:a.replace(/\.0+$/,''),barcode:c,productName:b,qty:e});
+    const a=normalizePoProductNumber(row.getCell(1).value),b=norm(excelCellValue(row.getCell(2).value)),c=norm(excelCellValue(row.getCell(3).value));
+    const dQty=poQty(row.getCell(4).value),eQty=poQty(row.getCell(5).value);
+    if(/^\d+$/.test(a)&&b&&c&&dQty>0){
+      out.push({productNumber:a,barcode:b.replace(/\s+/g,'').toUpperCase(),productName:c,qty:dQty,sourceRow:r});
+    }else if(/^\d+$/.test(a)&&b&&c&&eQty>0){
+      out.push({productNumber:a,barcode:c.replace(/\s+/g,'').toUpperCase(),productName:b,qty:eQty,sourceRow:r});
     }
-
-    const hpn=norm(row.getCell(8).value),hbc=norm(row.getCell(9).value),hn=norm(row.getCell(10).value),hq=num(row.getCell(11).value);
-    if((hpn||hbc)&&/^\d+(?:\.0+)?$/.test(hpn)&&hbc&&hn&&hq>0){
-      out.push({productNumber:hpn.replace(/\.0+$/,''),barcode:hbc,productName:hn,qty:hq});
-    }
+    const hpn=normalizePoProductNumber(row.getCell(8).value),hbc=norm(excelCellValue(row.getCell(9).value)),hn=norm(excelCellValue(row.getCell(10).value)),hq=poQty(row.getCell(11).value);
+    if(/^\d+$/.test(hpn)&&hbc&&hn&&hq>0)out.push({productNumber:hpn,barcode:hbc.replace(/\s+/g,'').toUpperCase(),productName:hn,qty:hq,sourceRow:r});
   }
-  return out;
+  return {rows:out,qtyHeader:'구형 발주수량',total:out.reduce((s,x)=>s+x.qty,0),sheetName:ws.name};
 }
-async function parsePoFile(file){const wb=new ExcelJS.Workbook();await wb.xlsx.load(await file.arrayBuffer());const preferred=[...wb.worksheets].sort((a,b)=>(a.name==='상품목록'?-1:0)-(b.name==='상품목록'?-1:0));let best=[];for(const ws of preferred){const rows=cleanPoRowsFromWorksheet(ws);if(rows.length>best.length)best=rows;if(ws.name==='상품목록'&&rows.length)break}if(!best.length)throw new Error(`${file.name}: 상품번호/바코드/확정수량 또는 발주수량을 찾지 못했습니다.`);return best}
-async function acceptPoFiles(files){const arr=[...files].filter(f=>/\.(xlsx|xlsm)$/i.test(f.name||''));if(!arr.length)return alert('Excel PO 파일을 선택해 주세요.');try{setStatus('poStatus','PO 파일을 분석하는 중입니다…','work');poFilesState=[];rawPoRows=[];for(let i=0;i<arr.length;i++){const f=arr[i];setStatus('poStatus',`PO 분석 중… ${i+1}/${arr.length} · ${f.name}`,'work');const rows=await parsePoFile(f);poFilesState.push({name:f.name,count:rows.length});rawPoRows.push(...rows)}renderPoFiles();mergeAndMatch();setStatus('poStatus',`${arr.length}개 파일 · 원본 ${rawPoRows.length.toLocaleString()}행 분석 완료`,'ok')}catch(e){console.error(e);setStatus('poStatus','PO 분석 실패: '+e.message,'bad');alert('PO 분석 실패\n'+e.message)}}
-function renderPoFiles(){$('poFileChips').innerHTML=poFilesState.map(x=>`<span class="chip">${esc(x.name)} · ${x.count.toLocaleString()}행</span>`).join('')}
-function mergeAndMatch(){const pnMap=new Map(),bcMap=new Map(),rows=[];for(const src of rawPoRows){const pn=norm(src.productNumber),bc=norm(src.barcode).replace(/\s+/g,'').toUpperCase();let obj=(pn&&pnMap.get(pn))||(bc&&bcMap.get(bc));if(!obj){obj={productNumber:pn,barcode:bc,poName:src.productName||'',qty:0,firstIndex:rows.length};rows.push(obj)}obj.qty+=num(src.qty);if(pn)pnMap.set(pn,obj);if(bc)bcMap.set(bc,obj)}const masterPN=new Map(),masterBC=new Map();for(const p of products){if(p.productNumber)masterPN.set(norm(p.productNumber),p);if(p.barcode)masterBC.set(norm(p.barcode).replace(/\s+/g,'').toUpperCase(),p)}mergedOrders=rows.map(x=>{const p=(x.productNumber&&masterPN.get(x.productNumber))||(x.barcode&&masterBC.get(x.barcode))||null;const cavity=p?num(p.cavity)||1:0;return {...x,master:p,productName:p?.productName||x.poName||'',barcode:p?.barcode||x.barcode||'',productNumber:p?.productNumber||x.productNumber||'',cavity,pieces:p?x.qty*cavity:0}});renderOrderPreview()}
+async function parsePoFile(file){
+  const wb=new ExcelJS.Workbook();await wb.xlsx.load(await file.arrayBuffer());
+  const preferred=[...wb.worksheets].sort((a,b)=>(a.name==='상품목록'?-1:0)-(b.name==='상품목록'?-1:0));
+  let best=null;
+  for(const ws of preferred){
+    const parsed=cleanPoRowsFromWorksheet(ws);
+    if(parsed.rows.length&&(!best||parsed.rows.length>best.rows.length))best=parsed;
+    if(ws.name==='상품목록'&&parsed.rows.length){best=parsed;break}
+  }
+  if(!best?.rows?.length)throw new Error(`${file.name}: 상품번호/바코드/확정수량 또는 발주수량을 찾지 못했습니다.`);
+  return best;
+}
+async function acceptPoFiles(files){
+  const arr=[...files].filter(f=>/\.(xlsx|xlsm)$/i.test(f.name||''));if(!arr.length)return alert('Excel PO 파일을 선택해 주세요.');
+  try{
+    setStatus('poStatus','PO 파일을 분석하는 중입니다…','work');poFilesState=[];rawPoRows=[];
+    for(let i=0;i<arr.length;i++){
+      const f=arr[i];setStatus('poStatus',`PO 분석 중… ${i+1}/${arr.length} · ${f.name}`,'work');
+      const parsed=await parsePoFile(f);
+      poFilesState.push({name:f.name,count:parsed.rows.length,total:parsed.total,qtyHeader:parsed.qtyHeader,sheetName:parsed.sheetName});
+      rawPoRows.push(...parsed.rows.map(x=>({...x,sourceFile:f.name})));
+    }
+    renderPoFiles();mergeAndMatch();
+    const sourceTotal=rawPoRows.reduce((s,x)=>s+num(x.qty),0);
+    setStatus('poStatus',`${arr.length}개 파일 · 원본 ${rawPoRows.length.toLocaleString()}행 · 원본 수량 ${sourceTotal.toLocaleString()}개 분석 완료`,'ok');
+  }catch(e){console.error(e);setStatus('poStatus','PO 분석 실패: '+e.message,'bad');alert('PO 분석 실패\n'+e.message)}
+}
+function renderPoFiles(){$('poFileChips').innerHTML=poFilesState.map(x=>`<span class="chip">${esc(x.name)} · ${x.count.toLocaleString()}행 · ${esc(x.qtyHeader||'수량')} ${num(x.total).toLocaleString()}개</span>`).join('')}
+function mergeAndMatch(){
+  // 동일상품 합산 기준은 "상품번호 우선"입니다. 상품번호가 없는 행만 바코드를 키로 사용합니다.
+  // 센터, 제품등록 여부, 상품명은 합산 키에 사용하지 않습니다.
+  const byKey=new Map(),rows=[];
+  for(const src of rawPoRows){
+    const pn=normalizePoProductNumber(src.productNumber),bc=norm(src.barcode).replace(/\s+/g,'').toUpperCase();
+    if(!pn&&!bc)continue;
+    const key=pn?`PN:${pn}`:`BC:${bc}`;
+    let obj=byKey.get(key);
+    if(!obj){obj={productNumber:pn,barcode:bc,poName:src.productName||'',qty:0,firstIndex:rows.length};byKey.set(key,obj);rows.push(obj)}
+    obj.qty+=num(src.qty);
+    if(!obj.poName&&src.productName)obj.poName=src.productName;
+    if(!obj.barcode&&bc)obj.barcode=bc;
+  }
+  const sourceTotal=rawPoRows.reduce((s,x)=>s+num(x.qty),0),mergedTotal=rows.reduce((s,x)=>s+num(x.qty),0);
+  if(Math.abs(sourceTotal-mergedTotal)>0.000001)throw new Error(`수량 검증 실패: 원본 ${sourceTotal}개 / 합산 ${mergedTotal}개`);
+  const masterPN=new Map(),masterBC=new Map();
+  for(const p of products){if(p.productNumber)masterPN.set(normalizePoProductNumber(p.productNumber),p);if(p.barcode)masterBC.set(norm(p.barcode).replace(/\s+/g,'').toUpperCase(),p)}
+  mergedOrders=rows.map(x=>{const p=(x.productNumber&&masterPN.get(x.productNumber))||(x.barcode&&masterBC.get(x.barcode))||null;const cavity=p?num(p.cavity)||1:0;return {...x,master:p,productName:p?.productName||x.poName||'',barcode:p?.barcode||x.barcode||'',productNumber:p?.productNumber||x.productNumber||'',cavity,pieces:p?x.qty*cavity:0}});
+  renderOrderPreview();
+}
 function rematchOrders(){mergeAndMatch();setStatus('poStatus',rawPoRows.length?'제품 목록 기준으로 다시 매칭했습니다.':'PO 파일을 먼저 올려주세요.',rawPoRows.length?'ok':'')}
 function renderOrderPreview(){const missing=mergedOrders.filter(x=>!x.master),totalQty=mergedOrders.reduce((s,x)=>s+x.qty,0),pieces=mergedOrders.reduce((s,x)=>s+x.pieces,0);$('kRaw').textContent=rawPoRows.length.toLocaleString();$('kMerged').textContent=mergedOrders.length.toLocaleString();$('kQty').textContent=totalQty.toLocaleString();$('kPieces').textContent=pieces.toLocaleString();$('kMissing').textContent=missing.length.toLocaleString();$('downloadOrderBtn').disabled=!mergedOrders.length||!!missing.length;$('missingNote').style.display=missing.length?'block':'none';$('missingNote').innerHTML=missing.length?`<b>제품 목록에 없는 상품 ${missing.length}개가 있습니다.</b> 1번 제품 목록 관리에서 먼저 등록한 뒤 <b>제품 목록 다시 매칭</b>을 눌러주세요.<br>${missing.slice(0,12).map(x=>esc(`${x.productNumber} / ${x.barcode} / ${x.productName}`)).join('<br>')}${missing.length>12?'<br>…':''}`:'';$('orderPreviewBody').innerHTML=mergedOrders.length?mergedOrders.map((x,i)=>`<tr class="${x.master?'':'unmatched'}"><td class="center">${i+1}</td><td class="barcode">${esc(x.barcode)}</td><td class="name">${esc(x.productName)}</td><td class="center">${x.master?.imageUrl?`<img class="preview-img" loading="lazy" src="${esc(x.master.imageUrl)}">`:'-'}</td><td class="center">${x.master?x.cavity:'-'}</td><td class="num">${x.qty.toLocaleString()}</td><td class="num">${x.master?x.pieces.toLocaleString():'-'}</td><td class="center">${x.master?'매칭 완료':'미등록'}</td></tr>`).join(''):'<tr><td colspan="8" class="empty">PO 파일을 올리면 합산 결과가 표시됩니다.</td></tr>'}
 function resetPo(){poFilesState=[];rawPoRows=[];mergedOrders=[];renderPoFiles();renderOrderPreview();setStatus('poStatus','PO 파일을 올려주세요.');setStatus('downloadStatus','');$('poFiles').value=''}
