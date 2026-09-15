@@ -50,7 +50,7 @@
       <div class="shot-cavity">
         <div class="shot-title">제품목록 캡처 이미지로 신규 제품 추가</div>
         <div id="shotDrop" class="dropzone shot-drop">
-          <div><strong>제품목록 화면 캡처(PNG/JPG/WEBP)를 여기에 끌어놓으세요</strong><small>여러 장 가능 · 캡처의 각 행에서 제품 사진 / 상품번호 / 상품명 / 바코드를 읽고, 상품명에 “2개 1세트”가 있으면 캐비티까지 자동 설정합니다.</small></div>
+          <div><strong>제품목록 화면 캡처(PNG/JPG/WEBP)를 여기에 끌어놓으세요</strong><small>여러 장 가능 · 각 행의 열을 따로 확대 인식해 제품 사진 / 상품번호 / 상품명 / 바코드를 읽고, “2개 1세트” 등은 캐비티까지 자동 설정합니다. 정확도를 위해 행별 분석은 조금 더 시간이 걸릴 수 있습니다.</small></div>
         </div>
         <div class="row" style="margin-top:8px">
           <button class="btn primary" type="button" onclick="$('shotFiles').click()">캡처 이미지 여러 장 선택</button>
@@ -245,6 +245,63 @@ function cropShotProductImage(canvas,band){
   const d=ctx.getImageData(x0,y0,cw,ch),a=d.data;let minX=cw,minY=ch,maxX=-1,maxY=-1,count=0;for(let y=0;y<ch;y++){for(let x=0;x<cw;x++){const i=(y*cw+x)*4,r=a[i],g=a[i+1],b=a[i+2],mx=Math.max(r,g,b),mn=Math.min(r,g,b),brightness=(r+g+b)/3;if(brightness<230||mx-mn>18){if(x<2||y<2||x>cw-3||y>ch-3)continue;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);count++}}}
   if(count<80||maxX-minX<8||maxY-minY<8)return null;const pad=5;minX=Math.max(0,minX-pad);minY=Math.max(0,minY-pad);maxX=Math.min(cw-1,maxX+pad);maxY=Math.min(ch-1,maxY+pad);const sw=maxX-minX+1,sh=maxY-minY+1,out=document.createElement('canvas'),size=240;out.width=size;out.height=size;const o=out.getContext('2d');o.fillStyle='#fff';o.fillRect(0,0,size,size);const sc=Math.min((size-12)/sw,(size-12)/sh),dw=sw*sc,dh=sh*sc;o.drawImage(canvas,x0+minX,y0+minY,sw,sh,(size-dw)/2,(size-dh)/2,dw,dh);const url=out.toDataURL('image/jpeg',.84);return {ext:'jpeg',base64:url.split(',')[1],preview:url}
 }
+
+function cropShotOcrField(base,band,x0Ratio,x1Ratio,kind){
+  const x0=Math.max(0,Math.floor(base.width*x0Ratio)),x1=Math.min(base.width,Math.ceil(base.width*x1Ratio));
+  const y0=Math.max(0,Math.floor(band.y0+2)),y1=Math.min(base.height,Math.ceil(band.y1-2));
+  const sw=Math.max(1,x1-x0),sh=Math.max(1,y1-y0);
+  const targetH=kind==='name'?220:180;
+  const scale=Math.min(5,Math.max(2.2,targetH/Math.max(1,sh)));
+  const c=document.createElement('canvas');c.width=Math.max(1,Math.round(sw*scale));c.height=Math.max(1,Math.round(sh*scale));
+  const ctx=c.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);ctx.drawImage(base,x0,y0,sw,sh,0,0,c.width,c.height);
+  const d=ctx.getImageData(0,0,c.width,c.height),a=d.data;
+  for(let i=0;i<a.length;i+=4){
+    let y=.299*a[i]+.587*a[i+1]+.114*a[i+2];
+    if(kind==='name'){
+      y=(y-128)*1.55+128;
+      if(y>246)y=255; else if(y<72)y=0;
+    }else{
+      y=(y-128)*1.85+128;
+      y=y>205?255:(y<145?0:y);
+    }
+    y=Math.max(0,Math.min(255,y));a[i]=a[i+1]=a[i+2]=y;
+  }
+  ctx.putImageData(d,0,0);return c;
+}
+async function ocrShotField(worker,base,band,kind){
+  let x0=.16,x1=.455,whitelist='0123456789',psm='7';
+  if(kind==='name'){x0=.445;x1=.735;whitelist='';psm='6'}
+  else if(kind==='barcode'){x0=.715;x1=.915;whitelist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';psm='7'}
+  const c=cropShotOcrField(base,band,x0,x1,kind);
+  const params={tessedit_pageseg_mode:psm,preserve_interword_spaces:'1'};
+  params.tessedit_char_whitelist=whitelist;
+  await worker.setParameters(params);
+  const r=await worker.recognize(c);
+  return norm(r?.data?.text||'');
+}
+function cleanOcrProductName(v){
+  return cleanShotName(String(v||'')
+    .replace(/[\r\n]+/g,' ')
+    .replace(/\s{2,}/g,' ')
+    .replace(/^[^가-힣A-Za-z0-9]+/,'')
+    .replace(/[^가-힣A-Za-z0-9%+()\[\]{}.,/&×xX*\-_'"㎖mlML㎝cmCM㎡m²gGkgKG\s]/g,' '));
+}
+async function parseShotRowHighAccuracy(worker,base,band,fileName,rowNo){
+  const pnRaw=await ocrShotField(worker,base,band,'productNumber');
+  const bcRaw=await ocrShotField(worker,base,band,'barcode');
+  const nameRaw=await ocrShotField(worker,base,band,'name');
+  let productNumber=extractProductNumber(pnRaw),barcode=extractBarcode(bcRaw),productName=cleanOcrProductName(nameRaw);
+  // 숫자/바코드가 한 번에 안 잡히면 더 강한 단일행 OCR로 한 번 재시도
+  if(!productNumber){
+    const c=cropShotOcrField(base,band,.16,.455,'productNumber');await worker.setParameters({tessedit_pageseg_mode:'8',tessedit_char_whitelist:'0123456789',preserve_interword_spaces:'1'});const r=await worker.recognize(c);productNumber=extractProductNumber(r?.data?.text||'');
+  }
+  if(!barcode){
+    const c=cropShotOcrField(base,band,.715,.915,'barcode');await worker.setParameters({tessedit_pageseg_mode:'8',tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',preserve_interword_spaces:'1'});const r=await worker.recognize(c);barcode=extractBarcode(r?.data?.text||'');
+  }
+  if(!productNumber&&!barcode)return null;
+  const cav=analyzeCavityName(productName),cavity=cav.cavity||1,existing=findExistingShotProduct(productNumber,barcode),image=cropShotProductImage(base,band);
+  return {productNumber,barcode,productName,cavity,cavityReason:cav.cavity?cav.reason:'수량표현 없음 → 1',existing,image,sources:[fileName],rowNo,valid:!!((productNumber||barcode)&&productName)};
+}
 function parseShotRow(words,band,canvas,fileName,rowNo){
   const w=canvas.width,pnText=wordsToText(zoneWords(words,band,.16,.455,w)),nameText=wordsToText(zoneWords(words,band,.44,.735,w)),bcText=wordsToText(zoneWords(words,band,.715,.905,w));let productNumber=extractProductNumber(pnText),barcode=extractBarcode(bcText),productName=cleanShotName(nameText);
   if(!productNumber&&!barcode)return null;if(!productName)productName='';const cav=analyzeCavityName(productName),cavity=cav.cavity||1,existing=findExistingShotProduct(productNumber,barcode),image=cropShotProductImage(canvas,band);
@@ -265,16 +322,27 @@ async function analyzeShotFiles(files){
   const arr=[...files].filter(f=>/^image\/(png|jpeg|webp)$/i.test(f.type||'')||/\.(png|jpe?g|webp)$/i.test(f.name||''));if(!arr.length)return alert('제품목록 캡처 이미지(PNG/JPG/WEBP)를 선택해 주세요.');
   shotFilesState=arr.map(f=>f.name);$('shotFileChips').innerHTML=shotFilesState.map(n=>`<span class="chip">${esc(n)}</span>`).join('');shotProductAnalysis=[];renderShotPreview();
   try{
-    setStatus('shotStatus','문자 인식 모듈을 준비하는 중입니다…','work');await ensureTesseract();let currentName='',currentIndex=0;
-    const worker=await Tesseract.createWorker('kor+eng',1,{logger:m=>{if(m&&m.status==='recognizing text')setStatus('shotStatus',`캡처 분석 중… ${currentIndex+1}/${arr.length} · ${currentName} · ${Math.round((m.progress||0)*100)}%`,'work')}});const found=new Map();
+    setStatus('shotStatus','고정밀 문자 인식 모듈을 준비하는 중입니다…','work');await ensureTesseract();let currentName='',currentIndex=0,currentRow=0,totalRows=0;
+    const worker=await Tesseract.createWorker('kor+eng',1,{logger:m=>{if(m&&m.status==='recognizing text')setStatus('shotStatus',`고정밀 캡처 분석 중… ${currentIndex+1}/${arr.length} · ${currentName}${totalRows?` · ${currentRow}/${totalRows}행`:''} · ${Math.round((m.progress||0)*100)}%`,'work')}});const found=new Map();
     try{
       for(let i=0;i<arr.length;i++){
-        const f=arr[i];currentIndex=i;currentName=f.name;setStatus('shotStatus',`캡처 준비 중… ${i+1}/${arr.length} · ${f.name}`,'work');const base=await imageFileToCanvas(f),bands=detectScreenshotRowBands(base);if(!bands.length)continue;const ocr=ocrCanvasFromBase(base),sx=ocr.width/base.width,sy=ocr.height/base.height;const ret=await worker.recognize(ocr,{}, {text:true,tsv:true});let words=parseTsvWords(ret?.data?.tsv||'',sx,sy);
-        if(!words.length){const text=ret?.data?.text||'';console.warn('TSV 없음, 전체 OCR 텍스트만 반환됨',text.slice(0,200))}
-        let rowNo=0;for(const band of bands){rowNo++;let rec=parseShotRow(words,band,base,f.name,rowNo);if(!rec){const rc=cropShotTextBandCanvas(base,band),rr=await worker.recognize(rc);rec=parseLooseShotRowText(rr?.data?.text||'',base,band,f.name,rowNo)}if(!rec)continue;const key=shotKey(rec),old=found.get(key);if(!old)found.set(key,rec);else{if(!old.image&&rec.image)old.image=rec.image;if((rec.productName||'').length>(old.productName||'').length)old.productName=rec.productName;if(!old.barcode&&rec.barcode)old.barcode=rec.barcode;if(!old.productNumber&&rec.productNumber)old.productNumber=rec.productNumber;if(!old.sources.includes(f.name))old.sources.push(f.name);old.existing=findExistingShotProduct(old.productNumber,old.barcode);const c=analyzeCavityName(old.productName);old.cavity=c.cavity||old.cavity||1;old.cavityReason=c.cavity?c.reason:'수량표현 없음 → 1';old.valid=!!((old.productNumber||old.barcode)&&old.productName)}}
+        const f=arr[i];currentIndex=i;currentName=f.name;setStatus('shotStatus',`캡처 행을 찾는 중… ${i+1}/${arr.length} · ${f.name}`,'work');
+        const base=await imageFileToCanvas(f),bands=detectScreenshotRowBands(base);if(!bands.length)continue;totalRows=bands.length;currentRow=0;
+        let rowNo=0;for(const band of bands){
+          rowNo++;currentRow=rowNo;setStatus('shotStatus',`고정밀 캡처 분석 중… ${i+1}/${arr.length} · ${f.name} · ${rowNo}/${bands.length}행`,'work');
+          let rec=await parseShotRowHighAccuracy(worker,base,band,f.name,rowNo);
+          if(!rec)continue;
+          const key=shotKey(rec),old=found.get(key);if(!old)found.set(key,rec);else{
+            if(!old.image&&rec.image)old.image=rec.image;
+            if((rec.productName||'').length>(old.productName||'').length)old.productName=rec.productName;
+            if(!old.barcode&&rec.barcode)old.barcode=rec.barcode;if(!old.productNumber&&rec.productNumber)old.productNumber=rec.productNumber;
+            if(!old.sources.includes(f.name))old.sources.push(f.name);old.existing=findExistingShotProduct(old.productNumber,old.barcode);
+            const c=analyzeCavityName(old.productName);old.cavity=c.cavity||old.cavity||1;old.cavityReason=c.cavity?c.reason:'수량표현 없음 → 1';old.valid=!!((old.productNumber||old.barcode)&&old.productName)
+          }
+        }
       }
     }finally{await worker.terminate()}
-    shotProductAnalysis=[...found.values()];renderShotPreview();const valid=shotProductAnalysis.filter(x=>x.valid),fresh=valid.filter(x=>!x.existing),existing=valid.filter(x=>x.existing),need=shotProductAnalysis.filter(x=>!x.valid);setStatus('shotStatus',`분석 완료 · 신규 ${fresh.length.toLocaleString()}개 / 기존 ${existing.length.toLocaleString()}개 / 확인 필요 ${need.length.toLocaleString()}개`,'ok')
+    shotProductAnalysis=[...found.values()];renderShotPreview();const valid=shotProductAnalysis.filter(x=>x.valid),fresh=valid.filter(x=>!x.existing),existing=valid.filter(x=>x.existing),need=shotProductAnalysis.filter(x=>!x.valid);setStatus('shotStatus',`고정밀 분석 완료 · 신규 ${fresh.length.toLocaleString()}개 / 기존 ${existing.length.toLocaleString()}개 / 확인 필요 ${need.length.toLocaleString()}개`,'ok')
   }catch(e){console.error(e);setStatus('shotStatus','캡처 분석 실패: '+e.message,'bad');alert('캡처 이미지 분석 실패\n'+e.message)}
 }
 async function saveShotProducts(){
