@@ -4210,5 +4210,153 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 // ===== /v75 =====
 </script>
+
+<script id="v76-manual-close-revision-guard">
+// ===== v76: 수동 팔레트 마감 revision guard =====
+// 수동 마감/취소를 별도 revision으로 추적해, 늦게 도착한 이전 서버 상태가
+// 최신 수동 마감 경계를 되돌리지 못하게 합니다. 같은 PC에는 localStorage shadow도 유지합니다.
+(function(){
+  if(window.__TC_V76_MANUAL_CLOSE_REVISION_GUARD__)return;
+  window.__TC_V76_MANUAL_CLOSE_REVISION_GUARD__=true;
+
+  function validIdsV76(state){
+    const valid=new Set((state?.completed||[]).map(g=>String(g?.id||'')).filter(Boolean));
+    return [...new Set((state?.manualPalletBreaks||[]).map(String).filter(id=>valid.has(id)))];
+  }
+  function scopeV76(){
+    try{
+      const s=(typeof TC_ACCOUNT_SCOPE_V50!=='undefined'&&TC_ACCOUNT_SCOPE_V50)?TC_ACCOUNT_SCOPE_V50:{};
+      return (s.legacy?'legacy':String(s.uid||'unknown')).replace(/[^A-Za-z0-9._-]/g,'_');
+    }catch(_){return 'unknown'}
+  }
+  function shadowKeyV76(){return 'tcManualPalletBreakV76:'+scopeV76()+':'+String(currentProjectIdV18||'none')}
+  function readShadowV76(){
+    try{const x=JSON.parse(localStorage.getItem(shadowKeyV76())||'{}');return x&&typeof x==='object'?x:{}}catch(_){return{}}
+  }
+  function writeShadowSheetV76(name,state){
+    if(!name||!state)return;
+    try{
+      const x=readShadowV76();
+      x[String(name)]={ids:validIdsV76(state),rev:Number(state.manualPalletBreaksRev||0),savedAt:Date.now()};
+      localStorage.setItem(shadowKeyV76(),JSON.stringify(x));
+    }catch(_){}
+  }
+  function currentMapV76(){
+    const m=new Map();
+    try{for(const [name,state] of palletStates.entries())m.set(String(name),{ids:validIdsV76(state),rev:Number(state?.manualPalletBreaksRev||0)})}catch(_){}
+    return m;
+  }
+  function incomingMapV76(saved){
+    const m=new Map();
+    try{for(const pair of saved?.palletStates||[]){
+      const name=String(pair?.[0]||''),raw=pair?.[1];if(!name||!raw)continue;
+      m.set(name,{ids:Array.isArray(raw.manualPalletBreaks)?raw.manualPalletBreaks.map(String).filter(Boolean):[],rev:Number(raw.manualPalletBreaksRev||0),hasIds:Object.prototype.hasOwnProperty.call(raw,'manualPalletBreaks')});
+    }}catch(_){}
+    return m;
+  }
+  function chooseBoundaryV76(name,prev,incoming,shadow){
+    const candidates=[];
+    if(prev)candidates.push({src:'prev',...prev});
+    if(incoming)candidates.push({src:'incoming',...incoming});
+    if(shadow)candidates.push({src:'shadow',ids:Array.isArray(shadow.ids)?shadow.ids.map(String):[],rev:Number(shadow.rev||0)});
+    candidates.sort((a,b)=>Number(b.rev||0)-Number(a.rev||0));
+    const best=candidates[0]||{ids:[],rev:0};
+    // Migration safety for v75 and older states: a non-empty local/shadow close must not be erased by an old state with no revision.
+    if(Number(best.rev||0)===0){
+      const protectedLocal=candidates.find(c=>(c.src==='prev'||c.src==='shadow')&&Array.isArray(c.ids)&&c.ids.length);
+      if(protectedLocal)return {ids:protectedLocal.ids,rev:0};
+      const nonEmpty=candidates.find(c=>Array.isArray(c.ids)&&c.ids.length);
+      if(nonEmpty)return {ids:nonEmpty.ids,rev:0};
+    }
+    return {ids:Array.isArray(best.ids)?best.ids:[],rev:Number(best.rev||0)};
+  }
+
+  // Every normal state save carries the manual-close revision.
+  const cleanBaseV76=cleanPalletStateForSave;
+  cleanPalletStateForSave=function(state){
+    const out=cleanBaseV76(state);if(!out||!state)return out;
+    out.manualPalletBreaks=validIdsV76(state);
+    out.manualPalletBreaksRev=Number(state.manualPalletBreaksRev||0);
+    return out;
+  };
+
+  // Recovery/4-second remote sync: newest revision wins. Old remote state can no longer cancel a newer local close.
+  const applyBaseV76=window.applyRecoveredState||applyRecoveredState;
+  if(typeof applyBaseV76==='function'){
+    window.applyRecoveredState=applyRecoveredState=function(saved){
+      const prev=currentMapV76(),incoming=incomingMapV76(saved),shadow=readShadowV76();
+      const ret=applyBaseV76.apply(this,arguments);
+      let changed=false;
+      try{
+        for(const [name,state] of palletStates.entries()){
+          const pick=chooseBoundaryV76(String(name),prev.get(String(name)),incoming.get(String(name)),shadow?.[String(name)]);
+          const valid=new Set((state.completed||[]).map(g=>String(g?.id||'')).filter(Boolean));
+          const ids=[...new Set((pick.ids||[]).map(String).filter(id=>valid.has(id)))];
+          const before=JSON.stringify(validIdsV76(state));
+          state.manualPalletBreaks=ids;state.manualPalletBreaksRev=Number(pick.rev||0);
+          if(before!==JSON.stringify(ids))changed=true;
+          try{delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets}catch(_){}
+          try{const ws=workbook?.getWorksheet(name);if(ws){assignVisualRows(ws,state);recalcWorkSheet(ws);writeShadowSheetV76(name,state)}}catch(_){}
+        }
+        const ws=workbook?.getWorksheet(activeSheet);
+        if(ws&&isPackWorkSheet(ws)){renderSheet(true);if(typeof renderInlineDraft==='function')renderInlineDraft();if(typeof refreshManualPalletButtonsV73==='function')refreshManualPalletButtonsV73()}
+      }catch(e){console.warn('v76 manual close revision recovery',e)}
+      if(changed)try{setStatus('✓ 최신 수동 팔레트 마감 상태를 유지했습니다.','ok')}catch(_){}
+      return ret;
+    };
+  }
+
+  // Close/undo: stamp a monotonic revision, save a local shadow immediately, then flush the server state again.
+  const closeBaseV76=window.manualCloseCurrentPalletV73;
+  if(typeof closeBaseV76==='function')window.manualCloseCurrentPalletV73=function(){
+    const ws=typeof currentWorkSheet==='function'?currentWorkSheet():null,state=ws&&isPackWorkSheet(ws)?ensurePalletState(ws):null;
+    const before=state?JSON.stringify(validIdsV76(state)):'';
+    const ret=closeBaseV76.apply(this,arguments);
+    if(state&&before!==JSON.stringify(validIdsV76(state))){
+      state.manualPalletBreaksRev=Math.max(Date.now(),Number(state.manualPalletBreaksRev||0)+1);
+      writeShadowSheetV76(ws.name,state);
+      try{delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets}catch(_){}
+      try{clearTimeout(persistStateTimer)}catch(_){}
+      try{Promise.resolve(savePersistentState()).catch(e=>console.warn('v76 close flush',e))}catch(_){}
+    }
+    return ret;
+  };
+  const undoBaseV76=window.undoLastManualPalletCloseV73;
+  if(typeof undoBaseV76==='function')window.undoLastManualPalletCloseV73=function(){
+    const ws=typeof currentWorkSheet==='function'?currentWorkSheet():null,state=ws&&isPackWorkSheet(ws)?ensurePalletState(ws):null;
+    const before=state?JSON.stringify(validIdsV76(state)):'';
+    const ret=undoBaseV76.apply(this,arguments);
+    if(state&&before!==JSON.stringify(validIdsV76(state))){
+      state.manualPalletBreaksRev=Math.max(Date.now(),Number(state.manualPalletBreaksRev||0)+1);
+      writeShadowSheetV76(ws.name,state);
+      try{delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets}catch(_){}
+      try{clearTimeout(persistStateTimer)}catch(_){}
+      try{Promise.resolve(savePersistentState()).catch(e=>console.warn('v76 undo flush',e))}catch(_){}
+    }
+    return ret;
+  };
+
+  // Before the 12-second safety autosave, re-apply the shadow if an old path rebuilt state without the revision.
+  const saveBaseV76=savePersistentState;
+  savePersistentState=async function(){
+    try{
+      const shadow=readShadowV76();
+      for(const [name,state] of palletStates.entries()){
+        const sh=shadow?.[String(name)];if(!sh)continue;
+        const curRev=Number(state?.manualPalletBreaksRev||0),shRev=Number(sh.rev||0);
+        if(shRev>curRev){
+          const valid=new Set((state.completed||[]).map(g=>String(g?.id||'')).filter(Boolean));
+          state.manualPalletBreaks=[...new Set((sh.ids||[]).map(String).filter(id=>valid.has(id)))];
+          state.manualPalletBreaksRev=shRev;
+          try{delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets}catch(_){}
+        }
+      }
+    }catch(_){}
+    return await saveBaseV76.apply(this,arguments);
+  };
+})();
+// ===== /v76 =====
+</script>
+
 </body>
 </html>
