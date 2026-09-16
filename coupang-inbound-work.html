@@ -3663,5 +3663,116 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 // ===== /v68 =====
 </script>
 
+
+
+<script id="v71-active-project-startup-restore-guard">
+// ===== v71: 목록은 보이는데 작업 화면이 비는 시작 시점 문제 보강 =====
+// 기존 프로젝트/삭제/보관/자동저장 로직은 변경하지 않습니다.
+// 핵심: select가 첫 옵션을 "보여주기만" 하고 currentProjectIdV18가 비어 있는 경우를
+// 실제 활성 프로젝트로 확정한 뒤 source/state를 다시 복구합니다.
+(function(){
+  let v71Busy=false;
+  let v71LastAttempt=0;
+
+  const sleepV71=ms=>new Promise(r=>setTimeout(r,ms));
+  function projectExistsV71(id){
+    return !!id && Array.isArray(projectsV18) && projectsV18.some(p=>String(p?.id||'')===String(id));
+  }
+  function wantedProjectV71(){
+    let q='';try{q=new URLSearchParams(location.search).get('project')||''}catch(_){}
+    if(projectExistsV71(q))return q;
+    let last='';try{last=localStorage.getItem(COUPANG_LAST_PROJECT_KEY_V50)||''}catch(_){}
+    if(projectExistsV71(last))return last;
+    const sel=document.getElementById('projectSelect');
+    const shown=sel?.value||'';
+    if(projectExistsV71(shown))return shown;
+    const p=(projectsV18||[]).find(x=>x&&x.status!=='archived')||(projectsV18||[])[0];
+    return p?.id||'';
+  }
+
+  async function directRestoreV71(id){
+    if(!id||workbook)return !!workbook;
+    // 1) 기존 복구 경로를 먼저 사용합니다. 로컬 IndexedDB + 서버 source/state 모두 그대로 활용합니다.
+    try{
+      sharedLastStateAt=sharedLastSourceAt=sharedLastSnapshotAt=0;
+      await restorePersistentSession();
+      if(workbook)return true;
+    }catch(e){console.warn('v71 normal restore retry failed',e)}
+
+    // 2) 목록은 있는데 복구가 비어 있으면 서버 source를 직접 읽어 화면을 재구성합니다.
+    //    이 경로는 읽기 전용이며 기존 데이터/다른 프로젝트를 수정하지 않습니다.
+    try{
+      const srcRes=await projectFetchV18('/projects/'+encodeURIComponent(id)+'/blob/source',{},false);
+      if(!srcRes.ok)return false;
+      const blob=await srcRes.blob();
+      if(!blob||blob.size<=0)return false;
+      let name='쿠팡입고작업.xlsx';
+      try{name=decHeader(srcRes.headers.get('X-File-Name'))||name}catch(_){}
+      let type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      try{type=decHeader(srcRes.headers.get('X-File-Type'))||blob.type||type}catch(_){}
+      const file=new File([blob],name,{type,lastModified:Date.now()});
+      persistRestoring=true;
+      showLoading(true,'저장된 선적 작업 화면을 복구하는 중…');
+      await loadSourceFileV8(file,'source');
+      let saved=null;
+      try{
+        const stRes=await projectFetchV18('/projects/'+encodeURIComponent(id)+'/state',{},false);
+        if(stRes.ok){const j=await stRes.json();saved=j?.state||null}
+      }catch(_){}
+      if(saved)try{applyRecoveredState(saved)}catch(e){console.warn('v71 state apply failed',e)}
+      currentFileName=name;
+      const fn=document.getElementById('fileName');if(fn)fn.textContent=name+' · 자동저장 복구됨';
+      if(workbook){
+        try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,id)}catch(_){}
+        setStatus('✓ 저장된 선적 작업 화면을 복구했습니다.','ok');
+        return true;
+      }
+    }catch(e){console.warn('v71 direct source restore failed',e)}
+    finally{persistRestoring=false;showLoading(false)}
+    return !!workbook;
+  }
+
+  async function ensureActiveProjectV71(reason='startup'){
+    if(v71Busy||projectSwitchBusyV18)return false;
+    if(!Array.isArray(projectsV18)||!projectsV18.length)return false;
+    const now=Date.now();if(now-v71LastAttempt<120&&reason!=='pageshow')return false;v71LastAttempt=now;
+    v71Busy=true;
+    try{
+      let id=currentProjectIdV18;
+      if(!projectExistsV71(id)){
+        id=wantedProjectV71();
+        if(!id)return false;
+        currentProjectIdV18=id;
+        try{localStorage.setItem(COUPANG_LAST_PROJECT_KEY_V50,id)}catch(_){}
+        sharedLastStateAt=sharedLastSourceAt=sharedLastSnapshotAt=0;
+        sharedStateQueued=null;
+        renderProjectSelectV18();
+      }
+      // select에는 작업명이 보이는데 실제 workbook이 없는 상태면 반드시 복구를 다시 시도합니다.
+      if(!workbook){
+        const ok=await directRestoreV71(id);
+        renderProjectSelectV18();
+        return ok;
+      }
+      return true;
+    }finally{v71Busy=false}
+  }
+
+  // 기존 fetch 로직은 그대로 실행한 뒤, '목록만 있고 활성 작업 없음' 상태만 보정합니다.
+  const fetchBaseV71=window.fetchProjectsV18;
+  if(typeof fetchBaseV71==='function')window.fetchProjectsV18=async function(){
+    const rows=await fetchBaseV71.apply(this,arguments);
+    setTimeout(()=>ensureActiveProjectV71('fetch').catch(()=>{}),0);
+    return rows;
+  };
+
+  // 초기 진입/새로고침/탭 복귀 시 여러 시점에서 짧게 확인합니다.
+  [80,350,900,1800,3500].forEach(ms=>setTimeout(()=>ensureActiveProjectV71('startup').catch(()=>{}),ms));
+  window.addEventListener('pageshow',()=>setTimeout(()=>ensureActiveProjectV71('pageshow').catch(()=>{}),60));
+  window.addEventListener('online',()=>setTimeout(()=>ensureActiveProjectV71('online').catch(()=>{}),80));
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(()=>ensureActiveProjectV71('visible').catch(()=>{}),100)});
+})();
+// ===== /v71 =====
+</script>
 </body>
 </html>
