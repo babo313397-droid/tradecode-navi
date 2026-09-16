@@ -4564,5 +4564,145 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 // ===== /v77 =====
 </script>
 
+
+<script id="v78-state-fence-boxno-outbound">
+// ===== v78: 작업 완료 롤백 방지 + 출고박스번호 즉시 유지 + 박스번호 중복 경고 =====
+(function(){
+  const sync=window.__TC_V78_SYNC__=window.__TC_V78_SYNC__||{rev:0,ack:0,dirty:false,lastMutationAt:0};
+  function nowRevV78(){
+    const n=Date.now();sync.rev=Math.max(n,Number(sync.rev||0)+1);sync.dirty=true;sync.lastMutationAt=n;
+    // 기존 4초 서버 poll이 미확정 로컬 작업을 덮지 못하게 잠급니다.
+    try{sharedApplyingRemote=true}catch(_){ }
+    return sync.rev;
+  }
+  function remotePathV78(){try{return (typeof currentProjectIdV18!=='undefined'&&currentProjectIdV18&&typeof projectApiV18==='function')?projectApiV18('/state'):'/state'}catch(_){return '/state'}}
+  function unlockIfAckedV78(storedRev,sentRev){
+    storedRev=Number(storedRev||0);sentRev=Number(sentRev||0);
+    if(storedRev)sync.ack=Math.max(Number(sync.ack||0),storedRev);
+    // 내가 보낸 최신 revision이 서버에 실제 확정된 경우에만 poll 잠금을 풉니다.
+    if(sentRev>=Number(sync.rev||0)&&storedRev>=sentRev){sync.dirty=false;try{sharedApplyingRemote=false}catch(_){ }}
+  }
+
+  // 모든 박스 완료/수정/취소/수동 팔레트 마감은 markPalletDirty를 지나므로 여기서 전역 revision을 올립니다.
+  const markBaseV78=markPalletDirty;
+  markPalletDirty=function(ws,state){
+    if(!persistRestoring&&(!sharedApplyingRemote||sync.dirty))nowRevV78();
+    return markBaseV78.apply(this,arguments);
+  };
+
+  // 저장 payload에 전체 작업 revision을 함께 보냅니다. 수동 마감뿐 아니라 완료 박스 전체를 보호합니다.
+  const payloadBaseV78=persistentStatePayload;
+  persistentStatePayload=function(){
+    const p=payloadBaseV78.apply(this,arguments);
+    p.stateRevisionV78=Number(sync.rev||0);
+    p.stateClientSavedAtV78=Date.now();
+    p.stateFormatV78=78;
+    return p;
+  };
+
+  // 서버 PUT 완료를 실제 응답까지 확인합니다. PUT이 끝나기 전에는 원격 상태를 화면에 적용하지 않습니다.
+  sharedSendState=async function(value){
+    if(typeof currentProjectIdV18!=='undefined'&&currentProjectIdV18===null)return;
+    const sentRev=Number(value?.stateRevisionV78||0);
+    try{
+      const r=await sharedFetch(remotePathV78(),{method:'PUT',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify({...value})});
+      if(!r.ok)throw new Error('state save '+r.status);
+      const j=await r.json().catch(()=>({}));
+      sharedLastStateAt=Math.max(sharedLastStateAt,Number(j.updatedAt||0));
+      const storedRev=Number(j.stateRevisionV78||sentRev||0);
+      unlockIfAckedV78(storedRev,sentRev);
+      if(j.staleIgnoredV78&&storedRev>sentRev){
+        // 다른 PC의 더 최신 상태가 있는 경우 임의로 덮지 않고 서버 상태를 우선합니다.
+        sync.dirty=false;try{sharedApplyingRemote=false}catch(_){ }
+        setStatus('☁ 다른 PC의 더 최신 작업이 서버에 있어 서버 내용을 우선합니다.','busy');
+      }
+      return j;
+    }catch(e){
+      console.warn('v78 state save failed; local work protected',e);
+      sync.dirty=true;try{sharedApplyingRemote=true}catch(_){ }
+      return null;
+    }
+  };
+
+  // 복구된 서버 revision을 로컬 기준으로 받아둡니다.
+  const applyBaseV78=window.applyRecoveredState||applyRecoveredState;
+  if(typeof applyBaseV78==='function')window.applyRecoveredState=applyRecoveredState=function(saved){
+    const incomingRev=Number(saved?.stateRevisionV78||0);
+    // 미확정 로컬 작업이 있고 서버가 그보다 오래된 상태면 절대 적용하지 않습니다.
+    if(sync.dirty&&incomingRev<Number(sync.rev||0)){
+      schedulePersistentState(0);
+      return;
+    }
+    const r=applyBaseV78.apply(this,arguments);
+    if(incomingRev){sync.rev=Math.max(Number(sync.rev||0),incomingRev);sync.ack=Math.max(Number(sync.ack||0),incomingRev)}
+    if(sync.ack>=sync.rev){sync.dirty=false;try{sharedApplyingRemote=false}catch(_){ }}
+    return r;
+  };
+
+  // ---- 출고 박스번호(Q열) 즉시 표시 ----
+  // v74 수동마감 장식이 팔레트 맵 캐시를 다시 만들더라도, 렌더의 맨 마지막 단계에서 Q열을 다시 칠합니다.
+  function mergedDomV78(start,end,col,label){
+    start=Number(start)||0;end=Number(end)||start;if(!start)return;
+    const first=document.querySelector(`#sheetHost td[data-r="${start}"][data-c="${col}"]`);if(!first)return;
+    first.textContent=label||'';
+    if(end>start){first.setAttribute('rowspan',String(end-start+1));for(let r=start+1;r<=end;r++)document.querySelector(`#sheetHost td[data-r="${r}"][data-c="${col}"]`)?.remove()}
+  }
+  function paintOutboundNowV78(ws){
+    try{
+      if(!ws||!isPackWorkSheet(ws))return;
+      if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13();
+      const state=assignVisualRows(ws,ensurePalletState(ws));
+      if(sheetKind(ws)==='pallet'){
+        for(const seg of state._visualSegments||[]){
+          const first=Number(seg.rows?.start)||0,last=Number(seg.rows?.end)||first;mergedDomV78(first,last,17,seg._outLabel||'');
+          if(first){try{ws.getCell(`Q${first}`).value=seg._outLabel||''}catch(_){ }}
+        }
+      }else if(sheetKind(ws)==='parcel'){
+        for(const g of (state.completed||[]).slice().sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0))){
+          const first=Number(g.rows?.start)||0,last=Number(g.rows?.end)||first;mergedDomV78(first,last,17,g._outLabel||'');
+          if(first){try{ws.getCell(`Q${first}`).value=g._outLabel||''}catch(_){ }}
+        }
+      }
+    }catch(e){console.warn('v78 outbound immediate paint',e)}
+  }
+  const renderPalletBaseV78=renderPalletSheetFast;
+  renderPalletSheetFast=function(keepScroll,ws){const r=renderPalletBaseV78.apply(this,arguments);paintOutboundNowV78(ws);return r};
+  window.paintOutboundNowV78=paintOutboundNowV78;
+
+  // ---- 박스번호 중복 사용 방지 ----
+  function expandBoxNosV78(label,count){
+    label=String(label||'').trim();count=Math.max(1,Math.floor(Number(count)||1));if(!label)return [];
+    const m=label.match(/^\s*(\d+)\s*(?:[~\-]\s*(\d+))?\s*$/);
+    if(!m)return [label.toLowerCase()];
+    let a=Number(m[1]),b=m[2]?Number(m[2]):(a+count-1);if(b<a)[a,b]=[b,a];
+    if(b-a>5000)return [String(a),String(b)];
+    const out=[];for(let n=a;n<=b;n++)out.push(String(n));return out;
+  }
+  function duplicateBoxNoMessageV78(){
+    if(!boxDraft||!workbook)return '';
+    const wanted=expandBoxNosV78(boxDraft.boxNo,boxDraft.boxCount),wantedSet=new Set(wanted);if(!wanted.length)return '';
+    const editingId=boxDraft.mode==='edit'?String(boxDraft.groupId||''):'';
+    for(const ws of visibleWorkSheets()){
+      const st=ensurePalletState(ws);if(!st)continue;
+      for(const g of st.completed||[]){
+        if(editingId&&String(g.id||'')===editingId)continue;
+        const used=expandBoxNosV78(g.boxNo,g.boxCount),hit=used.find(n=>wantedSet.has(n));
+        if(hit)return `박스번호 ${hit}은(는) 이미 “${ws.name}” 작업에서 사용 중입니다.\n\n기존 박스번호와 중복되지 않는 번호를 입력해 주세요.`;
+      }
+    }
+    return '';
+  }
+  const validateInlineBaseV78=validateInlineDraft;
+  validateInlineDraft=function(){const base=validateInlineBaseV78.apply(this,arguments);if(base)return base;return duplicateBoxNoMessageV78()||''};
+  if(typeof validateDraft==='function'){
+    const validateModalBaseV78=validateDraft;validateDraft=function(){const base=validateModalBaseV78.apply(this,arguments);if(base)return base;return duplicateBoxNoMessageV78()||''};
+  }
+
+  // 최초 로드 직후에도 현재 서버 revision과 Q 번호를 정리합니다.
+  setTimeout(()=>{try{const ws=workbook?.getWorksheet(activeSheet);if(ws)paintOutboundNowV78(ws)}catch(_){ }},250);
+})();
+// ===== /v78 =====
+</script>
+
 </body>
 </html>
