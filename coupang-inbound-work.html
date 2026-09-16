@@ -4704,5 +4704,138 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 // ===== /v78 =====
 </script>
 
+
+<script id="v79-pallet-summary-current-center-scan">
+// ===== v79: 팔레트 요약 구분선 + 현재 센터 전용 바코드 검색/타센터 잔량 알림 =====
+(function(){
+  function fmtV79(v, digits=2){
+    const n=Number(v||0);if(!Number.isFinite(n))return '0';
+    return n.toLocaleString('ko-KR',{maximumFractionDigits:digits});
+  }
+  function palletSummaryV79(p){
+    const no=Number(p?.no)||'';
+    const boxes=Math.max(0,Number(p?.totalBoxes)||0);
+    const qty=Math.max(0,Number(p?.totalQty)||0);
+    const weight=Math.max(0,Number(p?.totalWeight)||0);
+    return `${no}번 팔레트 · ${fmtV79(boxes,0)}박스 · 팔레트당 제품수량 ${fmtV79(qty,0)}개 · 팔레트 중량 ${fmtV79(weight,2)}kg`;
+  }
+  function ensureStyleV79(){
+    if(document.getElementById('v79-pallet-summary-style'))return;
+    const s=document.createElement('style');s.id='v79-pallet-summary-style';s.textContent=`
+      #sheetHost .pallet-separator-row{height:32px!important}
+      #sheetHost .pallet-separator-row th,#sheetHost .pallet-separator-row td{height:32px!important;min-height:32px!important;padding:0 8px!important;background:#00b050!important;border-top:1px solid #00843d!important;border-bottom:1px solid #00843d!important;color:#fff!important;font-size:10px!important;font-weight:900!important;line-height:30px!important;text-align:center!important;white-space:nowrap!important}
+      #sheetHost .pallet-separator-row .row-number{color:transparent!important;padding:0!important}
+      #sheetHost .manual-pallet-tail-v74 td span{display:inline!important;padding:0!important;background:transparent!important;border-radius:0!important;line-height:30px!important;color:#fff!important;font-size:10px!important;font-weight:900!important}
+      .center-remain-alert-v79{display:none;margin:5px 0 1px;padding:7px 10px;border:1px solid #e0aa25;border-radius:5px;background:#fff6d7;color:#765200;font-size:10px;font-weight:900;line-height:1.45}
+      .center-remain-alert-v79.show{display:block}
+      .center-remain-alert-v79.none-here{border-color:#d07b24;background:#fff0dc;color:#8a4300}
+    `;document.head.appendChild(s);
+  }
+  function decoratePalletSummariesV79(ws){
+    ensureStyleV79();
+    if(!ws||sheetKind(ws)!=='pallet')return;
+    const state=assignVisualRows(ws,ensurePalletState(ws)),pallets=state?._mappedPallets||[];
+    const normal=[...document.querySelectorAll('#sheetHost .pallet-separator-row:not(.manual-pallet-tail-v74)')];
+    for(let i=0;i<normal.length;i++){
+      const p=pallets[i],td=normal[i]?.querySelector('td');if(!td||!p)continue;
+      td.textContent=palletSummaryV79(p);
+      td.title=td.textContent;
+    }
+    const tail=document.querySelector('#sheetHost .manual-pallet-tail-v74');
+    if(tail){
+      const p=pallets[pallets.length-1],td=tail.querySelector('td');
+      if(td&&p){
+        const next=(Number(p.no)||pallets.length)+1;
+        td.innerHTML=`<span>${palletSummaryV79(p)} · 수동 마감 · 다음 ${next}번 팔레트</span>`;
+        td.title=td.textContent.trim();
+      }
+    }
+  }
+
+  const renderBaseV79=renderPalletSheetFast;
+  renderPalletSheetFast=function(keepScroll,ws){
+    const ret=renderBaseV79.apply(this,arguments);
+    try{decoratePalletSummariesV79(ws)}catch(e){console.warn('v79 pallet summary decorate',e)}
+    return ret;
+  };
+  window.decoratePalletSummariesV79=decoratePalletSummariesV79;
+
+  function alertElV79(){
+    let el=document.getElementById('centerRemainingAlertV79');if(el)return el;
+    const host=document.getElementById('palletInline');if(!host)return null;
+    el=document.createElement('div');el.id='centerRemainingAlertV79';el.className='center-remain-alert-v79';
+    const top=host.querySelector('.pallet-inline-top');if(top)top.insertAdjacentElement('afterend',el);else host.prepend(el);
+    return el;
+  }
+  function hideOtherCenterAlertV79(){const el=alertElV79();if(el){el.classList.remove('show','none-here');el.textContent=''}}
+  function otherCenterRemainV79(barcode,currentWs){
+    const sums=new Map();barcode=norm(barcode);
+    for(const ws of visibleWorkSheets()){
+      if(!isPackWorkSheet(ws)||ws===currentWs)continue;
+      const state=ensurePalletState(ws);if(!state)continue;
+      for(const it of state.incomplete||[]){
+        if(norm(it.barcode)!==barcode)continue;
+        const q=Number(it.remainingQty||0);if(!(q>0))continue;
+        const label=norm(it.center)||ws.name;
+        sums.set(label,(sums.get(label)||0)+q);
+      }
+    }
+    return [...sums.entries()].map(([center,qty])=>({center,qty}));
+  }
+  function otherCenterTextV79(rows){return rows.map(x=>`${x.center} ${Number(x.qty).toLocaleString()}개`).join(' · ')}
+  function currentHasBarcodeV79(ws,barcode){
+    const state=ensurePalletState(ws);if(!state)return false;
+    if(boxDraft?.mode==='edit'&&boxDraft?.sheetName===ws.name){
+      const g=state.completed.find(x=>x.id===boxDraft.groupId);
+      if(g?.items?.some(i=>norm(i.barcode)===barcode))return true;
+    }
+    return (state.incomplete||[]).some(i=>norm(i.barcode)===barcode&&Number(i.remainingQty)>0);
+  }
+  function showOtherCenterAlertV79(rows,currentName,foundHere){
+    const el=alertElV79();if(!el)return;
+    if(!rows.length){hideOtherCenterAlertV79();return}
+    const elsewhere=otherCenterTextV79(rows);
+    el.textContent=foundHere
+      ? `⚠ 다른 센터에도 이 상품의 미작업 수량이 남아 있습니다: ${elsewhere}`
+      : `⚠ 현재 ${currentName}에는 이 상품의 미작업 수량이 없습니다. 다른 센터 미작업 수량: ${elsewhere}`;
+    el.dataset.sheet=currentName;el.classList.toggle('none-here',!foundHere);el.classList.add('show');
+  }
+
+  // 현재 열어 둔 센터/탭 안에서만 바코드를 찾습니다. 다른 센터로 자동 이동하지 않습니다.
+  scanBarcodeInline=function(barcode){
+    barcode=norm(barcode);if(!barcode)return;
+    const ws=currentWorkSheet();
+    if(!isPackWorkSheet(ws)){hideOtherCenterAlertV79();setStatus('팔레트/밀크런/택배 작업 탭에서 바코드를 스캔해 주세요.','bad');return}
+    const foundHere=currentHasBarcodeV79(ws,barcode),others=otherCenterRemainV79(barcode,ws);
+    showOtherCenterAlertV79(others,ws.name,foundHere);
+    if(!foundHere){
+      if(others.length)setStatus(`⚠ ${ws.name}에는 ${barcode} 미작업 수량이 없습니다. 다른 센터: ${otherCenterTextV79(others)}`,'busy');
+      else setStatus(`바코드 ${barcode} : 현재 ${ws.name}의 미완료 품목에서 찾지 못했습니다.`,'bad');
+      focusInlineScan();return;
+    }
+    ensureInlineDraft(ws,false);
+    if(boxDraft.mode==='edit'&&boxDraft.sheetName!==ws.name)boxDraft=newDraft(ws);
+    const before=(boxDraft.items||[]).length;
+    addDraftBarcodeInline(barcode);
+    const added=(boxDraft.items||[]).length>before;
+    if(added&&others.length)setStatus(`✓ ${barcode} · ${ws.name}에서 추가했습니다. ⚠ 다른 센터 미작업: ${otherCenterTextV79(others)}`,'busy');
+    focusInlineScan();
+  };
+
+  // 시트 이동 시 이전 센터 알림이 남지 않도록 정리합니다.
+  const renderSheetBaseV79=renderSheet;
+  renderSheet=function(keepScroll=false){
+    const ret=renderSheetBaseV79.apply(this,arguments);
+    const el=document.getElementById('centerRemainingAlertV79');
+    if(el?.classList.contains('show')&&el.dataset.sheet&&el.dataset.sheet!==activeSheet)hideOtherCenterAlertV79();
+    return ret;
+  };
+
+  ensureStyleV79();
+  setTimeout(()=>{try{const ws=workbook?.getWorksheet(activeSheet);if(ws&&sheetKind(ws)==='pallet')decoratePalletSummariesV79(ws)}catch(_){ }},350);
+})();
+// ===== /v79 =====
+
+</script>
 </body>
 </html>
