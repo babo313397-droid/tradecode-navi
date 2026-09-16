@@ -502,6 +502,7 @@ function publicUserV48(u){return{id:u.id,username:u.username,displayName:u.displ
 function requireLoginApiV48(req,res,next){const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,code:'LOGIN_REQUIRED',error:'로그인이 필요합니다.'});req.authUser=u;next()}
 function requireLoginPageV48(req,res,next){const u=authUserV48(req);if(!u)return res.redirect('/login.html?next='+encodeURIComponent(req.originalUrl||'/'));req.authUser=u;for(const c of identityCookiesV50(req,u))res.append('Set-Cookie',c);next()}
 function isAdminV48(req){return req.authUser&&req.authUser.role==='admin'}
+const publicSignupLimiterV72=createRateLimiter({windowMs:60000,max:5}); // 공개 회원가입: IP당 분당 5회
 function userDataRootV48(req){const u=req.authUser;if(!u)throw new Error('login required');if(u.legacyOwner)return null;return path.join(USER_DATA_BASE_V59,'v50-private',u.id)}
 function ensureUserRootV48(req){const r=userDataRootV48(req);if(r)fs.mkdirSync(r,{recursive:true});return r}
 
@@ -512,6 +513,23 @@ app.get('/api/storage/v61-status',(req,res)=>{recoverAuthFilesV52();let projects
 app.get('/api/auth/safety-status',(req,res)=>{const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,error:'로그인이 필요합니다.'});if(u.role!=='admin')return res.status(403).json({ok:false,error:'관리자만 확인할 수 있습니다.'});const db=usersV48();res.set('Cache-Control','no-store');res.json({ok:true,version:60,persistentHome:TRADECODE_PERSIST_HOME_V59,persistentRoot:PERSISTENT_COUPANG_ROOT_V54,authDir:AUTH_DIR_V48,userCount:db.users.length,usersFileExists:fs.existsSync(USERS_FILE_V48),prevBackupExists:fs.existsSync(USERS_FILE_V48+'.prev'),backupDir:AUTH_BACKUP_DIR_V54,userDataBase:USER_DATA_BASE_V59})});
 app.post('/api/auth/bootstrap',(req,res)=>{try{recoverAuthFilesV52();const db=usersV48();if(!V60_PERSIST_WRITABLE||!V61_DISK_DEVICE_OK)return res.status(503).json({ok:false,error:'Render 영구 디스크가 확인되지 않아 계정 생성을 차단했습니다.'});if(db.users.length||fs.existsSync(AUTH_INIT_FLAG_V59))return res.status(409).json({ok:false,error:'영구 저장소는 이미 초기화되었습니다. 첫 관리자 계정을 다시 만들 수 없습니다.'});const username=normUserV48(req.body?.username),displayName=String(req.body?.displayName||username).trim().slice(0,80),pw=String(req.body?.password||'');if(username.length<3)return res.status(400).json({ok:false,error:'아이디는 3자 이상이어야 합니다.'});if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:'admin',legacyOwner:true,approved:true,approvedAt:Date.now(),disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u),legacyDataAssigned:true,persistent:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.post('/api/auth/login',(req,res)=>{const username=normUserV48(req.body?.username),pw=String(req.body?.password||'');const u=usersV48().users.find(x=>x.username===username&&!x.disabled);if(!u||!verifyPwV48(pw,u))return res.status(401).json({ok:false,error:'아이디 또는 비밀번호가 올바르지 않습니다.'});if(!u.legacyOwner&&u.approved===false)return res.status(403).json({ok:false,code:'APPROVAL_REQUIRED',error:'관리자 승인 대기 중인 계정입니다. 관리자에게 승인을 요청해 주세요.'});setSessionV48(req,res,u);res.json({ok:true,user:publicUserV48(u)})});
+// v72: 공개 회원가입. 고객이 직접 가입 신청하고, 관리자가 승인해야 로그인할 수 있습니다.
+app.post('/api/auth/register',publicSignupLimiterV72,(req,res)=>{try{
+  recoverAuthFilesV52();
+  if(!V60_PERSIST_WRITABLE||!V61_DISK_DEVICE_OK)return res.status(503).json({ok:false,error:'영구 저장소를 확인할 수 없어 지금은 회원가입을 받을 수 없습니다.'});
+  const db=usersV48(),initialized=fs.existsSync(AUTH_INIT_FLAG_V59);
+  if(!initialized||db.users.length===0)return res.status(409).json({ok:false,error:'관리자 초기 설정이 완료된 후 회원가입할 수 있습니다.'});
+  const rawUsername=String(req.body?.username||'').trim().toLowerCase();
+  const username=normUserV48(rawUsername),pw=String(req.body?.password||''),displayName=String(req.body?.displayName||'').trim().slice(0,80);
+  if(rawUsername!==username)return res.status(400).json({ok:false,error:'아이디는 영문 소문자, 숫자, 점(.), 밑줄(_), 하이픈(-)만 사용할 수 있습니다.'});
+  if(username.length<3)return res.status(400).json({ok:false,error:'아이디는 3자 이상이어야 합니다.'});
+  if(displayName.length<2)return res.status(400).json({ok:false,error:'업체명 또는 이름을 2자 이상 입력해 주세요.'});
+  if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});
+  if(db.users.some(x=>x.username===username))return res.status(409).json({ok:false,error:'이미 사용 중인 아이디입니다.'});
+  const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:'user',legacyOwner:false,approved:false,approvedAt:0,disabled:false,selfRegistered:true,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};
+  db.users.push(u);saveUsersV48(db);
+  return res.status(201).json({ok:true,approvalRequired:true,message:'회원가입 신청이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다.',user:publicUserV48(u)});
+}catch(e){return res.status(500).json({ok:false,error:e.message})}});
 app.post('/api/auth/logout',(req,res)=>{clearSessionV48(req,res);res.json({ok:true})});
 app.get('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});res.json({ok:true,users:usersV48().users.map(publicUserV48)})});
 app.post('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});try{const db=usersV48(),username=normUserV48(req.body?.username),pw=String(req.body?.password||''),displayName=String(req.body?.displayName||username).trim().slice(0,80);if(username.length<3||pw.length<8)return res.status(400).json({ok:false,error:'아이디 3자 이상, 비밀번호 8자 이상이 필요합니다.'});if(db.users.some(x=>x.username===username))return res.status(409).json({ok:false,error:'이미 사용 중인 아이디입니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:req.body?.role==='admin'?'admin':'user',legacyOwner:false,approved:false,approvedAt:0,disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);res.json({ok:true,user:publicUserV48(u),approvalRequired:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
