@@ -589,6 +589,17 @@ function protectManualPalletCloseV77(existingRow,incomingState){
 }
 
 
+
+// v78: 전체 작업 상태 revision 보호
+// 완료 박스/미완료 수량/Q번호 등 전체 state가 늦게 도착한 예전 PUT으로 되돌아가지 않게 합니다.
+function stateRevisionV78FromRow(row){return Number(row&&row.state&&row.state.stateRevisionV78||0)}
+function stateRevisionV78FromState(state){return Number(state&&state.stateRevisionV78||0)}
+function guardWholeStateV78(existingRow,incomingState){
+  const oldRev=stateRevisionV78FromRow(existingRow),newRev=stateRevisionV78FromState(incomingState);
+  if(oldRev>newRev)return {keepExisting:true,oldRev,newRev,state:existingRow&&existingRow.state?existingRow.state:incomingState};
+  return {keepExisting:false,oldRev,newRev,state:incomingState};
+}
+
 // v50: 직원 계정 쿠팡 API는 레거시 공용 라우트보다 먼저 개인 저장소에서 처리합니다.
 // v64: 직원 계정의 Excel blob 업로드는 express.raw로 확실히 수신합니다.
 // 프로젝트 시간만 생성되고 실제 선적 엑셀이 비는 현상을 방지합니다.
@@ -1262,12 +1273,18 @@ app.put('/api/coupang-shared/state', coupangAuth,
   express.text({ type: ['text/plain', 'application/json'], limit: '15mb' }),
   (req, res) => {
     try {
-      const state = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      let state = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      const existing=readJsonSafe(COUPANG_STATE_PATH),guard=guardWholeStateV78(existing,state);
+      if(guard.keepExisting){
+        res.set('Cache-Control','no-store');
+        return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true});
+      }
+      state=guard.state;
       const updatedAt = Date.now();
       backupFileV46(COUPANG_STATE_PATH);
       writeAtomic(COUPANG_STATE_PATH, JSON.stringify({ ok: true, updatedAt, state }));
       res.set('Cache-Control', 'no-store');
-      res.json({ ok: true, updatedAt });
+      res.json({ ok: true, updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),staleIgnoredV78:false });
     } catch (err) {
       res.status(400).json({ ok: false, error: `작업 상태 저장 실패: ${err.message}` });
     }
@@ -1733,7 +1750,7 @@ app.delete('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
 app.get('/api/coupang-shared/projects/:projectId/status',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const {paths}=found;res.set('Cache-Control','no-store');res.json({ok:true,state:projectStateStatusV18(paths),source:projectBlobStatusV18(paths,'source'),workbookSnapshot:projectBlobStatusV18(paths,'workbookSnapshot')})});
 app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
 app.put('/api/coupang-shared/projects/:projectId/state',coupangAuth,express.text({type:['text/plain','application/json'],limit:'15mb'}),(req,res)=>{
-  try{const found=getProjectOr404V18(req,res);if(!found)return;let state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});const existing=readJsonSafe(found.paths.state);state=protectManualPalletCloseV77(existing,state);const updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt,manualCloseGuardV77:true})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
+  try{const found=getProjectOr404V18(req,res);if(!found)return;let state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});const existing=readJsonSafe(found.paths.state),guard=guardWholeStateV78(existing,state);if(guard.keepExisting){res.set('Cache-Control','no-store');return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,manualCloseGuardV77:true})}state=protectManualPalletCloseV77(existing,guard.state);const updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),staleIgnoredV78:false,manualCloseGuardV77:true})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
 });
 app.delete('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;try{unlinkSafe(found.paths.state);touchProjectV18(found.id);res.json({ok:true})}catch(err){res.status(500).json({ok:false,error:err.message})}});
 
