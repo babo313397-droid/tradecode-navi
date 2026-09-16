@@ -59,7 +59,7 @@ button,input,select{font:inherit}button{cursor:pointer}
 .inline-mode{min-width:118px;padding:0 4px 4px 1px}.inline-mode b{display:block;color:#174b30;font-size:11px}.inline-mode span{display:block;color:#6a7770;font-size:9px;margin-top:2px;white-space:nowrap}
 .inline-scan{display:flex;min-width:330px;flex:1;gap:4px}.inline-scan input{width:100%;height:31px;border:2px solid #217346;border-radius:4px;padding:5px 8px;font-weight:800;background:#fff}.inline-scan button{height:31px;border:1px solid #217346;background:#217346;color:#fff;border-radius:4px;padding:0 10px;font-weight:900}
 .pallet-inline-top>label{display:flex;flex-direction:column;gap:2px;color:#55635c;font-size:8.5px;font-weight:900;white-space:nowrap}.pallet-inline-top select,.pallet-inline-top>label input{height:31px;border:1px solid #aeb7b2;background:#fff;border-radius:3px;padding:4px 6px;font-size:10px;font-weight:800}.pallet-inline-top select{width:104px}.pallet-inline-top>label input{width:74px}.pallet-inline-top>label:nth-of-type(3) input{width:76px}.pallet-inline-top>label:nth-of-type(4) input{width:98px}
-.inline-commit,.inline-reset,.inline-cancel{height:31px;border-radius:4px;padding:0 10px;font-size:9.5px;font-weight:900;white-space:nowrap}.inline-commit{border:1px solid #217346;background:#217346;color:#fff}.inline-reset{border:1px solid #9fa9a4;background:#fff;color:#37423c}.inline-cancel{border:1px solid #b42318;background:#fff;color:#b42318}
+.inline-commit,.inline-reset,.inline-cancel{height:31px;border-radius:4px;padding:0 10px;font-size:9.5px;font-weight:900;white-space:nowrap}.inline-commit{border:1px solid #217346;background:#217346;color:#fff}.inline-reset{border:1px solid #9fa9a4;background:#fff;color:#37423c}.inline-cancel{border:1px solid #b42318;background:#fff;color:#b42318}.inline-pallet-close,.inline-pallet-undo{height:31px;border-radius:4px;padding:0 10px;font-size:9.5px;font-weight:900;white-space:nowrap}.inline-pallet-close{border:1px solid #9b6b00;background:#fff7dc;color:#7c5500}.inline-pallet-close:not(:disabled):hover{background:#ffe7a3}.inline-pallet-undo{border:1px solid #7b8790;background:#fff;color:#53606a}.inline-pallet-close:disabled,.inline-pallet-undo:disabled{opacity:.45;cursor:not-allowed;background:#f3f5f4;color:#77817c;border-color:#c5cbc8}
 .inline-box-items{display:flex;gap:5px;align-items:stretch;overflow-x:auto;overflow-y:hidden;padding-top:5px;min-height:38px;scrollbar-width:thin}.inline-empty{display:flex;align-items:center;color:#78837d;padding:3px 5px}
 .inline-item{display:grid;grid-template-columns:112px minmax(180px,280px) 65px 74px 24px;align-items:center;border:1px solid #c8cfcb;background:#fff;min-width:480px;height:34px}.inline-item>span,.inline-item>div{padding:0 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.inline-item .i-bc{font-weight:900;color:#29465a}.inline-item .i-name{border-left:1px solid #e1e4e2}.inline-item .i-rem{border-left:1px solid #e1e4e2;text-align:center;color:#666}.inline-item .i-qty{border-left:1px solid #e1e4e2;display:flex;align-items:center;gap:3px}.inline-item .i-qty input{width:48px;height:25px;border:1px solid #aab4ae;text-align:center;font-weight:900}.inline-item .i-rm{border:0;border-left:1px solid #e1e4e2;background:#fff;color:#a22;font-weight:1000;height:100%}
 .inline-box-summary{padding-top:3px;color:#5c6962;font-size:9px;min-height:15px}.inline-box-summary strong{color:#174b30}
@@ -161,6 +161,8 @@ button,input,select{font:inherit}button{cursor:pointer}
         <label>박스번호<input id="inlineBoxNo" placeholder="비우면 자동"></label>
         <button id="inlineCommitBtn" class="inline-commit" type="button" onclick="commitInlineBoxDraft()">박스 작업 완료</button>
         <button id="inlineResetBtn" class="inline-reset" type="button" onclick="resetInlineBoxDraft()">새 박스</button>
+        <button id="inlineManualPalletCloseBtn" class="inline-pallet-close" type="button" onclick="manualCloseCurrentPalletV73()" style="display:none">🔒 현재 팔레트 마감</button>
+        <button id="inlineManualPalletUndoBtn" class="inline-pallet-undo" type="button" onclick="undoLastManualPalletCloseV73()" style="display:none">↩ 마감 취소</button>
         <button id="inlineCancelCompletedBtn" class="inline-cancel" type="button" onclick="cancelInlineEditedBox()" style="display:none">완료 취소</button>
       </div>
       <div id="inlineBoxItems" class="inline-box-items"><span class="inline-empty">바코드를 스캔하면 이 박스에 들어갈 상품이 여기에 쌓입니다.</span></div>
@@ -3773,6 +3775,198 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(()=>ensureActiveProjectV71('visible').catch(()=>{}),100)});
 })();
 // ===== /v71 =====
+</script>
+
+<script id="v73-manual-pallet-close">
+// ===== v73: 팔레트/밀크런 현재 팔레트 수동 마감 + 마지막 마감 취소 =====
+// 기존 자동 팔레트 맵핑은 그대로 유지하고, 사용자가 지정한 완료 지점 뒤에서만
+// 다음 박스가 새 팔레트로 시작하도록 "경계"를 추가합니다. 택배 탭에는 적용하지 않습니다.
+(function(){
+  const MANUAL_CLOSE_MARK_V73='MANUAL_PALLET_CLOSE_V73';
+
+  function isPalletWorkV73(ws){return !!ws&&sheetKind(ws)==='pallet'}
+  function sortedCompletedV73(state){return (state?.completed||[]).slice().sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0))}
+  function draftHasItemsV73(){return !!(boxDraft&&Array.isArray(boxDraft.items)&&boxDraft.items.length)}
+  function validBreakIdsV73(state){
+    const valid=new Set((state?.completed||[]).map(g=>String(g.id||'')).filter(Boolean));
+    return [...new Set((state?.manualPalletBreaks||[]).map(String).filter(id=>valid.has(id)))];
+  }
+  function normalizeBreaksV73(state){
+    if(!state)return [];
+    const rows=validBreakIdsV73(state);
+    state.manualPalletBreaks=rows;
+    return rows;
+  }
+  function groupByIdV73(state,id){return (state?.completed||[]).find(g=>String(g.id||'')===String(id||''))||null}
+  function lastBreakGroupV73(state){
+    const ids=new Set(validBreakIdsV73(state));
+    return sortedCompletedV73(state).filter(g=>ids.has(String(g.id||''))).at(-1)||null;
+  }
+
+  // Include manual boundaries in the mapper cache key so a close/undo is reflected immediately.
+  const palletPlanSignatureBaseV73=palletPlanSignature;
+  palletPlanSignature=function(state){
+    const base=palletPlanSignatureBaseV73(state);
+    return base+'|manualBreaks:'+validBreakIdsV73(state).join(',');
+  };
+
+  // Same physical mapper as v11, with one additive rule:
+  // after a group marked as manually closed, current=null so the next completed group starts a new pallet.
+  buildAutoPalletPlan=function(ws,state){
+    const isPalletSheet=sheetKind(ws)==='pallet';
+    if(!isPalletSheet)return {sig:'parcel',pallets:[],segments:(state.completed||[]).slice().sort((a,b)=>a.seq-b.seq).map(g=>({group:g,palletNo:null,boxCount:Math.max(1,Number(g.boxCount)||1),boxOffset:0,size:g.size,boxNo:g.boxNo,items:(g.items||[]).map(i=>({...i,totalQty:Number(i.totalQty||0)})),totalPerBox:(g.items||[]).reduce((a,i)=>a+Number(i.perBoxQty||0),0)}))};
+    const sig=palletPlanSignature(state);if(state._autoPalletPlan?.sig===sig)return state._autoPalletPlan;
+    const breaks=new Set(validBreakIdsV73(state));
+    const pallets=[],segments=[];let current=null;
+    const groups=sortedCompletedV73(state);
+    for(const group of groups){
+      const profile=palletBoxProfile(group.size);const totalBoxes=Math.max(1,Number(group.boxCount)||1);let remain=totalBoxes,offset=0;
+      const perQty=(group.items||[]).reduce((a,i)=>a+Number(i.perBoxQty||0),0);
+      const safeProfile=profile.ok?profile:{ok:true,w:0,d:0,h:AUTO_PALLET_USABLE_HEIGHT_CM,slots:1,key:`legacy:${norm(group.size)||'unknown'}`,label:group.size||''};
+      while(remain>0){
+        if(!current||current.key!==safeProfile.key){current=newMappedPallet(pallets.length+1,safeProfile);pallets.push(current)}
+        let take=0;
+        while(remain>0&&placeOneMappedBox(current,safeProfile)){take++;remain--}
+        if(take===0){
+          current=newMappedPallet(pallets.length+1,safeProfile);pallets.push(current);
+          if(!placeOneMappedBox(current,safeProfile)){current.stacks[0]=AUTO_PALLET_USABLE_HEIGHT_CM;take=1;remain--}else{take=1;remain--}
+        }
+        const segItems=(group.items||[]).map(i=>({...i,totalQty:Number(i.perBoxQty||0)*take}));
+        const seg={group,pallet:current,palletNo:current.no,boxCount:take,boxOffset:offset,size:group.size,boxNo:splitMappedBoxNo(group.boxNo,totalBoxes,offset,take),items:segItems,totalPerBox:perQty};
+        segments.push(seg);current.segments.push(seg);current.totalBoxes+=take;current.totalQty+=perQty*take;const w=Number(group.weight);if(Number.isFinite(w))current.totalWeight+=w*take;offset+=take;
+      }
+      if(breaks.has(String(group.id||''))&&current){
+        current.manualClosed=true;
+        current.manualClosedAfterGroupId=String(group.id||'');
+        current=null;
+      }
+    }
+    const plan={sig,pallets,segments};state._autoPalletPlan=plan;return plan;
+  };
+
+  // Preserve manual boundaries in lightweight server/IndexedDB autosave.
+  const cleanPalletStateBaseV73=cleanPalletStateForSave;
+  cleanPalletStateForSave=function(state){
+    const out=cleanPalletStateBaseV73(state);if(!out)return out;
+    out.manualPalletBreaks=validBreakIdsV73(state);
+    return out;
+  };
+
+  // Preserve the boundary in downloaded/current-work Excel too.
+  // W column is hidden metadata only; visible Excel layout is unchanged.
+  const syncPalletStateBaseV73=syncPalletState;
+  syncPalletState=function(ws,state){
+    const ret=syncPalletStateBaseV73(ws,state);
+    if(!isPalletWorkV73(ws)||!state)return ret;
+    try{
+      const start=generationStartRow(ws),end=Math.max(ws.rowCount,start+30);
+      for(let r=start;r<=end;r++)ws.getRow(r).getCell(23).value=null;
+      ws.getColumn(23).hidden=true;
+      const breaks=new Set(validBreakIdsV73(state));
+      const st=assignVisualRows(ws,state);
+      for(const g of st.completed||[]){
+        if(!breaks.has(String(g.id||'')))continue;
+        const ranges=(g._visualRanges||[]).filter(x=>x&&x.start).sort((a,b)=>Number(a.start)-Number(b.start));
+        const last=ranges.at(-1)||g.rows;
+        const rowNo=Number(last?.start||0);if(rowNo)ws.getRow(rowNo).getCell(23).value=MANUAL_CLOSE_MARK_V73;
+      }
+    }catch(e){console.warn('v73 manual pallet marker save',e)}
+    return ret;
+  };
+
+  // If a downloaded/current-work Excel is reopened, rebuild boundaries from hidden W metadata.
+  const inferPalletStateBaseV73=inferPalletState;
+  inferPalletState=function(ws){
+    const state=inferPalletStateBaseV73(ws);
+    if(!isPalletWorkV73(ws)||!state)return state;
+    try{
+      const breaks=[];const start=generationStartRow(ws);
+      for(let r=start;r<=ws.rowCount;r++){
+        if(norm(displayText(ws.getRow(r).getCell(23)))!==MANUAL_CLOSE_MARK_V73)continue;
+        const savedId=norm(displayText(ws.getRow(r).getCell(21)));
+        if(savedId)breaks.push(savedId);
+      }
+      if(breaks.length)state.manualPalletBreaks=[...new Set(breaks)];
+    }catch(e){console.warn('v73 manual pallet marker restore',e)}
+    return state;
+  };
+
+  // When a completed group is cancelled, discard any orphan boundary referring to it.
+  const markPalletDirtyBaseV73=markPalletDirty;
+  markPalletDirty=function(ws,state){
+    if(state)normalizeBreaksV73(state);
+    const ret=markPalletDirtyBaseV73(ws,state);
+    try{refreshManualPalletButtonsV73()}catch(_){ }
+    return ret;
+  };
+
+  function currentPalletInfoV73(ws,state){
+    if(!isPalletWorkV73(ws)||!state)return null;
+    const st=assignVisualRows(ws,state),pallets=st._mappedPallets||[];
+    return pallets.length?pallets[pallets.length-1]:null;
+  }
+
+  window.manualCloseCurrentPalletV73=function(){
+    const ws=currentWorkSheet();
+    if(!isPalletWorkV73(ws)){alert('팔레트/밀크런 작업 탭에서만 사용할 수 있습니다.');return}
+    const state=ensurePalletState(ws),groups=sortedCompletedV73(state);
+    if(!groups.length){alert('먼저 박스 작업을 1개 이상 완료해 주세요.');return}
+    if(draftHasItemsV73()){alert('현재 입력 중인 박스가 있습니다. 박스 작업을 완료하거나 새 박스로 초기화한 뒤 팔레트를 마감해 주세요.');return}
+    const lastGroup=groups[groups.length-1],breaks=new Set(validBreakIdsV73(state));
+    if(breaks.has(String(lastGroup.id||''))){alert('현재 팔레트는 이미 수동 마감되어 있습니다.');return}
+    const p=currentPalletInfoV73(ws,state);if(!p){alert('현재 팔레트 정보를 확인할 수 없습니다.');return}
+    const msg=`현재 ${p.no}번 팔레트를 여기서 수동 마감하시겠습니까?\n\n현재 적재: ${p.totalBoxes.toLocaleString()}박스 / ${p.totalQty.toLocaleString()}개${Number.isFinite(Number(p.totalWeight))?` / ${Number(p.totalWeight.toFixed(2))}kg`:''}\n\n마감 후 다음 박스 작업은 ${p.no+1}번 팔레트부터 시작합니다.`;
+    if(!confirm(msg))return;
+    state.manualPalletBreaks=[...breaks,String(lastGroup.id)];
+    markPalletDirty(ws,state);schedulePersistentState(20);renderSheet(true);renderInlineDraft();focusInlineScan();
+    setStatus(`✓ ${p.no}번 팔레트 수동 마감 완료 · 다음 박스는 ${p.no+1}번 팔레트부터 배정됩니다.`,'ok');
+  };
+
+  window.undoLastManualPalletCloseV73=function(){
+    const ws=currentWorkSheet();
+    if(!isPalletWorkV73(ws)){alert('팔레트/밀크런 작업 탭에서만 사용할 수 있습니다.');return}
+    const state=ensurePalletState(ws),groups=sortedCompletedV73(state);if(!groups.length)return;
+    if(draftHasItemsV73()){alert('현재 입력 중인 박스가 있습니다. 먼저 박스 작업을 완료하거나 새 박스로 초기화해 주세요.');return}
+    const lastGroup=groups[groups.length-1],lastBreak=lastBreakGroupV73(state);
+    if(!lastBreak){alert('취소할 수동 팔레트 마감이 없습니다.');return}
+    if(String(lastBreak.id)!==String(lastGroup.id)){
+      alert('수동 마감 이후에 이미 다음 팔레트 작업이 진행되었습니다.\n안전을 위해 이전 팔레트 마감은 자동으로 취소하지 않습니다.');return;
+    }
+    const beforePlan=buildAutoPalletPlan(ws,state),closedNo=beforePlan.pallets?.at(-1)?.no||'';
+    if(!confirm(`${closedNo||'마지막'}번 팔레트의 수동 마감을 취소하고 다시 열까요?`))return;
+    state.manualPalletBreaks=validBreakIdsV73(state).filter(id=>String(id)!==String(lastBreak.id));
+    markPalletDirty(ws,state);schedulePersistentState(20);renderSheet(true);renderInlineDraft();focusInlineScan();
+    setStatus(`✓ ${closedNo||'마지막'}번 팔레트 수동 마감을 취소했습니다. 다음 박스가 다시 현재 팔레트에 자동 배치될 수 있습니다.`,'ok');
+  };
+
+  window.refreshManualPalletButtonsV73=function(){
+    const closeBtn=inlineEl('inlineManualPalletCloseBtn'),undoBtn=inlineEl('inlineManualPalletUndoBtn');if(!closeBtn||!undoBtn)return;
+    const ws=boxDraft?.sheetName?workbook?.getWorksheet(boxDraft.sheetName):currentWorkSheet();
+    const show=isPalletWorkV73(ws);
+    closeBtn.style.display=show?'inline-block':'none';undoBtn.style.display=show?'inline-block':'none';
+    if(!show)return;
+    const state=ensurePalletState(ws),groups=sortedCompletedV73(state),hasDraft=draftHasItemsV73();
+    if(!groups.length){closeBtn.disabled=true;closeBtn.textContent='🔒 현재 팔레트 마감';undoBtn.disabled=true;undoBtn.textContent='↩ 마감 취소';return}
+    const lastGroup=groups[groups.length-1],breaks=new Set(validBreakIdsV73(state)),p=currentPalletInfoV73(ws,state),alreadyClosed=breaks.has(String(lastGroup.id||''));
+    closeBtn.disabled=hasDraft||alreadyClosed;closeBtn.textContent=p?`🔒 ${p.no}번 팔레트 마감`:'🔒 현재 팔레트 마감';
+    closeBtn.title=alreadyClosed?'현재 팔레트는 이미 수동 마감되었습니다.':(hasDraft?'입력 중인 박스를 먼저 완료하거나 초기화해 주세요.':'현재 팔레트를 가득 채우지 않아도 여기서 마감합니다.');
+    const lastBreak=lastBreakGroupV73(state),canUndo=!!lastBreak&&String(lastBreak.id)===String(lastGroup.id)&&!hasDraft;
+    undoBtn.disabled=!canUndo;undoBtn.textContent='↩ 마감 취소';
+    undoBtn.title=canUndo?'방금 수동 마감한 팔레트를 다시 엽니다.':'수동 마감 이후 새 작업이 있으면 안전을 위해 취소할 수 없습니다.';
+  };
+
+  // Keep button state in sync with sheet changes, draft edits and restored sessions.
+  const renderInlineDraftBaseV73=renderInlineDraft;
+  renderInlineDraft=function(){const ret=renderInlineDraftBaseV73.apply(this,arguments);try{refreshManualPalletButtonsV73()}catch(_){ }return ret};
+  const updateInlinePalletPanelBaseV73=updateInlinePalletPanel;
+  updateInlinePalletPanel=function(){const ret=updateInlinePalletPanelBaseV73.apply(this,arguments);try{refreshManualPalletButtonsV73()}catch(_){ }return ret};
+  const applyRecoveredStateBaseV73=applyRecoveredState;
+  applyRecoveredState=function(saved){const ret=applyRecoveredStateBaseV73.apply(this,arguments);try{for(const st of palletStates.values())normalizeBreaksV73(st);refreshManualPalletButtonsV73()}catch(_){ }return ret};
+
+  // First paint after all legacy wrappers are installed.
+  setTimeout(()=>{try{refreshManualPalletButtonsV73()}catch(_){ }},180);
+})();
+// ===== /v73 =====
 </script>
 </body>
 </html>
