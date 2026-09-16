@@ -540,6 +540,55 @@ app.use((req,res,next)=>{if(PROTECTED_PAGE_PREFIXES_V48.some(p=>req.path===p||re
 const PRIVATE_API_PREFIXES_V48=['/api/shared-labels','/api/shared-workspace','/api/shipment-list-vault','/api/coupang-shared'];
 app.use((req,res,next)=>{if(PRIVATE_API_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'/')))return requireLoginApiV48(req,res,next);next()});
 
+// v77: 수동 팔레트 마감 서버 정본 보호
+// 늦게 도착한 예전 state PUT이 최신 수동 마감 경계를 지우지 못하게 합니다.
+function manualCloseSeqsFromRawV77(raw){
+  if(!raw||typeof raw!=='object')return [];
+  if(Array.isArray(raw.manualPalletCloseSeqsV77))return [...new Set(raw.manualPalletCloseSeqsV77.map(Number).filter(n=>Number.isFinite(n)&&n>0))].sort((a,b)=>a-b);
+  const ids=new Set((Array.isArray(raw.manualPalletBreaks)?raw.manualPalletBreaks:[]).map(String));
+  return (Array.isArray(raw.completed)?raw.completed:[]).filter(g=>ids.has(String(g&&g.id||''))).map(g=>Number(g&&g.seq)||0).filter(n=>n>0).sort((a,b)=>a-b);
+}
+function manualCloseRevFromRawV77(raw,reg){
+  return Math.max(Number(raw&&raw.manualPalletCloseRevV77||0),Number(raw&&raw.manualPalletBreaksRev||0),Number(reg&&reg.rev||0));
+}
+function manualCloseRawMapV77(state){
+  const m=new Map();for(const pair of (state&&Array.isArray(state.palletStates)?state.palletStates:[])){const name=String(pair&&pair[0]||''),raw=pair&&pair[1];if(name&&raw)m.set(name,raw)}return m;
+}
+function protectManualPalletCloseV77(existingRow,incomingState){
+  const oldState=existingRow&&existingRow.state&&typeof existingRow.state==='object'?existingRow.state:{};
+  const next=incomingState&&typeof incomingState==='object'?incomingState:{};
+  const oldMap=manualCloseRawMapV77(oldState),newMap=manualCloseRawMapV77(next);
+  const oldReg=oldState.manualPalletCloseRegistryV77&&typeof oldState.manualPalletCloseRegistryV77==='object'?oldState.manualPalletCloseRegistryV77:{};
+  const newReg=next.manualPalletCloseRegistryV77&&typeof next.manualPalletCloseRegistryV77==='object'?next.manualPalletCloseRegistryV77:{};
+  const mergedReg={...newReg};
+  const names=new Set([...Object.keys(oldReg),...Object.keys(newReg),...oldMap.keys(),...newMap.keys()]);
+  for(const name of names){
+    const oldRaw=oldMap.get(name),newRaw=newMap.get(name),or=oldReg[name]||{},nr=newReg[name]||{};
+    const oldRev=manualCloseRevFromRawV77(oldRaw,or),newRev=manualCloseRevFromRawV77(newRaw,nr);
+    const oldSeqs=Array.isArray(or.seqs)?or.seqs.map(Number).filter(n=>n>0):manualCloseSeqsFromRawV77(oldRaw);
+    const newSeqs=Array.isArray(nr.seqs)?nr.seqs.map(Number).filter(n=>n>0):manualCloseSeqsFromRawV77(newRaw);
+    const oldExplicit=!!(oldRaw&&(Object.prototype.hasOwnProperty.call(oldRaw,'manualPalletCloseSeqsV77')||Object.prototype.hasOwnProperty.call(oldRaw,'manualPalletBreaks')))||Object.prototype.hasOwnProperty.call(or,'seqs');
+    const newExplicit=!!(newRaw&&(Object.prototype.hasOwnProperty.call(newRaw,'manualPalletCloseSeqsV77')||Object.prototype.hasOwnProperty.call(newRaw,'manualPalletBreaks')))||Object.prototype.hasOwnProperty.call(nr,'seqs');
+    const keepOld=(oldRev>newRev)||(oldRev===newRev&&oldExplicit&&oldSeqs.length>0&&!newExplicit);
+    if(keepOld){
+      if(newRaw){
+        const idsBySeq=new Map((Array.isArray(newRaw.completed)?newRaw.completed:[]).map(g=>[Number(g&&g.seq)||0,String(g&&g.id||'')]));
+        newRaw.manualPalletCloseSeqsV77=[...new Set(oldSeqs.map(Number).filter(n=>n>0))].sort((a,b)=>a-b);
+        newRaw.manualPalletCloseRevV77=oldRev;newRaw.manualPalletBreaksRev=oldRev;
+        newRaw.manualPalletBreaks=newRaw.manualPalletCloseSeqsV77.map(n=>idsBySeq.get(n)).filter(Boolean);
+      }
+      mergedReg[name]={seqs:[...new Set(oldSeqs.map(Number).filter(n=>n>0))].sort((a,b)=>a-b),rev:oldRev};
+    }else{
+      mergedReg[name]={seqs:[...new Set(newSeqs.map(Number).filter(n=>n>0))].sort((a,b)=>a-b),rev:newRev};
+      if(newRaw){newRaw.manualPalletCloseSeqsV77=mergedReg[name].seqs;newRaw.manualPalletCloseRevV77=newRev;newRaw.manualPalletBreaksRev=newRev}
+    }
+  }
+  next.manualPalletCloseRegistryV77=mergedReg;
+  next.stateFormatV77=Math.max(Number(next.stateFormatV77||0),77);
+  return next;
+}
+
+
 // v50: 직원 계정 쿠팡 API는 레거시 공용 라우트보다 먼저 개인 저장소에서 처리합니다.
 // v64: 직원 계정의 Excel blob 업로드는 express.raw로 확실히 수신합니다.
 // 프로젝트 시간만 생성되고 실제 선적 엑셀이 비는 현상을 방지합니다.
@@ -562,7 +611,7 @@ app.use('/api/coupang-shared',(req,res,next)=>{
   if(part==='state'){
     if(req.method==='GET'){const st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
     if(req.method==='DELETE'){fs.rmSync(paths.state,{force:true});touch(id);return res.json({ok:true})}
-    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
+    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const existing=readJsonFileV48(paths.state,null);state=protectManualPalletCloseV77(existing,state);const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt,manualCloseGuardV77:true})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
   }
   if(part.startsWith('blob/')){const key=part.split('/')[1],info=paths[key];if(!info)return res.status(404).json({ok:false,error:'파일 키 오류'});if(req.method==='GET'){const meta=readJsonFileV48(info.meta,null);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Cache-Control','no-store');res.set('Content-Type',meta.type||'application/octet-stream');res.set('Content-Length',String(fs.statSync(info.data).size));res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',meta.name||'');res.set('X-File-Type',meta.type||'');res.set('X-File-Mode',meta.mode||'');res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));return res.sendFile(info.data)}if(req.method==='DELETE'){fs.rmSync(info.data,{force:true});fs.rmSync(info.meta,{force:true});touch(id);return res.json({ok:true})}if(req.method==='PUT'){const writeBlobV64=()=>{try{const buf=Buffer.isBuffer(req.body)?req.body:Buffer.from(req.body||'');if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(paths.dir,{recursive:true});const updatedAt=Date.now(),meta={updatedAt,size:buf.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};fs.writeFileSync(info.data,buf);atomicJsonV48(info.meta,meta);if(key==='source'){fs.rmSync(paths.state,{force:true});fs.rmSync(paths.workbookSnapshot.data,{force:true});fs.rmSync(paths.workbookSnapshot.meta,{force:true})}touch(id);return res.json({ok:true,updatedAt,size:buf.length,accountScoped:true})}catch(e){return res.status(500).json({ok:false,error:e.message})}};if(Buffer.isBuffer(req.body))return writeBlobV64();return accountCoupangBlobRawV64(req,res,err=>{if(err)return res.status(err.type==='entity.too.large'?413:400).json({ok:false,error:err.message||'파일 업로드를 읽지 못했습니다.'});return writeBlobV64()})}}
   next();
@@ -1684,7 +1733,7 @@ app.delete('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
 app.get('/api/coupang-shared/projects/:projectId/status',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const {paths}=found;res.set('Cache-Control','no-store');res.json({ok:true,state:projectStateStatusV18(paths),source:projectBlobStatusV18(paths,'source'),workbookSnapshot:projectBlobStatusV18(paths,'workbookSnapshot')})});
 app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
 app.put('/api/coupang-shared/projects/:projectId/state',coupangAuth,express.text({type:['text/plain','application/json'],limit:'15mb'}),(req,res)=>{
-  try{const found=getProjectOr404V18(req,res);if(!found)return;const state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{}),updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
+  try{const found=getProjectOr404V18(req,res);if(!found)return;let state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});const existing=readJsonSafe(found.paths.state);state=protectManualPalletCloseV77(existing,state);const updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt,manualCloseGuardV77:true})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
 });
 app.delete('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;try{unlinkSafe(found.paths.state);touchProjectV18(found.id);res.json({ok:true})}catch(err){res.status(500).json({ok:false,error:err.message})}});
 
@@ -1777,7 +1826,7 @@ app.use('/api/coupang-shared',(req,res,next)=>{
   if(part==='state'){
     if(req.method==='GET'){const st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
     if(req.method==='DELETE'){fs.rmSync(paths.state,{force:true});touch(id);return res.json({ok:true})}
-    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
+    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const existing=readJsonFileV48(paths.state,null);state=protectManualPalletCloseV77(existing,state);const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt,manualCloseGuardV77:true})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
   }
   if(part.startsWith('blob/')){const key=part.split('/')[1],info=paths[key];if(!info)return res.status(404).json({ok:false,error:'파일 키 오류'});if(req.method==='GET'){const meta=readJsonFileV48(info.meta,null);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Cache-Control','no-store');res.set('Content-Type',meta.type||'application/octet-stream');res.set('Content-Length',String(fs.statSync(info.data).size));res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',meta.name||'');res.set('X-File-Type',meta.type||'');res.set('X-File-Mode',meta.mode||'');res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));return res.sendFile(info.data)}if(req.method==='DELETE'){fs.rmSync(info.data,{force:true});fs.rmSync(info.meta,{force:true});touch(id);return res.json({ok:true})}if(req.method==='PUT'){const writeBlobV64=()=>{try{const buf=Buffer.isBuffer(req.body)?req.body:Buffer.from(req.body||'');if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(paths.dir,{recursive:true});const updatedAt=Date.now(),meta={updatedAt,size:buf.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};fs.writeFileSync(info.data,buf);atomicJsonV48(info.meta,meta);if(key==='source'){fs.rmSync(paths.state,{force:true});fs.rmSync(paths.workbookSnapshot.data,{force:true});fs.rmSync(paths.workbookSnapshot.meta,{force:true})}touch(id);return res.json({ok:true,updatedAt,size:buf.length,accountScoped:true})}catch(e){return res.status(500).json({ok:false,error:e.message})}};if(Buffer.isBuffer(req.body))return writeBlobV64();return accountCoupangBlobRawV64(req,res,err=>{if(err)return res.status(err.type==='entity.too.large'?413:400).json({ok:false,error:err.message||'파일 업로드를 읽지 못했습니다.'});return writeBlobV64()})}}
   next();
