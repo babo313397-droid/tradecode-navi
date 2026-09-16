@@ -4076,5 +4076,139 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 // ===== /v74 =====
 </script>
 
+
+
+<script id="v75-manual-close-persist-scroll-fix">
+// ===== v75: 수동 팔레트 마감 유지 + 자동 동기화 스크롤 위치 보존 =====
+// 1) v73 상태 복구 시 manualPalletBreaks가 누락되어 수동 마감이 풀리는 문제를 보정합니다.
+// 2) 4초 서버 동기화가 applyRecoveredState()를 호출해도 현재 작업 스크롤 위치를 유지합니다.
+(function(){
+  if(window.__TC_V75_MANUAL_CLOSE_SCROLL_FIX__)return;
+  window.__TC_V75_MANUAL_CLOSE_SCROLL_FIX__=true;
+
+  function vpV75(){try{return document.getElementById('sheetViewport')}catch(_){return null}}
+  function captureScrollV75(){
+    const vp=vpV75();
+    return {vpTop:vp?vp.scrollTop:0,vpLeft:vp?vp.scrollLeft:0,winX:window.scrollX||0,winY:window.scrollY||0};
+  }
+  function restoreScrollV75(pos){
+    if(!pos)return;
+    const apply=()=>{
+      try{const vp=vpV75();if(vp){vp.scrollTop=pos.vpTop||0;vp.scrollLeft=pos.vpLeft||0}}catch(_){}
+      try{window.scrollTo(pos.winX||0,pos.winY||0)}catch(_){}
+    };
+    apply();
+    try{requestAnimationFrame(()=>{apply();requestAnimationFrame(apply)})}catch(_){setTimeout(apply,0)}
+  }
+  function breakMapFromCurrentV75(){
+    const out=new Map();
+    try{
+      for(const [name,state] of palletStates.entries()){
+        const ids=Array.isArray(state?.manualPalletBreaks)?state.manualPalletBreaks.map(String).filter(Boolean):[];
+        out.set(String(name),ids);
+      }
+    }catch(_){}
+    return out;
+  }
+  function incomingBreakMapV75(saved){
+    const out=new Map();
+    try{
+      for(const pair of saved?.palletStates||[]){
+        const name=String(pair?.[0]||''),raw=pair?.[1];if(!name||!raw)continue;
+        if(Object.prototype.hasOwnProperty.call(raw,'manualPalletBreaks')){
+          out.set(name,Array.isArray(raw.manualPalletBreaks)?raw.manualPalletBreaks.map(String).filter(Boolean):[]);
+        }
+      }
+    }catch(_){}
+    return out;
+  }
+  function restoreManualBreaksV75(saved,previous){
+    const incoming=incomingBreakMapV75(saved);
+    let changed=false;
+    try{
+      for(const pair of saved?.palletStates||[]){
+        const name=String(pair?.[0]||'');if(!name)continue;
+        const state=palletStates.get(name);if(!state)continue;
+        const valid=new Set((state.completed||[]).map(g=>String(g?.id||'')).filter(Boolean));
+        const source=incoming.has(name)?incoming.get(name):(previous.get(name)||[]);
+        const next=[...new Set((source||[]).map(String).filter(id=>valid.has(id)))];
+        const before=Array.isArray(state.manualPalletBreaks)?state.manualPalletBreaks.map(String):[];
+        if(before.join('|')!==next.join('|'))changed=true;
+        state.manualPalletBreaks=next;
+        try{delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets}catch(_){}
+        try{assignVisualRows(workbook?.getWorksheet(name),state)}catch(_){}
+        try{const ws=workbook?.getWorksheet(name);if(ws)recalcWorkSheet(ws)}catch(_){}
+      }
+    }catch(e){console.warn('v75 manual close restore',e)}
+    return changed;
+  }
+
+  // The original v9 recovery rebuilds pallet state but did not know about the later v73 manual boundary field.
+  // Wrap only recovery. Normal scan/complete/edit flows are untouched.
+  const applyBaseV75=window.applyRecoveredState||applyRecoveredState;
+  if(typeof applyBaseV75==='function'){
+    window.applyRecoveredState=applyRecoveredState=function(saved){
+      const pos=captureScrollV75(),previous=breakMapFromCurrentV75();
+      const renderBase=renderSheet;
+      let ret;
+      try{
+        // During autosync recovery, force the existing renderer to preserve sheetViewport position.
+        renderSheet=function(){return renderBase.call(this,true)};
+        ret=applyBaseV75.apply(this,arguments);
+      }finally{
+        renderSheet=renderBase;
+      }
+      const changed=restoreManualBreaksV75(saved,previous);
+      try{
+        const ws=workbook?.getWorksheet(activeSheet);
+        if(ws&&isPackWorkSheet(ws)){
+          renderBase.call(this,true);
+          if(typeof renderInlineDraft==='function')renderInlineDraft();
+          if(typeof refreshManualPalletButtonsV73==='function')refreshManualPalletButtonsV73();
+        }
+      }catch(e){console.warn('v75 post-recovery render',e)}
+      restoreScrollV75(pos);
+      if(changed){
+        try{setStatus('✓ 서버 자동 동기화 후에도 수동 팔레트 마감 상태를 유지했습니다.','ok')}catch(_){}
+      }
+      return ret;
+    };
+  }
+
+  // A completed manual close must be durable immediately, not only after a later debounce/autosave.
+  // Keep the v74 behavior and additionally flush the lightweight state to local/server storage right away.
+  const closeBaseV75=window.manualCloseCurrentPalletV73;
+  if(typeof closeBaseV75==='function')window.manualCloseCurrentPalletV73=function(){
+    const pos=captureScrollV75();
+    const ws=typeof currentWorkSheet==='function'?currentWorkSheet():null;
+    const before=ws&&isPackWorkSheet(ws)?JSON.stringify(ensurePalletState(ws)?.manualPalletBreaks||[]):'';
+    const ret=closeBaseV75.apply(this,arguments);
+    const after=ws&&isPackWorkSheet(ws)?JSON.stringify(ensurePalletState(ws)?.manualPalletBreaks||[]):'';
+    if(before!==after){
+      try{clearTimeout(persistStateTimer)}catch(_){}
+      // Local cache is written first inside persistPut; server follows using the existing project-scoped API.
+      try{Promise.resolve(savePersistentState()).catch(e=>console.warn('v75 immediate manual close save',e))}catch(_){}
+    }
+    restoreScrollV75(pos);
+    return ret;
+  };
+
+  const undoBaseV75=window.undoLastManualPalletCloseV73;
+  if(typeof undoBaseV75==='function')window.undoLastManualPalletCloseV73=function(){
+    const pos=captureScrollV75();
+    const ws=typeof currentWorkSheet==='function'?currentWorkSheet():null;
+    const before=ws&&isPackWorkSheet(ws)?JSON.stringify(ensurePalletState(ws)?.manualPalletBreaks||[]):'';
+    const ret=undoBaseV75.apply(this,arguments);
+    const after=ws&&isPackWorkSheet(ws)?JSON.stringify(ensurePalletState(ws)?.manualPalletBreaks||[]):'';
+    if(before!==after){
+      try{clearTimeout(persistStateTimer)}catch(_){}
+      try{Promise.resolve(savePersistentState()).catch(e=>console.warn('v75 immediate manual undo save',e))}catch(_){}
+    }
+    restoreScrollV75(pos);
+    return ret;
+  };
+})();
+// ===== /v75 =====
+</script>
 </body>
 </html>
