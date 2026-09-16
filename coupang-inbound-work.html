@@ -4358,5 +4358,211 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 // ===== /v76 =====
 </script>
 
+<script id="v77-authoritative-manual-pallet-close">
+// ===== v77: 수동 팔레트 마감 정본화 + 서버 저장 경합 방지 =====
+// 핵심 원칙
+// 1) 수동 마감 경계를 변하기 쉬운 group id만으로 저장하지 않고, 안정적인 completed.seq로도 저장합니다.
+// 2) 모든 state 저장을 한 줄(queue)로 직렬화하고, 실제 서버 전송이 끝날 때까지 기다립니다.
+// 3) 12초 안전저장은 내용이 바뀌지 않았으면 서버에 다시 쓰지 않습니다.
+// 4) 복구/4초 동기화가 와도 수동 마감 revision이 최신인 쪽을 선택하고 seq->id를 다시 연결합니다.
+// 5) 복구 직후 출고 박스번호(Q열)도 즉시 다시 계산합니다.
+(function(){
+  if(window.__TC_V77_AUTHORITATIVE_MANUAL_CLOSE__)return;
+  window.__TC_V77_AUTHORITATIVE_MANUAL_CLOSE__=true;
+
+  let saveChainV77=Promise.resolve();
+  let lastSavedFingerprintV77='';
+  let manualSaveBusyV77=false;
+
+  function sortedCompletedV77(state){return (state?.completed||[]).slice().sort((a,b)=>(Number(a?.seq)||0)-(Number(b?.seq)||0))}
+  function validSeqsV77(state,rawSeqs){
+    const valid=new Set(sortedCompletedV77(state).map(g=>Number(g?.seq)||0).filter(n=>n>0));
+    return [...new Set((rawSeqs||[]).map(Number).filter(n=>n>0&&valid.has(n)))].sort((a,b)=>a-b);
+  }
+  function deriveSeqsFromIdsV77(state,ids){
+    const wanted=new Set((ids||[]).map(String));
+    return sortedCompletedV77(state).filter(g=>wanted.has(String(g?.id||''))).map(g=>Number(g.seq)||0).filter(Boolean);
+  }
+  function seqsFromStateV77(state){
+    if(!state)return [];
+    const direct=Array.isArray(state.manualPalletCloseSeqsV77)?state.manualPalletCloseSeqsV77:null;
+    return validSeqsV77(state,direct||deriveSeqsFromIdsV77(state,state.manualPalletBreaks||[]));
+  }
+  function revFromStateV77(state){return Math.max(Number(state?.manualPalletCloseRevV77||0),Number(state?.manualPalletBreaksRev||0))}
+  function stampRevV77(state){
+    const rev=Math.max(Date.now(),revFromStateV77(state)+1);
+    state.manualPalletCloseRevV77=rev;
+    state.manualPalletBreaksRev=rev;
+    return rev;
+  }
+  function applySeqsV77(state,seqs,rev){
+    if(!state)return [];
+    const clean=validSeqsV77(state,seqs);
+    const wanted=new Set(clean);
+    const ids=sortedCompletedV77(state).filter(g=>wanted.has(Number(g?.seq)||0)).map(g=>String(g?.id||'')).filter(Boolean);
+    state.manualPalletCloseSeqsV77=clean;
+    state.manualPalletBreaks=[...new Set(ids)];
+    const r=Math.max(Number(rev||0),revFromStateV77(state));
+    state.manualPalletCloseRevV77=r;state.manualPalletBreaksRev=r;
+    try{delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets}catch(_){ }
+    return clean;
+  }
+  function accountKeyV77(){
+    try{const s=TC_ACCOUNT_SCOPE_V50||{};return (s.legacy?'legacy':String(s.uid||'unknown')).replace(/[^A-Za-z0-9._-]/g,'_')}catch(_){return'unknown'}
+  }
+  function shadowKeyV77(){return `tcManualPalletCloseV77:${accountKeyV77()}:${String(currentProjectIdV18||'none')}`}
+  function readShadowV77(){try{const x=JSON.parse(localStorage.getItem(shadowKeyV77())||'{}');return x&&typeof x==='object'?x:{}}catch(_){return{}}}
+  function writeShadowV77(name,state){
+    if(!name||!state)return;
+    try{const x=readShadowV77();x[String(name)]={seqs:seqsFromStateV77(state),rev:revFromStateV77(state),savedAt:Date.now()};localStorage.setItem(shadowKeyV77(),JSON.stringify(x))}catch(_){ }
+  }
+  function currentRegistryV77(){
+    const out={};try{for(const [name,state] of palletStates.entries())out[String(name)]={seqs:seqsFromStateV77(state),rev:revFromStateV77(state)}}catch(_){ }
+    return out;
+  }
+  function rawSeqsV77(raw){
+    if(!raw)return [];
+    if(Array.isArray(raw.manualPalletCloseSeqsV77))return [...new Set(raw.manualPalletCloseSeqsV77.map(Number).filter(n=>n>0))].sort((a,b)=>a-b);
+    const ids=new Set((raw.manualPalletBreaks||[]).map(String));
+    return (raw.completed||[]).filter(g=>ids.has(String(g?.id||''))).map(g=>Number(g?.seq)||0).filter(Boolean).sort((a,b)=>a-b);
+  }
+  function incomingRegistryV77(saved){
+    const out={};
+    try{
+      const top=saved?.manualPalletCloseRegistryV77||{};
+      for(const [name,v] of Object.entries(top))out[String(name)]={seqs:Array.isArray(v?.seqs)?v.seqs.map(Number).filter(n=>n>0):[],rev:Number(v?.rev||0),src:'incomingTop'};
+      for(const pair of saved?.palletStates||[]){
+        const name=String(pair?.[0]||''),raw=pair?.[1];if(!name||!raw)continue;
+        const cand={seqs:rawSeqsV77(raw),rev:Math.max(Number(raw.manualPalletCloseRevV77||0),Number(raw.manualPalletBreaksRev||0)),src:'incomingState'};
+        if(!out[name]||cand.rev>=Number(out[name].rev||0))out[name]=cand;
+      }
+    }catch(_){ }
+    return out;
+  }
+  function chooseRecordV77(name,current,incoming,shadow){
+    const rows=[];
+    if(current)rows.push({src:'current',seqs:current.seqs||[],rev:Number(current.rev||0),prio:4});
+    if(shadow)rows.push({src:'shadow',seqs:Array.isArray(shadow.seqs)?shadow.seqs:[],rev:Number(shadow.rev||0),prio:3});
+    if(incoming)rows.push({src:'incoming',seqs:incoming.seqs||[],rev:Number(incoming.rev||0),prio:2});
+    rows.sort((a,b)=>(b.rev-a.rev)||(b.prio-a.prio));
+    if(!rows.length)return{seqs:[],rev:0};
+    const topRev=Number(rows[0].rev||0);
+    if(topRev===0){
+      const nonEmpty=rows.find(x=>Array.isArray(x.seqs)&&x.seqs.length);
+      if(nonEmpty)return{seqs:nonEmpty.seqs,rev:0};
+    }
+    return{seqs:rows[0].seqs||[],rev:topRev};
+  }
+  function captureScrollV77(){const vp=document.getElementById('sheetViewport');return{top:vp?.scrollTop||0,left:vp?.scrollLeft||0,x:window.scrollX||0,y:window.scrollY||0}}
+  function restoreScrollV77(p){if(!p)return;const f=()=>{try{const vp=document.getElementById('sheetViewport');if(vp){vp.scrollTop=p.top;vp.scrollLeft=p.left}}catch(_){ }try{window.scrollTo(p.x,p.y)}catch(_){ }};f();requestAnimationFrame(()=>{f();requestAnimationFrame(f)})}
+  function refreshOutboundV77(){
+    try{if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13()}catch(_){ }
+    try{const ws=workbook?.getWorksheet(activeSheet);if(ws&&isPackWorkSheet(ws)){recalcWorkSheet(ws);renderSheet(true);if(typeof renderInlineDraft==='function')renderInlineDraft();if(typeof refreshManualPalletButtonsV73==='function')refreshManualPalletButtonsV73()}}catch(_){ }
+  }
+
+  // 최신 필드를 서버/IndexedDB 경량 상태에 항상 포함합니다.
+  const cleanBaseV77=cleanPalletStateForSave;
+  cleanPalletStateForSave=function(state){
+    const out=cleanBaseV77(state);if(!out||!state)return out;
+    const seqs=seqsFromStateV77(state),rev=revFromStateV77(state);
+    applySeqsV77(state,seqs,rev);
+    out.manualPalletCloseSeqsV77=seqs;
+    out.manualPalletCloseRevV77=rev;
+    out.manualPalletBreaks=[...(state.manualPalletBreaks||[])];
+    out.manualPalletBreaksRev=rev;
+    return out;
+  };
+  const payloadBaseV77=persistentStatePayload;
+  persistentStatePayload=function(){const p=payloadBaseV77();p.manualPalletCloseRegistryV77=currentRegistryV77();p.stateFormatV77=77;return p};
+
+  // 모든 저장을 직렬화합니다. 12초 안전저장은 상태가 동일하면 실제 서버 PUT을 생략합니다.
+  const saveBaseV77=savePersistentState;
+  function fingerprintV77(){try{const p=persistentStatePayload();delete p.savedAt;return JSON.stringify(p)}catch(_){return String(Date.now())}}
+  async function waitSharedIdleV77(maxMs=10000){
+    const start=Date.now();while(Date.now()-start<maxMs){if(!sharedStateSending&&!sharedStateQueued)return true;await new Promise(r=>setTimeout(r,25))}return false;
+  }
+  savePersistentState=async function(forceV77=false){
+    const fp=fingerprintV77();
+    if(!forceV77&&lastSavedFingerprintV77&&fp===lastSavedFingerprintV77)return;
+    const run=async()=>{await saveBaseV77.apply(this,[]);await waitSharedIdleV77();lastSavedFingerprintV77=fp;};
+    saveChainV77=saveChainV77.then(run,run);return await saveChainV77;
+  };
+
+  // 복구/서버 동기화는 최신 revision의 seq 경계를 정본으로 다시 연결합니다.
+  const applyBaseV77=window.applyRecoveredState||applyRecoveredState;
+  if(typeof applyBaseV77==='function')window.applyRecoveredState=applyRecoveredState=function(saved){
+    const pos=captureScrollV77(),before=currentRegistryV77(),incoming=incomingRegistryV77(saved),shadow=readShadowV77();
+    const renderBase=renderSheet;let ret;
+    try{renderSheet=function(){return renderBase.call(this,true)};ret=applyBaseV77.apply(this,arguments)}finally{renderSheet=renderBase}
+    try{
+      for(const [name,state] of palletStates.entries()){
+        const pick=chooseRecordV77(String(name),before[String(name)],incoming[String(name)],shadow?.[String(name)]);
+        applySeqsV77(state,pick.seqs,pick.rev);writeShadowV77(name,state);
+        const ws=workbook?.getWorksheet(name);if(ws){assignVisualRows(ws,state);recalcWorkSheet(ws)}
+      }
+      if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13();
+      const ws=workbook?.getWorksheet(activeSheet);if(ws&&isPackWorkSheet(ws)){renderBase.call(this,true);if(typeof renderInlineDraft==='function')renderInlineDraft();if(typeof refreshManualPalletButtonsV73==='function')refreshManualPalletButtonsV73()}
+    }catch(e){console.warn('v77 recovery merge',e)}
+    restoreScrollV77(pos);return ret;
+  };
+
+  async function verifyManualServerV77(sheetName,state){
+    if(!currentProjectIdV18||!state)return false;
+    const wantedSeqs=seqsFromStateV77(state),wantedRev=revFromStateV77(state);
+    try{
+      await savePersistentState(true);await waitSharedIdleV77();
+      let r=await sharedFetch(projectApiV18('/state'),{},false);let j=r.ok?await r.json():null,s=j?.state||null,inc=incomingRegistryV77(s),got=inc[String(sheetName)]||{};
+      const same=Number(got.rev||0)>=wantedRev&&JSON.stringify((got.seqs||[]).map(Number).sort((a,b)=>a-b))===JSON.stringify(wantedSeqs);
+      if(!same){
+        // 서버가 이전 상태를 가지고 있으면 현재 정본을 직접 한 번 더 씁니다.
+        await waitSharedIdleV77();const payload=persistentStatePayload();
+        r=await sharedFetch(projectApiV18('/state'),{method:'PUT',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(payload)},false);
+        if(!r.ok)throw new Error('manual close state PUT '+r.status);
+        const out=await r.json().catch(()=>({}));sharedLastStateAt=Math.max(sharedLastStateAt,Number(out.updatedAt||0));
+      }
+      return true;
+    }catch(e){console.warn('v77 manual close server verify',e);return false}
+  }
+
+  function palletWsV77(){const ws=boxDraft?.sheetName?workbook?.getWorksheet(boxDraft.sheetName):currentWorkSheet();return ws&&sheetKind(ws)==='pallet'?ws:null}
+  function draftBusyV77(){return !!(boxDraft&&Array.isArray(boxDraft.items)&&boxDraft.items.length)}
+  function currentPalletV77(ws,state){try{const st=assignVisualRows(ws,state),p=st?._mappedPallets||[];return p.length?p[p.length-1]:null}catch(_){return null}}
+
+  // v73~v76의 중첩 save wrapper를 더 이상 통과하지 않고 한 번만 확정 저장합니다.
+  window.manualCloseCurrentPalletV73=function(){
+    const pos=captureScrollV77(),ws=palletWsV77();
+    if(!ws){alert('팔레트/밀크런 작업 탭에서만 사용할 수 있습니다.');return}
+    const state=ensurePalletState(ws),groups=sortedCompletedV77(state);if(!groups.length){alert('먼저 박스 작업을 1개 이상 완료해 주세요.');return}
+    if(draftBusyV77()){alert('현재 입력 중인 박스가 있습니다. 박스 작업을 완료하거나 새 박스로 초기화한 뒤 팔레트를 마감해 주세요.');return}
+    const last=groups[groups.length-1],seq=Number(last.seq)||0,seqs=seqsFromStateV77(state);if(seqs.includes(seq)){alert('현재 팔레트는 이미 수동 마감되어 있습니다.');return}
+    const p=currentPalletV77(ws,state);if(!p){alert('현재 팔레트 정보를 확인할 수 없습니다.');return}
+    const msg=`현재 ${p.no}번 팔레트를 여기서 수동 마감하시겠습니까?\n\n현재 적재: ${Number(p.totalBoxes||0).toLocaleString()}박스 / ${Number(p.totalQty||0).toLocaleString()}개${Number.isFinite(Number(p.totalWeight))?` / ${Number(Number(p.totalWeight).toFixed(2))}kg`:''}\n\n마감 후 다음 박스 작업은 ${Number(p.no||0)+1}번 팔레트부터 시작합니다.`;
+    if(!confirm(msg))return;
+    const rev=stampRevV77(state);applySeqsV77(state,[...seqs,seq],rev);writeShadowV77(ws.name,state);
+    try{markPalletDirty(ws,state);assignVisualRows(ws,state);recalcWorkSheet(ws);if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13();renderSheet(true);renderInlineDraft();if(typeof refreshManualPalletButtonsV73==='function')refreshManualPalletButtonsV73();focusInlineScan()}catch(e){console.warn('v77 manual close render',e)}
+    restoreScrollV77(pos);setStatus(`✓ ${p.no}번 팔레트 수동 마감 완료 · 다음 박스는 ${Number(p.no||0)+1}번 팔레트부터 배정됩니다. · 서버 확정 저장 중…`,'ok');
+    if(!manualSaveBusyV77){manualSaveBusyV77=true;verifyManualServerV77(ws.name,state).then(ok=>{if(ok)setStatus(`✓ ${p.no}번 팔레트 수동 마감 · 서버 확정 저장 완료 · 다음 ${Number(p.no||0)+1}번 팔레트`,'ok');else setStatus('⚠ 수동 마감은 이 PC에 유지 중 · 서버 저장 확인 실패','bad')}).finally(()=>{manualSaveBusyV77=false})}
+  };
+
+  window.undoLastManualPalletCloseV73=function(){
+    const pos=captureScrollV77(),ws=palletWsV77();if(!ws){alert('팔레트/밀크런 작업 탭에서만 사용할 수 있습니다.');return}
+    const state=ensurePalletState(ws),groups=sortedCompletedV77(state);if(!groups.length)return;if(draftBusyV77()){alert('현재 입력 중인 박스가 있습니다. 먼저 박스 작업을 완료하거나 새 박스로 초기화해 주세요.');return}
+    const seqs=seqsFromStateV77(state);if(!seqs.length){alert('취소할 수동 팔레트 마감이 없습니다.');return}
+    const last=groups[groups.length-1],lastSeq=Number(last.seq)||0,closeSeq=seqs[seqs.length-1];if(closeSeq!==lastSeq){alert('수동 마감 이후에 이미 다음 팔레트 작업이 진행되었습니다.\n안전을 위해 이전 팔레트 마감은 자동으로 취소하지 않습니다.');return}
+    const p=currentPalletV77(ws,state),closedNo=Number(p?.no)||'';if(!confirm(`${closedNo||'마지막'}번 팔레트의 수동 마감을 취소하고 다시 열까요?`))return;
+    const rev=stampRevV77(state);applySeqsV77(state,seqs.filter(n=>n!==closeSeq),rev);writeShadowV77(ws.name,state);
+    try{markPalletDirty(ws,state);assignVisualRows(ws,state);recalcWorkSheet(ws);if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13();renderSheet(true);renderInlineDraft();if(typeof refreshManualPalletButtonsV73==='function')refreshManualPalletButtonsV73();focusInlineScan()}catch(e){console.warn('v77 manual undo render',e)}
+    restoreScrollV77(pos);setStatus(`✓ ${closedNo||'마지막'}번 팔레트 수동 마감을 취소했습니다. · 서버 확정 저장 중…`,'ok');
+    if(!manualSaveBusyV77){manualSaveBusyV77=true;verifyManualServerV77(ws.name,state).then(ok=>{if(ok)setStatus('✓ 수동 팔레트 마감 취소 · 서버 확정 저장 완료','ok');else setStatus('⚠ 마감 취소는 이 PC에 유지 중 · 서버 저장 확인 실패','bad')}).finally(()=>{manualSaveBusyV77=false})}
+  };
+
+  // 재접속 복구가 끝난 즉시 Q열 출고 박스번호와 수동 마감 경계를 확정 렌더합니다.
+  const restoreBaseV77=restorePersistentSession;
+  restorePersistentSession=async function(){const pos=captureScrollV77();const r=await restoreBaseV77.apply(this,arguments);try{refreshOutboundV77()}catch(_){ }restoreScrollV77(pos);return r};
+  [80,350,900].forEach(ms=>setTimeout(()=>{try{if(workbook)refreshOutboundV77()}catch(_){ }},ms));
+})();
+// ===== /v77 =====
+</script>
+
 </body>
 </html>
