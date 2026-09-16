@@ -3968,5 +3968,113 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 // ===== /v73 =====
 </script>
+
+
+<script id="v74-manual-pallet-close-visible-fix">
+// ===== v74: 수동 팔레트 마감 즉시 표시/다음 팔레트 강제 시작 보강 =====
+// v73의 수동 마감 경계 데이터는 그대로 사용합니다.
+// 보강점: 마지막 팔레트를 수동 마감해도 다음 팔레트에 아직 박스가 없으면
+// 기존 녹색 구분선 로직은 표시할 대상(다음 팔레트)이 없어 선이 보이지 않았습니다.
+// 이제 마감 즉시 마지막 완료행 아래에 녹색 마감선을 표시하고,
+// 다음 박스가 반드시 +1 팔레트부터 시작하는지 재계산을 강제로 갱신합니다.
+(function(){
+  function palletWsV74(){
+    const ws=boxDraft?.sheetName?workbook?.getWorksheet(boxDraft.sheetName):currentWorkSheet();
+    return ws&&sheetKind(ws)==='pallet'?ws:null;
+  }
+  function sortedGroupsV74(state){
+    return (state?.completed||[]).slice().sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));
+  }
+  function breakSetV74(state){
+    const valid=new Set((state?.completed||[]).map(g=>String(g?.id||'')).filter(Boolean));
+    return new Set((state?.manualPalletBreaks||[]).map(String).filter(id=>valid.has(id)));
+  }
+  function tailCloseInfoV74(ws){
+    if(!ws||sheetKind(ws)!=='pallet')return null;
+    const state=ensurePalletState(ws),groups=sortedGroupsV74(state);if(!groups.length)return null;
+    const last=groups[groups.length-1],breaks=breakSetV74(state);
+    if(!breaks.has(String(last.id||'')))return null;
+    // Always rebuild after a close/undo so stale mapper cache can never hide the boundary.
+    try{delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets}catch(_){ }
+    const st=assignVisualRows(ws,state),pallets=st._mappedPallets||[],p=pallets[pallets.length-1];
+    if(!p)return null;
+    return {state,last,closedNo:Number(p.no)||pallets.length,nextNo:(Number(p.no)||pallets.length)+1,lastRow:Number(p.lastRow)||Number(last.rows?.end)||0};
+  }
+  function ensureTailStyleV74(){
+    if(document.getElementById('v74-manual-close-style'))return;
+    const s=document.createElement('style');s.id='v74-manual-close-style';s.textContent=`
+      .manual-pallet-tail-v74 td{position:relative;text-align:center!important;color:#fff!important;font-size:9px!important;font-weight:900!important;line-height:18px!important;letter-spacing:.1px}
+      .manual-pallet-tail-v74 td span{display:inline-block;padding:0 9px;background:#00843d;border-radius:8px;line-height:14px;vertical-align:middle}
+      .manual-pallet-state-v74{display:none;align-items:center;height:25px;padding:0 8px;border-radius:12px;background:#eaf7ef;border:1px solid #8cc7a2;color:#126b36;font-size:9px;font-weight:900;white-space:nowrap}
+      .manual-pallet-state-v74.show{display:inline-flex}
+    `;document.head.appendChild(s);
+  }
+  function stateChipV74(){
+    let el=document.getElementById('manualPalletStateV74');if(el)return el;
+    const undo=document.getElementById('inlineManualPalletUndoBtn');if(!undo)return null;
+    el=document.createElement('span');el.id='manualPalletStateV74';el.className='manual-pallet-state-v74';undo.insertAdjacentElement('afterend',el);return el;
+  }
+  function decorateTailV74(ws){
+    ensureTailStyleV74();
+    document.querySelectorAll('#sheetHost .manual-pallet-tail-v74').forEach(x=>x.remove());
+    const info=tailCloseInfoV74(ws),chip=stateChipV74();
+    if(!info){if(chip){chip.classList.remove('show');chip.textContent=''}return}
+    const maxC=18,visible=Array.from({length:maxC},(_,i)=>i+1).filter(c=>!ws.getColumn(c).hidden).length;
+    const anchor=document.querySelector(`#sheetHost th.row-number[data-row-no="${info.lastRow}"]`)?.closest('tr');
+    if(anchor){
+      const tr=document.createElement('tr');tr.className='pallet-separator-row manual-pallet-tail-v74';
+      tr.innerHTML=`<th class="row-number"></th><td colspan="${visible}"><span>✓ ${info.closedNo}번 팔레트 수동 마감 · 다음 ${info.nextNo}번 팔레트</span></td>`;
+      anchor.insertAdjacentElement('afterend',tr);
+    }
+    if(chip){chip.textContent=`✓ ${info.closedNo}번 마감 완료 → 다음 ${info.nextNo}번`;chip.classList.add('show')}
+    const closeBtn=document.getElementById('inlineManualPalletCloseBtn');
+    if(closeBtn){closeBtn.disabled=true;closeBtn.textContent=`✓ ${info.closedNo}번 팔레트 마감됨`;closeBtn.title=`${info.closedNo}번 팔레트는 수동 마감되었습니다. 다음 박스는 ${info.nextNo}번 팔레트부터 시작합니다.`}
+  }
+
+  // Render normal sheet first, then draw a trailing green line even before the next pallet has a box.
+  const renderPalletSheetFastBaseV74=renderPalletSheetFast;
+  renderPalletSheetFast=function(keepScroll,ws){
+    const ret=renderPalletSheetFastBaseV74.apply(this,arguments);
+    try{if(ws&&sheetKind(ws)==='pallet')decorateTailV74(ws)}catch(e){console.warn('v74 trailing manual close line',e)}
+    return ret;
+  };
+
+  // Close: compare boundary count before/after confirmation. On success, forcibly invalidate mapper cache,
+  // recalculate, redraw, and persist. This guarantees the next completed group maps to pallet +1.
+  const manualCloseBaseV74=window.manualCloseCurrentPalletV73;
+  if(typeof manualCloseBaseV74==='function')window.manualCloseCurrentPalletV73=function(){
+    const ws=palletWsV74(),state=ws?ensurePalletState(ws):null,before=state?breakSetV74(state).size:0;
+    const ret=manualCloseBaseV74.apply(this,arguments);
+    if(ws&&state&&breakSetV74(state).size>before){
+      try{delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets}catch(_){ }
+      try{assignVisualRows(ws,state);recalcWorkSheet(ws);schedulePersistentState(10);renderSheet(true);renderInlineDraft();decorateTailV74(ws);focusInlineScan()}catch(e){console.warn('v74 manual close refresh',e)}
+      const info=tailCloseInfoV74(ws);if(info)setStatus(`✓ ${info.closedNo}번 팔레트 수동 마감 완료 · 녹색 마감선 생성 · 다음 박스는 ${info.nextNo}번 팔레트부터 시작합니다.`,'ok');
+    }
+    return ret;
+  };
+
+  const undoBaseV74=window.undoLastManualPalletCloseV73;
+  if(typeof undoBaseV74==='function')window.undoLastManualPalletCloseV73=function(){
+    const ws=palletWsV74(),state=ws?ensurePalletState(ws):null,before=state?breakSetV74(state).size:0;
+    const ret=undoBaseV74.apply(this,arguments);
+    if(ws&&state&&breakSetV74(state).size<before){
+      try{delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets}catch(_){ }
+      try{assignVisualRows(ws,state);recalcWorkSheet(ws);schedulePersistentState(10);renderSheet(true);renderInlineDraft();decorateTailV74(ws);focusInlineScan()}catch(e){console.warn('v74 manual close undo refresh',e)}
+    }
+    return ret;
+  };
+
+  // Keep status chip/green tail correct after sheet change, restoration and box completion.
+  const refreshButtonsBaseV74=window.refreshManualPalletButtonsV73;
+  if(typeof refreshButtonsBaseV74==='function')window.refreshManualPalletButtonsV73=function(){
+    const ret=refreshButtonsBaseV74.apply(this,arguments);
+    try{const ws=palletWsV74();if(ws)decorateTailV74(ws);else{const chip=stateChipV74();if(chip){chip.classList.remove('show');chip.textContent=''}}}catch(_){ }
+    return ret;
+  };
+  setTimeout(()=>{try{const ws=palletWsV74();if(ws)decorateTailV74(ws)}catch(_){ }},250);
+})();
+// ===== /v74 =====
+</script>
+
 </body>
 </html>
