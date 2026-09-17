@@ -4839,3 +4839,136 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 </body>
 </html>
+
+<!-- ===== v81: box-start-aware + all-center/range-aware missing number alert ===== -->
+<style id="v80-missing-box-alert-style">
+  /* v33 has its own old timer that assumes box numbering starts at 1. Keep it out of the UI. */
+  #missingBoxNosV33{display:none!important;}
+  #missingBoxNosV80{font-size:11px!important;margin-left:10px;max-width:calc(100vw - 420px);overflow:hidden;text-overflow:ellipsis;vertical-align:middle;color:#d00000;font-weight:900;white-space:nowrap;}
+</style>
+<script id="v81-box-start-aware-missing-alert">
+(function(){
+  const LEGACY_ID='missingBoxNosV33';
+  const ALERT_ID='missingBoxNosV80';
+
+  function positiveInt(v,fallback=1){
+    const n=parseInt(String(v??'').replace(/[^0-9]/g,''),10);
+    return Number.isFinite(n)&&n>0?n:fallback;
+  }
+  function effectiveStartNo(){
+    // The value the worker can actually see/type is the source of truth for the alert.
+    const inp=document.getElementById('inlineStartBoxNo');
+    if(inp && String(inp.value||'').trim()) return positiveInt(inp.value,1);
+    try{ if(typeof window.getBoxStartNoV34==='function') return Math.max(1,positiveInt(window.getBoxStartNoV34(),1)); }catch(_){ }
+    return 1;
+  }
+  function addLabel(raw,set){
+    const text=String(raw??'').trim();
+    if(!text)return;
+    const re=/(\d+)\s*(?:~|-|–|—|~~|〜)\s*(\d+)|(\d+)/g;
+    let m;
+    while((m=re.exec(text))){
+      if(m[1]&&m[2]){
+        let a=Number(m[1]),b=Number(m[2]);
+        if(!Number.isFinite(a)||!Number.isFinite(b))continue;
+        if(a>b){const t=a;a=b;b=t;}
+        if(b-a>10000)b=a+10000;
+        for(let n=a;n<=b;n++)if(n>0)set.add(n);
+      }else if(m[3]){
+        const n=Number(m[3]);if(Number.isFinite(n)&&n>0)set.add(n);
+      }
+    }
+  }
+  function addCompletedGroupNumbers(g,set){
+    if(!g)return;
+    const raw=String(g?.boxNo??'').trim();
+    addLabel(raw,set);
+
+    // A packing group can contain several physical boxes. Older/restored states sometimes keep
+    // only the first number (e.g. "301") while the worksheet already shows "301~303".
+    // In that case, recover the whole physical range from boxCount so 302/303 are not reported missing.
+    const count=Math.max(1,positiveInt(g?.boxCount,1));
+    if(count<=1||!raw)return;
+    const hasExplicitRange=/(\d+)\s*(?:~|-|–|—|~~|〜|～|－)\s*(\d+)/.test(raw);
+    if(hasExplicitRange)return;
+    const m=raw.match(/\d+/);
+    const first=m?Number(m[0]):0;
+    if(!Number.isFinite(first)||first<=0)return;
+    for(let n=first;n<first+Math.min(count,10000);n++)set.add(n);
+  }
+  function usedNumbers(){
+    const used=new Set();
+    let sheets=[];
+    try{sheets=(typeof visibleWorkSheets==='function')?visibleWorkSheets():((workbook?.worksheets)||[]);}catch(_){sheets=(workbook?.worksheets)||[];}
+    for(const ws of sheets){
+      try{
+        if(typeof isPackWorkSheet==='function'&&!isPackWorkSheet(ws))continue;
+
+        // IMPORTANT: never choose only one source. A different center tab can have a stale in-memory
+        // palletState while its worksheet P column already contains the final range (e.g. 301~303).
+        // Union BOTH sources across ALL center tabs in the current shipment.
+        const st=(typeof palletStates!=='undefined'&&palletStates?.get)?palletStates.get(ws.name):null;
+        if(st&&Array.isArray(st.completed)){
+          for(const g of st.completed)addCompletedGroupNumbers(g,used);
+        }
+
+        // Always scan the visible physical box-number column too, even when palletState exists.
+        // This is what makes numbers completed in another center immediately count as used.
+        const start=(typeof generationStartRow==='function')?generationStartRow(ws):1;
+        const end=Math.max(start,Number(ws?.rowCount)||start);
+        for(let r=start;r<=end;r++){
+          let v='';
+          try{v=(typeof displayText==='function')?displayText(ws.getRow(r).getCell(16)):ws.getRow(r).getCell(16).value;}catch(_){v='';}
+          if(v!==null&&v!==undefined&&String(v).trim())addLabel(v,used);
+        }
+      }catch(e){console.warn('[v81 box missing collect]',ws?.name,e);}
+    }
+    return used;
+  }
+  function compress(list){
+    if(!list.length)return [];
+    const out=[];let s=list[0],p=list[0];
+    for(let i=1;i<list.length;i++){
+      const c=list[i];
+      if(c===p+1){p=c;continue;}
+      out.push(s===p?String(s):`${s}~${p}`);s=p=c;
+    }
+    out.push(s===p?String(s):`${s}~${p}`);return out;
+  }
+  function ensureAlert(){
+    const legacy=document.getElementById(LEGACY_ID);
+    let el=document.getElementById(ALERT_ID);
+    if(!el){
+      el=document.createElement('span');el.id=ALERT_ID;el.style.display='none';
+      el.title='박스 시작번호 이후의 완료 박스번호만 기준으로 누락 번호를 표시합니다.';
+      if(legacy?.parentNode)legacy.parentNode.insertBefore(el,legacy.nextSibling);
+      else document.querySelector('.excel-caption')?.appendChild(el);
+    }
+    return el;
+  }
+  function update(){
+    const el=ensureAlert();if(!el)return;
+    try{
+      const start=effectiveStartNo(),used=usedNumbers();
+      let max=0;for(const n of used)if(n>=start&&n>max)max=n;
+      if(max<start){el.textContent='';el.style.display='none';return;}
+      const missing=[];for(let n=start;n<=max;n++)if(!used.has(n))missing.push(n);
+      if(!missing.length){el.textContent='';el.style.display='none';el.title=`박스 시작번호 ${start}번 이후 누락이 없습니다.`;return;}
+      const ranges=compress(missing),limit=18,shown=ranges.slice(0,limit).join(', '),extra=ranges.length>limit?` 외 ${ranges.length-limit}구간`:'';
+      el.textContent=`박스번호 누락: ${shown}${extra}`;el.style.display='inline';
+      el.title=`박스 시작번호 ${start}번 기준 누락 (${missing.length}개): ${ranges.join(', ')}`;
+    }catch(e){console.warn('[v80 box missing alert]',e);el.style.display='none';}
+  }
+  window.updateMissingBoxAlertV80=update;
+
+  // Update immediately when the worker changes the start number; no waiting for autosave/server sync.
+  document.addEventListener('input',e=>{if(e.target?.id==='inlineStartBoxNo')requestAnimationFrame(update);},true);
+  document.addEventListener('change',e=>{if(e.target?.id==='inlineStartBoxNo')requestAnimationFrame(update);},true);
+
+  // The legacy v33 timer can still run internally, but it only touches the permanently hidden legacy span.
+  // This independent span is therefore stable and cannot blink back to 1..N.
+  setInterval(update,700);
+  requestAnimationFrame(update);
+})();
+</script>
+<!-- ===== /v81 ===== -->
