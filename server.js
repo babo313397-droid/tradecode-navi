@@ -622,6 +622,49 @@ function cloneJsonV82(v){try{return JSON.parse(JSON.stringify(v))}catch(_){retur
 function palletRawMapV82(state){
   const m=new Map();for(const pair of (state&&Array.isArray(state.palletStates)?state.palletStates:[])){const name=String(pair&&pair[0]||''),raw=pair&&pair[1];if(name&&raw)m.set(name,raw)}return m;
 }
+// v85: 같은 센터 시트에서 동일 박스번호가 여러 completed id로 살아나는 현상 방지.
+// v82의 id 단위 병합은 브라우저/서버 복구 과정에서 동일 물리 박스가 새 id로 재생성되면
+// 둘 다 보존할 수 있었습니다. 박스번호가 있는 완료 박스는 박스번호를 물리 박스 정본키로 사용합니다.
+function normPhysicalBoxNoV85(v){
+  return String(v??'').trim().replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase();
+}
+function dedupeCompletedPhysicalV85(raw){
+  if(!raw||typeof raw!=='object')return {raw:raw||{},changed:false,removed:0};
+  const out=cloneJsonV82(raw)||{};
+  const src=Array.isArray(out.completed)?out.completed:[];
+  const byKey=new Map(), noKey=[]; let removed=0;
+  for(const g0 of src){
+    if(!g0||typeof g0!=='object'){continue}
+    const g=cloneJsonV82(g0), boxKey=normPhysicalBoxNoV85(g.boxNo);
+    if(!boxKey){noKey.push(g);continue}
+    const key='BOX:'+boxKey, cur=byKey.get(key);
+    if(!cur){byKey.set(key,g);continue}
+    removed++;
+    const cr=boxGroupRevV82(cur), nr=boxGroupRevV82(g);
+    const cu=Number(cur.boxUpdatedAtV82||cur.boxCompletedAtV82||0), nu=Number(g.boxUpdatedAtV82||g.boxCompletedAtV82||0);
+    let keep=cur;
+    if(nr>cr||(nr===cr&&nu>cu))keep=g;
+    const minSeq=Math.min(...[Number(cur.seq)||0,Number(g.seq)||0].filter(n=>n>0));
+    if(minSeq>0)keep.seq=minSeq;
+    const firstAt=Math.min(...[Number(cur.boxCompletedAtV82)||0,Number(g.boxCompletedAtV82)||0].filter(n=>n>0));
+    if(firstAt>0)keep.boxCompletedAtV82=firstAt;
+    byKey.set(key,keep);
+  }
+  out.completed=[...byKey.values(),...noKey].sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));
+  return {raw:out,changed:removed>0,removed};
+}
+function sanitizeCompletedStateV85(state){
+  if(!state||typeof state!=='object')return {state:state||{},changed:false,removed:0};
+  const out=cloneJsonV82(state)||{}; let changed=false,removed=0;
+  if(Array.isArray(out.palletStates)){
+    out.palletStates=out.palletStates.map(pair=>{
+      if(!Array.isArray(pair)||pair.length<2)return pair;
+      const x=dedupeCompletedPhysicalV85(pair[1]);changed=changed||x.changed;removed+=x.removed;return [pair[0],x.raw];
+    });
+  }
+  if(changed){out.stateFormatV85=85;out.completedBoxDedupeV85={removed,at:Date.now()}}
+  return {state:out,changed,removed};
+}
 function mergeTombstonesV82(a,b){
   const out={};for(const src of [a,b])for(const [sheet,rows] of Object.entries(src&&typeof src==='object'?src:{})){
     const dst=out[sheet]||(out[sheet]={});for(const [id,rev] of Object.entries(rows&&typeof rows==='object'?rows:{}))dst[id]=Math.max(Number(dst[id]||0),Number(rev||0));
@@ -635,12 +678,12 @@ function inventoryV82(raw){
   return {totals,meta};
 }
 function mergeOnePalletRawV82(oldRaw,newRaw,tombs){
-  oldRaw=oldRaw||{};newRaw=newRaw||{};const out=cloneJsonV82(newRaw&&Object.keys(newRaw).length?newRaw:oldRaw)||{};
+  oldRaw=dedupeCompletedPhysicalV85(oldRaw||{}).raw;newRaw=dedupeCompletedPhysicalV85(newRaw||{}).raw;const out=cloneJsonV82(newRaw&&Object.keys(newRaw).length?newRaw:oldRaw)||{};
   const chosen=new Map();
   const take=(g,sourceRank)=>{if(!g||!g.id)return;const id=String(g.id),cur=chosen.get(id),rev=boxGroupRevV82(g);if(!cur||rev>cur.rev||(rev===cur.rev&&sourceRank>cur.rank))chosen.set(id,{g:cloneJsonV82(g),rev,rank:sourceRank})};
   for(const g of (oldRaw.completed||[]))take(g,1);for(const g of (newRaw.completed||[]))take(g,2);
   const completed=[];for(const [id,row] of chosen){const tomb=Number(tombs&&tombs[id]||0);if(tomb>row.rev)continue;completed.push(row.g)}
-  completed.sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));out.completed=completed;
+  completed.sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));out.completed=dedupeCompletedPhysicalV85({completed}).raw.completed;
 
   // 원본 총수량은 불변이므로 old/new 각각의 (미완료+완료) 총량 중 큰 값을 기준으로 재계산합니다.
   const oi=inventoryV82(oldRaw),ni=inventoryV82(newRaw),totals=new Map(),meta=new Map();
@@ -656,13 +699,13 @@ function mergeOnePalletRawV82(oldRaw,newRaw,tombs){
   return out;
 }
 function protectCompletedBoxesV82(existingRow,incomingState){
-  const oldState=existingRow&&existingRow.state&&typeof existingRow.state==='object'?existingRow.state:{};
-  const next=incomingState&&typeof incomingState==='object'?incomingState:{};
+  const oldState=sanitizeCompletedStateV85(existingRow&&existingRow.state&&typeof existingRow.state==='object'?existingRow.state:{}).state;
+  const next=sanitizeCompletedStateV85(incomingState&&typeof incomingState==='object'?incomingState:{}).state;
   const tombs=mergeTombstonesV82(oldState.boxTombstonesV82,next.boxTombstonesV82);next.boxTombstonesV82=tombs;
   const oldMap=palletRawMapV82(oldState),newMap=palletRawMapV82(next),names=new Set([...oldMap.keys(),...newMap.keys()]);
   const merged=[];for(const name of names)merged.push([name,mergeOnePalletRawV82(oldMap.get(name),newMap.get(name),tombs[name]||{})]);
   if(merged.length)next.palletStates=merged;
-  next.stateFormatV82=Math.max(Number(next.stateFormatV82||0),82);return next;
+  next.stateFormatV82=Math.max(Number(next.stateFormatV82||0),82);const clean=sanitizeCompletedStateV85(next);return clean.state;
 }
 
 // v50: 직원 계정 쿠팡 API는 레거시 공용 라우트보다 먼저 개인 저장소에서 처리합니다.
@@ -685,7 +728,7 @@ app.use('/api/coupang-shared',(req,res,next)=>{
   if(!part){if(req.method==='PATCH'){if(req.body?.name!==undefined)proj.name=String(req.body.name||proj.name).slice(0,120);if(req.body?.status!==undefined)proj.status=req.body.status==='archived'?'archived':'active';proj.updatedAt=Date.now();saveIdx(idx);return res.json({ok:true,project:proj})}}
   if(part==='status'&&req.method==='GET'){const st=readJsonFileV48(paths.state,null),bs=k=>{const meta=readJsonFileV48(paths[k].meta,null);return meta&&fs.existsSync(paths[k].data)?{updatedAt:Number(meta.updatedAt||0),size:Number(meta.size||0),name:meta.name||''}:null};return res.json({ok:true,state:st?{updatedAt:Number(st.updatedAt||0)}:null,source:bs('source'),workbookSnapshot:bs('workbookSnapshot')})}
   if(part==='state'){
-    if(req.method==='GET'){const st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
+    if(req.method==='GET'){let st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});const clean=sanitizeCompletedStateV85(st.state);if(clean.changed){st={...st,updatedAt:Date.now(),state:clean.state};atomicJsonV48(paths.state,st)}res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
     if(req.method==='DELETE'){fs.rmSync(paths.state,{force:true});touch(id);return res.json({ok:true})}
     if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const existing=readJsonFileV48(paths.state,null),guard=guardWholeStateV78(existing,state);if(guard.keepExisting)return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,boxGuardV82:true});state=protectManualPalletCloseV77(existing,guard.state);state=protectCompletedBoxesV82(existing,state);const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),manualCloseGuardV77:true,boxGuardV82:true})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
   }
@@ -1814,7 +1857,7 @@ app.delete('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
 });
 
 app.get('/api/coupang-shared/projects/:projectId/status',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const {paths}=found;res.set('Cache-Control','no-store');res.json({ok:true,state:projectStateStatusV18(paths),source:projectBlobStatusV18(paths,'source'),workbookSnapshot:projectBlobStatusV18(paths,'workbookSnapshot')})});
-app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
+app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;let row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});const clean=sanitizeCompletedStateV85(row.state);if(clean.changed){row={...row,updatedAt:Date.now(),state:clean.state};backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify(row))}res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
 app.put('/api/coupang-shared/projects/:projectId/state',coupangAuth,express.text({type:['text/plain','application/json'],limit:'15mb'}),(req,res)=>{
   try{const found=getProjectOr404V18(req,res);if(!found)return;let state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});const existing=readJsonSafe(found.paths.state),guard=guardWholeStateV78(existing,state);if(guard.keepExisting){res.set('Cache-Control','no-store');return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,manualCloseGuardV77:true})}state=protectManualPalletCloseV77(existing,guard.state);state=protectCompletedBoxesV82(existing,state);const updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),staleIgnoredV78:false,manualCloseGuardV77:true,boxGuardV82:true})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
 });
