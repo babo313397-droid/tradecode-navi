@@ -535,6 +535,16 @@ app.get('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))ret
 app.post('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});try{const db=usersV48(),username=normUserV48(req.body?.username),pw=String(req.body?.password||''),displayName=String(req.body?.displayName||username).trim().slice(0,80);if(username.length<3||pw.length<8)return res.status(400).json({ok:false,error:'아이디 3자 이상, 비밀번호 8자 이상이 필요합니다.'});if(db.users.some(x=>x.username===username))return res.status(409).json({ok:false,error:'이미 사용 중인 아이디입니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:req.body?.role==='admin'?'admin':'user',legacyOwner:false,approved:false,approvedAt:0,disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);res.json({ok:true,user:publicUserV48(u),approvalRequired:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.patch('/api/auth/users/:id',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});const db=usersV48(),u=db.users.find(x=>x.id===req.params.id);if(!u)return res.status(404).json({ok:false,error:'계정을 찾지 못했습니다.'});if(req.body?.displayName!==undefined)u.displayName=String(req.body.displayName||u.username).slice(0,80);if(req.body?.disabled!==undefined&&!u.legacyOwner)u.disabled=!!req.body.disabled;if(req.body?.role!==undefined&&!u.legacyOwner)u.role=req.body.role==='admin'?'admin':'user';if(req.body?.approved!==undefined&&!u.legacyOwner){u.approved=!!req.body.approved;u.approvedAt=u.approved?Date.now():0}if(req.body?.password){const pw=String(req.body.password);if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw);u.salt=hp.salt;u.passwordHash=hp.hash}saveUsersV48(db);res.json({ok:true,user:publicUserV48(u)})});
 
+// v82: 배포/재시작 감지용 heartbeat. 작업 화면은 bootId가 바뀌거나 서버 연결이 끊기면
+// 30초 동안 전체 입력을 잠그고 새 서버가 안정된 뒤 자동 새로고침합니다.
+const TC_SERVER_STARTED_AT_V82=Date.now();
+const TC_DEPLOY_BUILD_V82=String(process.env.RENDER_GIT_COMMIT||process.env.RENDER_INSTANCE_ID||process.env.RENDER_SERVICE_ID||'local');
+const TC_DEPLOY_BOOT_ID_V82=crypto.createHash('sha1').update(`${TC_DEPLOY_BUILD_V82}:${TC_SERVER_STARTED_AT_V82}:${process.pid}`).digest('hex').slice(0,16);
+app.get('/api/system/deploy-heartbeat',(req,res)=>{
+  res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.json({ok:true,bootId:TC_DEPLOY_BOOT_ID_V82,startedAt:TC_SERVER_STARTED_AT_V82,build:TC_DEPLOY_BUILD_V82.slice(0,16),serverTime:Date.now()});
+});
+
 const PROTECTED_PAGE_PREFIXES_V48=['/barcode-label','/order-barcode','/shipment-list-builder','/coupang-inbound-work','/purchase-order','/detail-maker','/account-admin'];
 app.use((req,res,next)=>{if(PROTECTED_PAGE_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'.')||req.path.startsWith(p+'/')))return requireLoginPageV48(req,res,next);next()});
 const PRIVATE_API_PREFIXES_V48=['/api/shared-labels','/api/shared-workspace','/api/shipment-list-vault','/api/coupang-shared'];
@@ -600,6 +610,61 @@ function guardWholeStateV78(existingRow,incomingState){
   return {keepExisting:false,oldRev,newRev,state:incomingState};
 }
 
+
+// v82: 완료 박스는 명시적인 "완료 취소" 이벤트가 없으면 절대 사라지지 않도록 병합합니다.
+// 전체 state 저장이 늦게 도착하거나 다른 PC/배포 직후의 상태가 들어와도 완료 박스 단위 revision을 비교합니다.
+function normBoxItemKeyV82(it){
+  const n=v=>String(v??'').trim().toLowerCase().replace(/\s+/g,' ');
+  return `${n(it&&it.barcode)}|${n(it&&it.productNumber)}|${n(it&&it.productName)}`;
+}
+function boxGroupRevV82(g){return Number(g&&g.boxRevisionV82||0)}
+function cloneJsonV82(v){try{return JSON.parse(JSON.stringify(v))}catch(_){return v}}
+function palletRawMapV82(state){
+  const m=new Map();for(const pair of (state&&Array.isArray(state.palletStates)?state.palletStates:[])){const name=String(pair&&pair[0]||''),raw=pair&&pair[1];if(name&&raw)m.set(name,raw)}return m;
+}
+function mergeTombstonesV82(a,b){
+  const out={};for(const src of [a,b])for(const [sheet,rows] of Object.entries(src&&typeof src==='object'?src:{})){
+    const dst=out[sheet]||(out[sheet]={});for(const [id,rev] of Object.entries(rows&&typeof rows==='object'?rows:{}))dst[id]=Math.max(Number(dst[id]||0),Number(rev||0));
+  }return out;
+}
+function inventoryV82(raw){
+  const totals=new Map(),meta=new Map();
+  const add=(it,q)=>{const k=normBoxItemKeyV82(it);if(k==='||')return;const n=Math.max(0,Number(q||0));totals.set(k,(totals.get(k)||0)+n);if(!meta.has(k))meta.set(k,cloneJsonV82(it))};
+  for(const it of (raw&&Array.isArray(raw.incomplete)?raw.incomplete:[]))add(it,it&&it.remainingQty);
+  for(const g of (raw&&Array.isArray(raw.completed)?raw.completed:[]))for(const it of (g&&Array.isArray(g.items)?g.items:[]))add(it,it&&it.totalQty);
+  return {totals,meta};
+}
+function mergeOnePalletRawV82(oldRaw,newRaw,tombs){
+  oldRaw=oldRaw||{};newRaw=newRaw||{};const out=cloneJsonV82(newRaw&&Object.keys(newRaw).length?newRaw:oldRaw)||{};
+  const chosen=new Map();
+  const take=(g,sourceRank)=>{if(!g||!g.id)return;const id=String(g.id),cur=chosen.get(id),rev=boxGroupRevV82(g);if(!cur||rev>cur.rev||(rev===cur.rev&&sourceRank>cur.rank))chosen.set(id,{g:cloneJsonV82(g),rev,rank:sourceRank})};
+  for(const g of (oldRaw.completed||[]))take(g,1);for(const g of (newRaw.completed||[]))take(g,2);
+  const completed=[];for(const [id,row] of chosen){const tomb=Number(tombs&&tombs[id]||0);if(tomb>row.rev)continue;completed.push(row.g)}
+  completed.sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));out.completed=completed;
+
+  // 원본 총수량은 불변이므로 old/new 각각의 (미완료+완료) 총량 중 큰 값을 기준으로 재계산합니다.
+  const oi=inventoryV82(oldRaw),ni=inventoryV82(newRaw),totals=new Map(),meta=new Map();
+  for(const k of new Set([...oi.totals.keys(),...ni.totals.keys()])){
+    totals.set(k,Math.max(Number(oi.totals.get(k)||0),Number(ni.totals.get(k)||0)));
+    meta.set(k,cloneJsonV82(ni.meta.get(k)||oi.meta.get(k)||{}));
+  }
+  const consumed=new Map();for(const g of completed)for(const it of (g.items||[])){const k=normBoxItemKeyV82(it);consumed.set(k,(consumed.get(k)||0)+Math.max(0,Number(it.totalQty||0)));if(!meta.has(k))meta.set(k,cloneJsonV82(it))}
+  const incomplete=[];for(const [k,total] of totals){const remain=Math.max(0,Number(total||0)-Number(consumed.get(k)||0));if(remain>0){const it=cloneJsonV82(meta.get(k)||{});it.remainingQty=remain;incomplete.push(it)}}
+  out.incomplete=incomplete;
+  out.nextSeq=Math.max(Number(oldRaw.nextSeq||1),Number(newRaw.nextSeq||1),...completed.map(g=>(Number(g.seq)||0)+1));
+  out.templateRow=Number(newRaw.templateRow||oldRaw.templateRow||0);out.nextItemId=Math.max(Number(oldRaw.nextItemId||1),Number(newRaw.nextItemId||1));
+  return out;
+}
+function protectCompletedBoxesV82(existingRow,incomingState){
+  const oldState=existingRow&&existingRow.state&&typeof existingRow.state==='object'?existingRow.state:{};
+  const next=incomingState&&typeof incomingState==='object'?incomingState:{};
+  const tombs=mergeTombstonesV82(oldState.boxTombstonesV82,next.boxTombstonesV82);next.boxTombstonesV82=tombs;
+  const oldMap=palletRawMapV82(oldState),newMap=palletRawMapV82(next),names=new Set([...oldMap.keys(),...newMap.keys()]);
+  const merged=[];for(const name of names)merged.push([name,mergeOnePalletRawV82(oldMap.get(name),newMap.get(name),tombs[name]||{})]);
+  if(merged.length)next.palletStates=merged;
+  next.stateFormatV82=Math.max(Number(next.stateFormatV82||0),82);return next;
+}
+
 // v50: 직원 계정 쿠팡 API는 레거시 공용 라우트보다 먼저 개인 저장소에서 처리합니다.
 // v64: 직원 계정의 Excel blob 업로드는 express.raw로 확실히 수신합니다.
 // 프로젝트 시간만 생성되고 실제 선적 엑셀이 비는 현상을 방지합니다.
@@ -622,7 +687,7 @@ app.use('/api/coupang-shared',(req,res,next)=>{
   if(part==='state'){
     if(req.method==='GET'){const st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
     if(req.method==='DELETE'){fs.rmSync(paths.state,{force:true});touch(id);return res.json({ok:true})}
-    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const existing=readJsonFileV48(paths.state,null);state=protectManualPalletCloseV77(existing,state);const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt,manualCloseGuardV77:true})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
+    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const existing=readJsonFileV48(paths.state,null),guard=guardWholeStateV78(existing,state);if(guard.keepExisting)return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,boxGuardV82:true});state=protectManualPalletCloseV77(existing,guard.state);state=protectCompletedBoxesV82(existing,state);const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),manualCloseGuardV77:true,boxGuardV82:true})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
   }
   if(part.startsWith('blob/')){const key=part.split('/')[1],info=paths[key];if(!info)return res.status(404).json({ok:false,error:'파일 키 오류'});if(req.method==='GET'){const meta=readJsonFileV48(info.meta,null);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Cache-Control','no-store');res.set('Content-Type',meta.type||'application/octet-stream');res.set('Content-Length',String(fs.statSync(info.data).size));res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',meta.name||'');res.set('X-File-Type',meta.type||'');res.set('X-File-Mode',meta.mode||'');res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));return res.sendFile(info.data)}if(req.method==='DELETE'){fs.rmSync(info.data,{force:true});fs.rmSync(info.meta,{force:true});touch(id);return res.json({ok:true})}if(req.method==='PUT'){const writeBlobV64=()=>{try{const buf=Buffer.isBuffer(req.body)?req.body:Buffer.from(req.body||'');if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(paths.dir,{recursive:true});const updatedAt=Date.now(),meta={updatedAt,size:buf.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};fs.writeFileSync(info.data,buf);atomicJsonV48(info.meta,meta);if(key==='source'){fs.rmSync(paths.state,{force:true});fs.rmSync(paths.workbookSnapshot.data,{force:true});fs.rmSync(paths.workbookSnapshot.meta,{force:true})}touch(id);return res.json({ok:true,updatedAt,size:buf.length,accountScoped:true})}catch(e){return res.status(500).json({ok:false,error:e.message})}};if(Buffer.isBuffer(req.body))return writeBlobV64();return accountCoupangBlobRawV64(req,res,err=>{if(err)return res.status(err.type==='entity.too.large'?413:400).json({ok:false,error:err.message||'파일 업로드를 읽지 못했습니다.'});return writeBlobV64()})}}
   next();
@@ -1279,12 +1344,13 @@ app.put('/api/coupang-shared/state', coupangAuth,
         res.set('Cache-Control','no-store');
         return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true});
       }
-      state=guard.state;
+      state=protectManualPalletCloseV77(existing,guard.state);
+      state=protectCompletedBoxesV82(existing,state);
       const updatedAt = Date.now();
       backupFileV46(COUPANG_STATE_PATH);
       writeAtomic(COUPANG_STATE_PATH, JSON.stringify({ ok: true, updatedAt, state }));
       res.set('Cache-Control', 'no-store');
-      res.json({ ok: true, updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),staleIgnoredV78:false });
+      res.json({ ok: true, updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),staleIgnoredV78:false,boxGuardV82:true });
     } catch (err) {
       res.status(400).json({ ok: false, error: `작업 상태 저장 실패: ${err.message}` });
     }
@@ -1750,7 +1816,7 @@ app.delete('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
 app.get('/api/coupang-shared/projects/:projectId/status',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const {paths}=found;res.set('Cache-Control','no-store');res.json({ok:true,state:projectStateStatusV18(paths),source:projectBlobStatusV18(paths,'source'),workbookSnapshot:projectBlobStatusV18(paths,'workbookSnapshot')})});
 app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
 app.put('/api/coupang-shared/projects/:projectId/state',coupangAuth,express.text({type:['text/plain','application/json'],limit:'15mb'}),(req,res)=>{
-  try{const found=getProjectOr404V18(req,res);if(!found)return;let state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});const existing=readJsonSafe(found.paths.state),guard=guardWholeStateV78(existing,state);if(guard.keepExisting){res.set('Cache-Control','no-store');return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,manualCloseGuardV77:true})}state=protectManualPalletCloseV77(existing,guard.state);const updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),staleIgnoredV78:false,manualCloseGuardV77:true})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
+  try{const found=getProjectOr404V18(req,res);if(!found)return;let state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});const existing=readJsonSafe(found.paths.state),guard=guardWholeStateV78(existing,state);if(guard.keepExisting){res.set('Cache-Control','no-store');return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,manualCloseGuardV77:true})}state=protectManualPalletCloseV77(existing,guard.state);state=protectCompletedBoxesV82(existing,state);const updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),staleIgnoredV78:false,manualCloseGuardV77:true,boxGuardV82:true})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
 });
 app.delete('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;try{unlinkSafe(found.paths.state);touchProjectV18(found.id);res.json({ok:true})}catch(err){res.status(500).json({ok:false,error:err.message})}});
 
