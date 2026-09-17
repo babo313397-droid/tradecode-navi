@@ -5304,3 +5304,95 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v84 ===== -->
+
+<!-- ===== v86: parcel stale-incomplete repair / split-box ghost row guard ===== -->
+<script id="v86-parcel-stale-incomplete-repair">
+(function(){
+  function cloneV86(v){try{return JSON.parse(JSON.stringify(v))}catch(_){return v}}
+  function normSkuV86(v){return String(v??'').trim().toUpperCase().replace(/\s+/g,'').replace(/[^0-9A-Z가-힣_-]/g,'')}
+  function stableKeyV86(it){
+    const pn=normSkuV86(it?.productNumber);if(pn)return 'PN:'+pn;
+    const bc=normSkuV86(it?.barcode);if(bc)return 'BC:'+bc;
+    const nm=String(it?.productName??'').trim().toLowerCase().replace(/\s+/g,' ').replace(/[^0-9a-z가-힣 ]/g,'');
+    return nm?'NM:'+nm:'';
+  }
+  function exactKeyV86(it){
+    const n=v=>String(v??'').trim().toLowerCase().replace(/\s+/g,' ');
+    return `${n(it?.barcode)}|${n(it?.productNumber)}|${n(it?.productName)}`;
+  }
+  function barcodeScoreV86(it){
+    const bc=normSkuV86(it?.barcode);let s=0;if(!bc)return 0;
+    if(/^R[0-9A-Z]{6,}$/.test(bc))s+=100;else if(bc.length>=8)s+=70;else if(bc.length>=5)s+=25;else s+=5;
+    if(/^\d{1,4}$/.test(bc))s-=40;if(normSkuV86(it?.productNumber))s+=20;if(String(it?.productName??'').trim())s+=10;return s;
+  }
+  function betterMetaV86(a,b){
+    if(!a)return cloneV86(b||{});if(!b)return cloneV86(a||{});const sa=barcodeScoreV86(a),sb=barcodeScoreV86(b);let pick=sb>sa?b:a;
+    if(sa===sb){const ao=Number(a.order??999999999),bo=Number(b.order??999999999);if(bo<ao)pick=b}
+    const out=cloneV86(pick||{}),orders=[Number(a.order),Number(b.order)].filter(Number.isFinite);if(orders.length)out.order=Math.min(...orders);return out;
+  }
+  function physicalBoxKeyV86(v){return String(v??'').trim().replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase()}
+  function dedupeCompletedV86(list){
+    const by=new Map(),free=[];let removed=0;
+    for(const g0 of Array.isArray(list)?list:[]){const g=cloneV86(g0);if(!g)continue;const bk=physicalBoxKeyV86(g.boxNo);if(!bk){free.push(g);continue}const cur=by.get(bk);if(!cur){by.set(bk,g);continue}removed++;const cr=Number(cur.boxRevisionV82||0),nr=Number(g.boxRevisionV82||0),ct=Number(cur.boxUpdatedAtV82||cur.boxCompletedAtV82||0),nt=Number(g.boxUpdatedAtV82||g.boxCompletedAtV82||0);let keep=(nr>cr||(nr===cr&&nt>ct))?g:cur;const seqs=[Number(cur.seq)||0,Number(g.seq)||0].filter(x=>x>0);if(seqs.length)keep.seq=Math.min(...seqs);by.set(bk,keep)}
+    return {list:[...by.values(),...free].sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0)),removed};
+  }
+  function inventoryV86(raw){
+    const exactTotals=new Map(),exactMeta=new Map(),exactStable=new Map();
+    const add=(it,q)=>{const stable=stableKeyV86(it);if(!stable)return;const exact=exactKeyV86(it)||stable,ek=stable+'||'+exact,n=Math.max(0,Number(q||0));exactTotals.set(ek,(exactTotals.get(ek)||0)+n);exactStable.set(ek,stable);exactMeta.set(ek,betterMetaV86(exactMeta.get(ek),it))};
+    for(const it of raw?.incomplete||[])add(it,it?.remainingQty);
+    for(const g of raw?.completed||[])for(const it of g?.items||[])add(it,it?.totalQty);
+    const totals=new Map(),meta=new Map();
+    for(const [ek,total] of exactTotals){const stable=exactStable.get(ek);totals.set(stable,Math.max(Number(totals.get(stable)||0),Number(total||0)));meta.set(stable,betterMetaV86(meta.get(stable),exactMeta.get(ek)))}
+    return {totals,meta};
+  }
+  function repairRawV86(raw){
+    if(!raw||typeof raw!=='object')return {raw,changed:false};
+    const out=cloneV86(raw)||{},dc=dedupeCompletedV86(out.completed);out.completed=dc.list;
+    const inv=inventoryV86(out),consumed=new Map();
+    for(const g of out.completed||[])for(const it of g?.items||[]){const k=stableKeyV86(it);if(!k)continue;consumed.set(k,(consumed.get(k)||0)+Math.max(0,Number(it.totalQty||0)));inv.meta.set(k,betterMetaV86(inv.meta.get(k),it))}
+    const incomplete=[];
+    for(const [k,total] of inv.totals){const remain=Math.max(0,Number(total||0)-Number(consumed.get(k)||0));if(remain>0){const it=cloneV86(inv.meta.get(k)||{});it.remainingQty=remain;delete it.totalQty;delete it.perBoxQty;incomplete.push(it)}}
+    incomplete.sort((a,b)=>(Number(a.order??999999999)-Number(b.order??999999999))||String(stableKeyV86(a)).localeCompare(String(stableKeyV86(b))));
+    const sig=x=>JSON.stringify((x||[]).map(it=>[stableKeyV86(it),exactKeyV86(it),Number(it.remainingQty||0)]));
+    const changed=dc.removed>0||sig(out.incomplete)!==sig(incomplete);out.incomplete=incomplete;
+    if(changed)out.inventoryRepairV86={at:Date.now(),reason:'parcel-split-ghost-repair'};
+    return {raw:out,changed};
+  }
+  function repairSavedV86(saved){
+    if(!saved||typeof saved!=='object'||!Array.isArray(saved.palletStates))return {saved,changed:false};
+    const out=cloneV86(saved);let changed=false;
+    out.palletStates=out.palletStates.map(pair=>{if(!Array.isArray(pair)||pair.length<2)return pair;const x=repairRawV86(pair[1]);changed=changed||x.changed;return [pair[0],x.raw]});
+    if(changed){out.stateFormatV86=86;out.inventoryRepairStateV86={at:Date.now()}}
+    return {saved:out,changed};
+  }
+  function bumpAndPersistV86(){
+    try{const sync=window.__TC_V78_SYNC__;if(sync){const n=Date.now();sync.rev=Math.max(n,Number(sync.rev||0)+1);sync.dirty=true;sync.lastMutationAt=n;try{sharedApplyingRemote=true}catch(_){ }}}catch(_){ }
+    try{schedulePersistentState(0)}catch(_){ }
+  }
+  function repairLiveV86(persist=false){
+    if(typeof palletStates==='undefined'||!palletStates?.entries)return 0;let changed=0;
+    for(const [name,raw] of palletStates.entries()){const x=repairRawV86(raw);if(!x.changed)continue;palletStates.set(name,x.raw);changed++;try{const ws=workbook?.getWorksheet(name);if(ws&&typeof syncPalletState==='function')syncPalletState(ws,x.raw)}catch(e){console.warn('[v86 live sync]',name,e)}}
+    if(changed){try{if(typeof recalcDashboard==='function'&&workbook)recalcDashboard(workbook)}catch(_){ }try{if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13()}catch(_){ }if(persist)bumpAndPersistV86()}
+    return changed;
+  }
+
+  // local/server 어느 쪽이 선택되든 화면 적용 전에 유령 미완료 행을 제거합니다.
+  if(typeof persistGet==='function'){
+    const basePersistGetV86=persistGet;
+    persistGet=async function(key){const got=await basePersistGetV86.apply(this,arguments);if(key!=='state')return got;const x=repairSavedV86(got);if(x.changed){try{await localPersistPut(localProjectKeyV18('state'),x.saved)}catch(_){ }}return x.saved};
+  }
+  const applyBaseV86=window.applyRecoveredState||applyRecoveredState;
+  if(typeof applyBaseV86==='function')window.applyRecoveredState=applyRecoveredState=function(saved){const x=repairSavedV86(saved);const ret=applyBaseV86.call(this,x.saved);if(x.changed)setTimeout(()=>{try{repairLiveV86(false);renderSheet(true)}catch(_){ }bumpAndPersistV86()},0);return ret};
+
+  // 저장하기 직전에도 다시 한 번 정리해서 잘못된 28/28 같은 잔존행이 서버로 재전송되지 않게 합니다.
+  if(typeof persistentStatePayload==='function'){
+    const payloadBaseV86=persistentStatePayload;
+    persistentStatePayload=function(){repairLiveV86(false);const p=payloadBaseV86.apply(this,arguments);return repairSavedV86(p).saved};
+  }
+
+  // 현재 열려 있는 이미 오염된 화면도 업데이트 직후 즉시 복구합니다.
+  setTimeout(()=>{try{const n=repairLiveV86(true);if(n&&typeof renderSheet==='function')renderSheet(true)}catch(e){console.warn('[v86 initial repair]',e)}},500);
+  window.__TC_PARCEL_GHOST_REPAIR_V86__={repairRawV86,repairSavedV86,repairLiveV86};
+})();
+</script>
+<!-- ===== /v86 ===== -->
