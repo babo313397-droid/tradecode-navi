@@ -46,3 +46,43 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 else ensurePurchaseOrderNav();
 init();
 })();
+
+
+// ===== v82 deployment guard: all authenticated work screens =====
+(function(){
+  let baseBoot='',overlayOn=false,lockedAt=0,stableBoot='',stableCount=0,countTimer=null,pollTimer=null,keyBlocker=null;
+  const WAIT_MS=30000;
+  function ensureOverlay(){
+    let el=document.getElementById('tcDeployGuardV82');if(el)return el;
+    el=document.createElement('div');el.id='tcDeployGuardV82';el.style.cssText='display:none;position:fixed;inset:0;z-index:2147483647;background:rgba(7,26,42,.84);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:24px;pointer-events:auto';
+    el.innerHTML='<div style="width:min(92vw,620px);background:#fff;border-radius:18px;box-shadow:0 22px 70px #0008;padding:34px 30px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,Pretendard,Malgun Gothic,sans-serif"><div style="font-size:44px;margin-bottom:8px">🔄</div><div style="font-size:25px;font-weight:1000;color:#0b2e4f;margin-bottom:10px">업데이트 중 30초만 기다려 주세요</div><div id="tcDeployGuardCountdownV82" style="font-size:42px;font-weight:1000;color:#217346;margin:8px 0">30</div><div style="font-size:14px;font-weight:800;color:#566979;line-height:1.7">작업 데이터 보호를 위해 모든 작업 입력을 잠시 차단했습니다.<br>서버 업데이트가 안정되면 자동으로 화면을 다시 연결합니다.</div></div>';
+    document.body.appendChild(el);return el;
+  }
+  function blockKeys(on){
+    if(on&&!keyBlocker){keyBlocker=e=>{if(e.key==='F5'||(e.ctrlKey&&String(e.key).toLowerCase()==='r'))return;e.preventDefault();e.stopImmediatePropagation()};window.addEventListener('keydown',keyBlocker,true);window.addEventListener('keypress',keyBlocker,true);window.addEventListener('keyup',keyBlocker,true)}
+    if(!on&&keyBlocker){window.removeEventListener('keydown',keyBlocker,true);window.removeEventListener('keypress',keyBlocker,true);window.removeEventListener('keyup',keyBlocker,true);keyBlocker=null}
+  }
+  function activate(reason,boot){
+    if(!overlayOn){overlayOn=true;lockedAt=Date.now();stableBoot=boot||'';stableCount=0;const el=ensureOverlay();el.style.display='flex';blockKeys(true)}
+    if(boot&&boot!==stableBoot){stableBoot=boot;stableCount=0}
+    tick();
+  }
+  function tick(){
+    if(!overlayOn)return;const left=Math.max(0,Math.ceil((WAIT_MS-(Date.now()-lockedAt))/1000));const n=document.getElementById('tcDeployGuardCountdownV82');if(n)n.textContent=String(left);
+    if(!countTimer)countTimer=setInterval(()=>{if(!overlayOn){clearInterval(countTimer);countTimer=null;return}const remain=Math.max(0,Math.ceil((WAIT_MS-(Date.now()-lockedAt))/1000));const t=document.getElementById('tcDeployGuardCountdownV82');if(t)t.textContent=String(remain);if(remain<=0&&stableCount>=2){location.reload()}},500);
+  }
+  async function heartbeat(){
+    const c=new AbortController(),tm=setTimeout(()=>c.abort(),2500);
+    try{
+      const r=await fetch('/api/system/deploy-heartbeat?ts='+Date.now(),{cache:'no-store',signal:c.signal,headers:{'Cache-Control':'no-cache'}});if(!r.ok)throw new Error('heartbeat '+r.status);const j=await r.json();const boot=String(j.bootId||'');if(!boot)throw new Error('no boot id');
+      if(!baseBoot){baseBoot=boot;return}
+      if(boot!==baseBoot)activate('server-changed',boot);
+      if(overlayOn){if(!stableBoot||stableBoot===boot){stableBoot=boot;stableCount++}else{stableBoot=boot;stableCount=1}if(Date.now()-lockedAt>=WAIT_MS&&stableCount>=2)location.reload()}
+    }catch(e){activate('heartbeat-failed','');stableCount=0}
+    finally{clearTimeout(tm)}
+  }
+  function start(){ensureOverlay();heartbeat();pollTimer=setInterval(heartbeat,2000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)heartbeat()})}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+  window.__TC_DEPLOY_GUARD_V82__={activate,heartbeat};
+})();
+// ===== /v82 deployment guard =====
