@@ -4869,6 +4869,101 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v85 ===== -->
+
+<!-- ===== v89: dashboard all-center total reconciliation (remove 20-center cap) ===== -->
+<script id="v89-dashboard-all-centers">
+(function(){
+  // v88까지의 dashboard는 J열부터 최대 20개 센터(i < 20)만 표시했습니다.
+  // 센터가 21개 이상이면 전체 원본합계(E4/G4)에는 포함되지만 센터별 숫자에는 빠져,
+  // 사용자가 센터별 숫자를 직접 더했을 때 총수량과 불일치했습니다.
+  // v89는 dashboard 열을 실제 센터 수만큼 동적으로 확장합니다.
+  const _baseRecalcDashboardV89 = recalcDashboard;
+
+  function v89CloneDashboardStyle(order, targetCol){
+    if(targetCol <= 29) return; // J:AC는 기존 템플릿 20칸
+    const donorCol = 29; // 마지막 기본 센터칸(AC)의 모양을 복제
+    try{
+      const donor = order.getColumn(donorCol), target = order.getColumn(targetCol);
+      if(donor?.width) target.width = donor.width;
+      for(let r=2;r<=7;r++){
+        const s=order.getRow(r).getCell(donorCol), d=order.getRow(r).getCell(targetCol);
+        d.style = cloneObj(s.style);
+        if(s.numFmt) d.numFmt = s.numFmt;
+      }
+    }catch(e){ console.warn('[v89 dashboard style]', targetCol, e); }
+  }
+
+  recalcDashboard = function(wb=workbook){
+    // 기존 기능(하이퍼링크/기본 집계 등)을 먼저 수행한 뒤 20개 제한 부분만 교정합니다.
+    const ret = _baseRecalcDashboardV89.apply(this, arguments);
+    const old = workbook;
+    try{
+      if(!wb) return ret;
+      if(wb !== workbook) workbook = wb;
+      const order = wb.getWorksheet('발주서');
+      if(!order) return ret;
+
+      const sheets = (typeof visibleWorkSheets === 'function') ? visibleWorkSheets() : [];
+      let sourceTotals = new Map();
+      try{ if(typeof window.v88OriginalCenterTotals === 'function') sourceTotals = window.v88OriginalCenterTotals() || new Map(); }catch(_){ sourceTotals = new Map(); }
+
+      let shownGrand = 0, totalBoxes = 0, totalPacked = 0;
+      for(let i=0;i<sheets.length;i++){
+        const ws = sheets[i], col = 10+i;
+        v89CloneDashboardStyle(order, col);
+        const c2=order.getRow(2).getCell(col), c3=order.getRow(3).getCell(col), c4=order.getRow(4).getCell(col),
+              c5=order.getRow(5).getCell(col), c6=order.getRow(6).getCell(col), c7=order.getRow(7).getCell(col);
+        const s = recalcWorkSheet(ws) || {total:0,boxes:0,packed:0};
+        const original = sourceTotals.has(ws.name) ? (Number(sourceTotals.get(ws.name))||0) : (Number(s.total)||0);
+        const boxes = Number(s.boxes)||0, packed = Number(s.packed)||0;
+        shownGrand += original; totalBoxes += boxes; totalPacked += packed;
+        c2.value = ws.name;
+        try{ setInternalMove(c3, ws.name); }catch(_){ c3.value='이동'; }
+        c4.value = original;
+        c5.value = boxes;
+        c6.value = packed;
+        c7.value = original>0 && packed>0 ? Math.min(packed/original,1) : '작업전';
+      }
+
+      // 이전에 더 많은 센터가 표시되었다가 줄어든 경우 남은 dashboard 셀을 정리합니다.
+      const prevCount = Math.max(20, Number(window.__v89LastDashboardCount||20));
+      for(let i=sheets.length;i<prevCount;i++){
+        const col=10+i;
+        for(let r=2;r<=7;r++) order.getRow(r).getCell(col).value=null;
+      }
+      window.__v89LastDashboardCount = sheets.length;
+
+      // 원본 발주서 A:E 전체 센터 합계를 정본으로 사용합니다.
+      let sourceGrand = 0;
+      try{ for(const v of sourceTotals.values()) sourceGrand += Number(v)||0; }catch(_){ sourceGrand=shownGrand; }
+      if(!(sourceGrand>0)) sourceGrand = shownGrand;
+
+      order.getCell('E4').value = sourceGrand;
+      order.getCell('G4').value = sourceGrand;
+      order.getCell('I2').value = totalBoxes;
+      order.getCell('G7').value = totalPacked;
+
+      // '맞음'은 실제로 센터별 표시 합과 원본 총수량이 같을 때만 표시합니다.
+      const diff = sourceGrand - shownGrand;
+      order.getCell('F4').value = Math.abs(diff) < 1e-9 ? '맞음' : `불일치 ${diff>0?'+':''}${diff}`;
+      if(Math.abs(diff) >= 1e-9){
+        console.warn('[v89 dashboard total mismatch]', {sourceGrand, shownGrand, diff, centers:sheets.length});
+      }
+    }catch(e){
+      console.warn('[v89 dashboard all centers]', e);
+    }finally{
+      if(wb !== old) workbook = old;
+    }
+    return ret;
+  };
+
+  setTimeout(()=>{
+    try{ if(workbook){ recalcDashboard(workbook); if(activeSheet==='발주서') renderSheet(true); } }catch(e){ console.warn('[v89 initial]',e); }
+  },300);
+})();
+</script>
+<!-- ===== /v89 ===== -->
+
 </body>
 </html>
 
