@@ -5396,3 +5396,138 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v86 ===== -->
+
+<!-- ===== v87: barcode other-center move dialog ===== -->
+<script id="v87-barcode-other-center-dialog">
+(function(){
+  function safeNormV87(v){try{return norm(v)}catch(_){return String(v??'').trim()}}
+  function centerLabelV87(ws,item){
+    const raw=safeNormV87(item?.center)||safeNormV87(ws?.name)||'해당 센터';
+    return raw.replace(/\s*(팔레트|밀크런|택배)\s*$/,'').trim()||raw;
+  }
+  function centerKeyV87(s){return safeNormV87(s).replace(/\s+/g,'').replace(/(팔레트|밀크런|택배)$/,'').toLowerCase()}
+  function firstMatchV87(ws,barcode){
+    const state=ensurePalletState(ws);if(!state)return null;
+    return (state.incomplete||[]).find(it=>safeNormV87(it.barcode)===barcode&&Number(it.remainingQty||0)>0)||null;
+  }
+  function currentRemainV87(ws,barcode){
+    const state=ensurePalletState(ws);if(!state)return {qty:0,item:null,label:centerLabelV87(ws,null)};
+    let qty=0,item=null;
+    for(const it of state.incomplete||[]){
+      if(safeNormV87(it.barcode)!==barcode||!(Number(it.remainingQty||0)>0))continue;
+      if(!item)item=it;qty+=Number(it.remainingQty||0);
+    }
+    return {qty,item,label:centerLabelV87(ws,item)};
+  }
+  function otherCentersV87(barcode,currentWs,currentLabel){
+    const curKey=centerKeyV87(currentLabel),kind=sheetKind(currentWs),groups=new Map();
+    for(const ws of visibleWorkSheets()){
+      if(!isPackWorkSheet(ws)||ws===currentWs)continue;
+      const state=ensurePalletState(ws);if(!state)continue;
+      let wsQty=0,first=null,label='';
+      for(const it of state.incomplete||[]){
+        if(safeNormV87(it.barcode)!==barcode||!(Number(it.remainingQty||0)>0))continue;
+        if(!first)first=it;wsQty+=Number(it.remainingQty||0);label=centerLabelV87(ws,it);
+      }
+      if(!(wsQty>0))continue;
+      const key=centerKeyV87(label);
+      if(key===curKey)continue; // 같은 센터의 다른 작업 탭은 '다른 센터'로 보지 않음
+      let g=groups.get(key);
+      if(!g){g={center:label,qty:0,candidates:[],productName:first?.productName||'',barcode};groups.set(key,g)}
+      g.qty+=wsQty;g.candidates.push({wsName:ws.name,qty:wsQty,item:first,kind:sheetKind(ws)});
+      if(!g.productName&&first?.productName)g.productName=first.productName;
+    }
+    return [...groups.values()].map(g=>{
+      g.candidates.sort((a,b)=>(a.kind===kind?0:1)-(b.kind===kind?0:1)||b.qty-a.qty);
+      g.target=g.candidates[0];return g;
+    }).sort((a,b)=>b.qty-a.qty||a.center.localeCompare(b.center,'ko'));
+  }
+  function ensureDialogV87(){
+    let ov=document.getElementById('otherCenterMoveOverlayV87');if(ov)return ov;
+    const st=document.createElement('style');st.id='otherCenterMoveStyleV87';st.textContent=`
+      #otherCenterMoveOverlayV87{position:fixed;inset:0;z-index:9300;display:none;align-items:center;justify-content:center;background:rgba(10,25,38,.66);padding:24px}
+      #otherCenterMoveOverlayV87.show{display:flex}
+      #otherCenterMoveDialogV87{width:min(720px,94vw);max-height:86vh;overflow:auto;background:#fff;border:3px solid #e09a00;border-radius:14px;box-shadow:0 22px 70px rgba(0,0,0,.42);font-family:"Malgun Gothic",Arial,sans-serif}
+      #otherCenterMoveDialogV87 .v87-head{display:flex;align-items:center;gap:10px;padding:18px 20px;background:#fff4cf;border-bottom:1px solid #e6c765}
+      #otherCenterMoveDialogV87 .v87-icon{font-size:30px;line-height:1}
+      #otherCenterMoveDialogV87 .v87-title{font-size:20px;font-weight:900;color:#7a4d00}
+      #otherCenterMoveDialogV87 .v87-close{margin-left:auto;border:0;background:transparent;font-size:27px;cursor:pointer;color:#785c24}
+      #otherCenterMoveDialogV87 .v87-body{padding:18px 20px 20px}
+      #otherCenterMoveDialogV87 .v87-product{font-size:13px;font-weight:900;color:#15364e;margin-bottom:10px;word-break:keep-all}
+      #otherCenterMoveDialogV87 .v87-msg{font-size:14px;font-weight:800;line-height:1.65;color:#273d4b;margin-bottom:14px}
+      #otherCenterMoveDialogV87 .v87-current{padding:10px 12px;margin-bottom:12px;border-radius:7px;background:#fff9e9;border:1px solid #ead28f;font-size:12px;font-weight:800;color:#6d5210}
+      #otherCenterMoveDialogV87 .v87-list{display:flex;flex-direction:column;gap:9px}
+      #otherCenterMoveDialogV87 .v87-row{display:grid;grid-template-columns:minmax(120px,1fr) 120px 130px;align-items:center;gap:10px;padding:12px 13px;border:1px solid #d4dce2;border-radius:8px;background:#f9fbfc}
+      #otherCenterMoveDialogV87 .v87-center{font-size:15px;font-weight:900;color:#103b59}
+      #otherCenterMoveDialogV87 .v87-qty{text-align:right;font-size:15px;font-weight:900;color:#c64d00}
+      #otherCenterMoveDialogV87 .v87-move{border:0;border-radius:6px;background:#0b6ea8;color:white;font-size:12px;font-weight:900;padding:10px 12px;cursor:pointer}
+      #otherCenterMoveDialogV87 .v87-move:hover{background:#095b8b}
+      #otherCenterMoveDialogV87 .v87-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid #e0e4e7}
+      #otherCenterMoveDialogV87 .v87-stay,#otherCenterMoveDialogV87 .v87-cancel{border-radius:6px;padding:10px 14px;font-size:12px;font-weight:900;cursor:pointer}
+      #otherCenterMoveDialogV87 .v87-stay{border:1px solid #217346;background:#217346;color:#fff}
+      #otherCenterMoveDialogV87 .v87-cancel{border:1px solid #aeb7bd;background:#fff;color:#43545f}
+      @media(max-width:640px){#otherCenterMoveDialogV87 .v87-row{grid-template-columns:1fr auto}.v87-move{grid-column:1/-1}.v87-title{font-size:17px!important}}
+    `;document.head.appendChild(st);
+    ov=document.createElement('div');ov.id='otherCenterMoveOverlayV87';ov.innerHTML=`<div id="otherCenterMoveDialogV87" role="dialog" aria-modal="true" aria-labelledby="otherCenterMoveTitleV87"><div class="v87-head"><div class="v87-icon">⚠️</div><div id="otherCenterMoveTitleV87" class="v87-title">다른 센터에도 동일 상품이 있습니다</div><button class="v87-close" type="button" aria-label="닫기">×</button></div><div class="v87-body"><div class="v87-product" id="otherCenterProductV87"></div><div class="v87-msg" id="otherCenterMessageV87"></div><div class="v87-current" id="otherCenterCurrentV87"></div><div class="v87-list" id="otherCenterListV87"></div><div class="v87-foot"><button class="v87-cancel" type="button">닫기</button><button class="v87-stay" type="button">현재 센터에서 계속</button></div></div></div>`;
+    document.body.appendChild(ov);return ov;
+  }
+  let contextV87=null;
+  function closeDialogV87(action='cancel'){
+    const ov=ensureDialogV87();ov.classList.remove('show');ov.setAttribute('aria-hidden','true');
+    const ctx=contextV87;contextV87=null;
+    if(action==='stay'&&ctx?.foundHere){
+      ensureInlineDraft(ctx.currentWs,false);addDraftBarcodeInline(ctx.barcode);focusInlineScan();
+    }else setTimeout(()=>focusInlineScan(),30);
+  }
+  function moveToCenterV87(group){
+    const ctx=contextV87;if(!ctx||!group?.target)return;
+    // 진행 중인 다른 상품 박스가 있으면 센터 이동으로 유실되지 않도록 차단합니다.
+    const activeDraft=boxDraft&&boxDraft.sheetName===ctx.currentWs.name&&Array.isArray(boxDraft.items)&&boxDraft.items.length>0;
+    if(activeDraft){
+      alert('현재 센터의 박스 작업에 이미 스캔된 상품이 있습니다.\n\n현재 박스 작업을 완료하거나 초기화한 뒤 다른 센터로 이동해 주세요.\n작업 중인 박스 데이터 보호를 위해 센터 이동을 중단합니다.');
+      return;
+    }
+    const targetWs=workbook?.getWorksheet(group.target.wsName);if(!targetWs)return;
+    const barcode=ctx.barcode;contextV87=null;
+    const ov=ensureDialogV87();ov.classList.remove('show');ov.setAttribute('aria-hidden','true');
+    activeSheet=targetWs.name;selectedCell='';selectedRow=0;hideRowMenu();boxDraft=null;renderTabs();renderSheet();schedulePersistentState(120);
+    setTimeout(()=>{
+      try{ensureInlineDraft(targetWs,false);addDraftBarcodeInline(barcode);const src=firstMatchV87(targetWs,barcode);if(src)scrollScannedBarcodeIntoView(targetWs,src,barcode);setStatus(`✓ ${group.center} 센터로 이동했습니다. ${barcode} 미작업 ${Number(group.qty).toLocaleString()}개`,'ok')}catch(e){console.warn('[v87 move]',e)}
+      focusInlineScan();
+    },80);
+  }
+  function showDialogV87(ctx){
+    contextV87=ctx;const ov=ensureDialogV87(),product=ctx.current.item?.productName||ctx.others.find(x=>x.productName)?.productName||ctx.barcode;
+    document.getElementById('otherCenterProductV87').textContent=`상품: ${product}  ·  바코드 ${ctx.barcode}`;
+    document.getElementById('otherCenterMessageV87').textContent=ctx.foundHere
+      ? `현재 ${ctx.current.label}에서 상품을 찾았습니다. 다른 센터에도 동일 상품의 미작업 수량이 있습니다. 해당 센터로 이동하시겠습니까?`
+      : `현재 ${ctx.current.label}에는 이 상품의 미작업 수량이 없습니다. 아래 센터에는 동일 상품이 있습니다. 해당 센터로 이동하시겠습니까?`;
+    const cur=document.getElementById('otherCenterCurrentV87');cur.textContent=ctx.foundHere?`현재 센터 ${ctx.current.label}: 미작업 ${Number(ctx.current.qty).toLocaleString()}개`:`현재 센터 ${ctx.current.label}: 미작업 0개`;
+    const list=document.getElementById('otherCenterListV87');list.innerHTML='';
+    for(const g of ctx.others){const row=document.createElement('div');row.className='v87-row';row.innerHTML='<div class="v87-center"></div><div class="v87-qty"></div><button class="v87-move" type="button">이 센터로 이동</button>';row.querySelector('.v87-center').textContent=g.center;row.querySelector('.v87-qty').textContent=`미작업 ${Number(g.qty).toLocaleString()}개`;row.querySelector('.v87-move').onclick=()=>moveToCenterV87(g);list.appendChild(row)}
+    const stay=ov.querySelector('.v87-stay');stay.style.display=ctx.foundHere?'inline-block':'none';stay.textContent=`${ctx.current.label}에서 계속 작업`;
+    const cancelBtn=ov.querySelector('.v87-cancel');cancelBtn.style.display=ctx.foundHere?'none':'inline-block';cancelBtn.onclick=()=>closeDialogV87('cancel');ov.querySelector('.v87-close').onclick=()=>closeDialogV87(ctx.foundHere?'stay':'cancel');stay.onclick=()=>closeDialogV87('stay');
+    ov.classList.add('show');ov.setAttribute('aria-hidden','false');
+  }
+
+  // v79의 작은 상단 알림 대신 큰 이동 대화창으로 동작합니다.
+  scanBarcodeInline=function(barcode){
+    barcode=safeNormV87(barcode);if(!barcode)return;
+    const ws=currentWorkSheet();
+    if(!isPackWorkSheet(ws)){setStatus('팔레트/밀크런/택배 작업 탭에서 바코드를 스캔해 주세요.','bad');return}
+    const current=currentRemainV87(ws,barcode),foundHere=current.qty>0,others=otherCentersV87(barcode,ws,current.label);
+    const oldAlert=document.getElementById('centerRemainingAlertV79');if(oldAlert){oldAlert.classList.remove('show','none-here');oldAlert.textContent=''}
+    // 현재 센터에 있으면 먼저 지금처럼 노란색으로 찾은 행까지 이동합니다.
+    if(foundHere&&current.item)scrollScannedBarcodeIntoView(ws,current.item,barcode);
+    if(others.length){
+      showDialogV87({barcode,currentWs:ws,current,foundHere,others});
+      setStatus(foundHere?`✓ ${barcode} · ${current.label}에서 찾았습니다. 다른 센터에도 동일 상품이 있습니다.`:`⚠ ${current.label}에는 ${barcode}가 없고 다른 센터에 미작업 수량이 있습니다.`,'busy');
+      return;
+    }
+    if(!foundHere){setStatus(`바코드 ${barcode} : 현재 ${ws.name}의 미완료 품목에서 찾지 못했습니다.`,'bad');focusInlineScan();return}
+    ensureInlineDraft(ws,false);addDraftBarcodeInline(barcode);focusInlineScan();
+  };
+  window.__TC_OTHER_CENTER_DIALOG_V87__={showDialogV87,otherCentersV87};
+})();
+</script>
+<!-- ===== /v87 ===== -->
