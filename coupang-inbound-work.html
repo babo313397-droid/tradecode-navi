@@ -4972,3 +4972,102 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v81 ===== -->
+
+
+<!-- ===== v82: immutable completed-box persistence + deploy-safe local recovery ===== -->
+<script id="v82-completed-box-persistence">
+(function(){
+  const tombs=window.__TC_BOX_TOMBSTONES_V82__=window.__TC_BOX_TOMBSTONES_V82__||{};
+  let boxRevClockV82=Date.now();
+  function nextBoxRevV82(){boxRevClockV82=Math.max(Date.now(),boxRevClockV82+1,Number(window.__TC_V78_SYNC__?.rev||0)+1);return boxRevClockV82}
+  function groupRevV82(g){return Number(g?.boxRevisionV82||0)}
+  function sheetTombsV82(name){return tombs[String(name)]||(tombs[String(name)]={})}
+  function mergeTombsV82(src){for(const [sheet,rows] of Object.entries(src&&typeof src==='object'?src:{})){const dst=sheetTombsV82(sheet);for(const [id,rev] of Object.entries(rows&&typeof rows==='object'?rows:{}))dst[id]=Math.max(Number(dst[id]||0),Number(rev||0))}}
+  function maxBoxRevInStateV82(state){let m=0;for(const pair of state?.palletStates||[])for(const g of pair?.[1]?.completed||[])m=Math.max(m,groupRevV82(g));for(const rows of Object.values(state?.boxTombstonesV82||{}))for(const rev of Object.values(rows||{}))m=Math.max(m,Number(rev||0));return m}
+  function cloneV82(v){try{return JSON.parse(JSON.stringify(v))}catch(_){return v}}
+
+  function stampCompletedV82(ws,group){
+    if(!ws||!group)return 0;const rev=nextBoxRevV82();group.boxRevisionV82=rev;group.boxCompletedAtV82=Number(group.boxCompletedAtV82||Date.now());group.boxUpdatedAtV82=Date.now();group.boxStatusV82='completed';
+    const st=sheetTombsV82(ws.name);if(Number(st[group.id]||0)<rev)delete st[group.id];
+    try{markPalletDirty(ws,ensurePalletState(ws))}catch(_){ }
+    try{schedulePersistentState(0)}catch(_){ }
+    return rev;
+  }
+  function stampCancelV82(ws,group){if(!ws||!group?.id)return 0;const rev=nextBoxRevV82();sheetTombsV82(ws.name)[String(group.id)]=rev;try{window.__TC_V78_SYNC__.rev=Math.max(Number(window.__TC_V78_SYNC__.rev||0),rev);window.__TC_V78_SYNC__.dirty=true;sharedApplyingRemote=true}catch(_){ }return rev}
+
+  // 완료 박스 단위 revision을 경량 state에 포함합니다.
+  const cleanBaseV82=cleanPalletStateForSave;
+  cleanPalletStateForSave=function(state){
+    const out=cleanBaseV82.apply(this,arguments);if(!out||!state)return out;
+    const src=new Map((state.completed||[]).map(g=>[String(g.id||''),g]));
+    for(const g of out.completed||[]){const a=src.get(String(g.id||''));if(!a)continue;g.boxRevisionV82=Number(a.boxRevisionV82||0);g.boxCompletedAtV82=Number(a.boxCompletedAtV82||0);g.boxUpdatedAtV82=Number(a.boxUpdatedAtV82||0);g.boxStatusV82=a.boxStatusV82||'completed'}
+    return out;
+  };
+  const payloadBaseV82=persistentStatePayload;
+  persistentStatePayload=function(){const p=payloadBaseV82.apply(this,arguments);p.boxTombstonesV82=cloneV82(tombs);p.stateFormatV82=82;return p};
+
+  // 복구할 때 취소 tombstone도 함께 복구합니다.
+  const applyBaseV82=window.applyRecoveredState||applyRecoveredState;
+  window.applyRecoveredState=applyRecoveredState=function(saved){mergeTombsV82(saved?.boxTombstonesV82||{});return applyBaseV82.apply(this,arguments)};
+
+  function findSavedGroupV82(saved,sheet,id){for(const pair of saved?.palletStates||[]){if(String(pair?.[0]||'')!==String(sheet))continue;return (pair?.[1]?.completed||[]).find(g=>String(g?.id||'')===String(id))||null}return null}
+  async function forceBoxSaveV82(ws,group,action='complete',rev=0){
+    try{
+      // IndexedDB를 먼저 쓰고 그 다음 서버 PUT을 확정합니다. 배포로 서버가 끊겨도 로컬 정본은 남습니다.
+      await savePersistentState(true);
+      if(action!=='complete'||!group)return true;
+      const wanted=Math.max(Number(rev||0),groupRevV82(group));
+      const remote=await sharedRemoteGet('state');const got=findSavedGroupV82(remote,ws.name,group.id);
+      if(got&&groupRevV82(got)>=wanted)return true;
+      // 확인 실패 시 현재 전체 정본을 한 번 더 직접 큐에 넣습니다.
+      await sharedRemotePut('state',persistentStatePayload());
+      return true;
+    }catch(e){console.warn('[v82 completed box durable save]',e);return false}
+  }
+  function persistAfterCommitV82(ws,group,rev){
+    if(!ws||!group)return;setStatus(`✓ ${group.boxNo||'박스'} 작업 완료 · 로컬 저장 완료 · 서버 확정 저장 중…`,'ok');
+    forceBoxSaveV82(ws,group,'complete',rev).then(ok=>{if(!ok)setStatus(`⚠ ${group.boxNo||'박스'} 완료는 이 PC에 안전 저장됨 · 서버 연결 후 자동 재전송됩니다.`,'bad')});
+  }
+  function persistAfterCancelV82(ws,group,rev){try{schedulePersistentState(0)}catch(_){ }forceBoxSaveV82(ws,group,'cancel',rev)}
+
+  // 현재 실제 사용 중인 inline 완료 함수를 감싸 완료 박스에 고유 revision을 부여합니다.
+  const commitInlineBaseV82=commitInlineBoxDraft;
+  commitInlineBoxDraft=function(){
+    const sheetName=boxDraft?.sheetName,editId=boxDraft?.mode==='edit'?String(boxDraft.groupId||''):'';const before=new Set((sheetName&&palletStates.get(sheetName)?.completed||[]).map(g=>String(g.id||'')));
+    const ret=commitInlineBaseV82.apply(this,arguments);try{const ws=sheetName&&workbook?.getWorksheet(sheetName),state=ws&&ensurePalletState(ws);if(!ws||!state)return ret;let g=editId?state.completed.find(x=>String(x.id||'')===editId):state.completed.find(x=>!before.has(String(x.id||'')));if(!g)g=(state.completed||[]).slice().sort((a,b)=>(Number(b.seq)||0)-(Number(a.seq)||0))[0];if(g){const rev=stampCompletedV82(ws,g);persistAfterCommitV82(ws,g,rev)}}catch(e){console.warn('[v82 inline commit stamp]',e)}return ret;
+  };
+  if(typeof commitBoxDraft==='function'){
+    const commitModalBaseV82=commitBoxDraft;commitBoxDraft=function(){const sheetName=boxDraft?.sheetName,editId=boxDraft?.mode==='edit'?String(boxDraft.groupId||''):'';const before=new Set((sheetName&&palletStates.get(sheetName)?.completed||[]).map(g=>String(g.id||'')));const ret=commitModalBaseV82.apply(this,arguments);try{const ws=sheetName&&workbook?.getWorksheet(sheetName),state=ws&&ensurePalletState(ws);let g=editId?state?.completed?.find(x=>String(x.id||'')===editId):state?.completed?.find(x=>!before.has(String(x.id||'')));if(g){const rev=stampCompletedV82(ws,g);persistAfterCommitV82(ws,g,rev)}}catch(e){console.warn('[v82 modal commit stamp]',e)}return ret};
+  }
+
+  // 완료 취소만 명시적인 tombstone으로 기록합니다. 이 기록보다 오래된 서버/브라우저 상태는 완료를 되살리거나 지울 수 없습니다.
+  const cancelGroupBaseV82=cancelGroup;
+  cancelGroup=function(ws,group){const rev=stampCancelV82(ws,group);const ret=cancelGroupBaseV82.apply(this,arguments);persistAfterCancelV82(ws,group,rev);return ret};
+  const cancelInlineBaseV82=cancelInlineEditedBox;
+  cancelInlineEditedBox=function(){const ws=boxDraft?.sheetName?workbook?.getWorksheet(boxDraft.sheetName):null,state=ws&&ensurePalletState(ws),g=state?.completed?.find(x=>String(x.id||'')===String(boxDraft?.groupId||''));const rev=g?stampCancelV82(ws,g):0;const ret=cancelInlineBaseV82.apply(this,arguments);if(g)persistAfterCancelV82(ws,g,rev);return ret};
+
+  // 배포 순간 서버 저장이 실패했을 때: 로컬 state revision이 서버보다 최신이면 로컬을 정본으로 복구 후 자동 재전송합니다.
+  persistGet=async function(key){
+    if(!currentProjectIdV18)return null;
+    let local;try{local=await localPersistGet(localProjectKeyV18(key))}catch(e){console.warn('v82 local project cache read',e)}
+    const remote=await sharedRemoteGet(key);
+    if(key!=='state'){
+      if(remote!==undefined&&remote!==null){try{await localPersistPut(localProjectKeyV18(key),remote)}catch(_){ }return remote}return local||null;
+    }
+    if(remote===undefined||remote===null){if(local){sharedRemotePut('state',local);return local}return null}
+    if(!local){try{await localPersistPut(localProjectKeyV18(key),remote)}catch(_){ }return remote}
+    const lr=Number(local.stateRevisionV78||0),rr=Number(remote.stateRevisionV78||0),lb=maxBoxRevInStateV82(local),rb=maxBoxRevInStateV82(remote);
+    if(lr>rr||(lr===rr&&lb>rb)){
+      if(local?.activeSheet){};sharedRemotePut('state',local);return local;
+    }
+    if(local?.activeSheet)remote.activeSheet=local.activeSheet;
+    if(!remote?.boxDraft&&local?.boxDraft&&Number(local?.savedAt||0)>Number(remote?.savedAt||0))remote.boxDraft=local.boxDraft;
+    try{await localPersistPut(localProjectKeyV18(key),remote)}catch(_){ }
+    return remote;
+  };
+
+  // 기존 완료 박스도 revision이 없는 경우 최초 저장 때 안전한 revision을 부여합니다.
+  setTimeout(()=>{try{let changed=false;for(const [name,state] of palletStates.entries())for(const g of state.completed||[])if(!groupRevV82(g)){g.boxRevisionV82=nextBoxRevV82();g.boxCompletedAtV82=Date.now();g.boxStatusV82='completed';changed=true}if(changed)schedulePersistentState(0)}catch(_){ }},1200);
+})();
+// ===== /v82 =====
+</script>
