@@ -5075,38 +5075,49 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 <!-- ===== v83: instant order dashboard + exact order-row visual style sync ===== -->
 <script id="v83-order-dashboard-style-sync">
 (function(){
-  let styleCacheV83={wb:null,byBarcode:new Map(),byProduct:new Map()};
+  let styleCacheV83={wb:null,byBarcode:new Map(),byProduct:new Map(),byName:new Map()};
 
   function centerKeyV83(v){return String(v??'').replace(/\s+/g,'').replace(/코리아원|봄날애|차통익스프레스/g,'').toLowerCase()}
   function textV83(v){return String(v??'').trim()}
+  function barcodeKeyV83(v){return textV83(v).toUpperCase().replace(/[^0-9A-Z]/g,'')}
+  function productKeyV83(v){return textV83(v).replace(/[^0-9A-Za-z가-힣]/g,'').toLowerCase()}
+  function nameKeyV83(v){return textV83(v).replace(/\s+/g,'').replace(/[^0-9A-Za-z가-힣]/g,'').toLowerCase()}
   function addStyleRecV83(map,key,rec){if(!key)return;if(!map.has(key))map.set(key,[]);map.get(key).push(rec)}
-  function invalidateStyleCacheV83(){styleCacheV83={wb:null,byBarcode:new Map(),byProduct:new Map()}}
+  function invalidateStyleCacheV83(){styleCacheV83={wb:null,byBarcode:new Map(),byProduct:new Map(),byName:new Map()}}
+  function effectiveFontV83(cell){
+    const base=cloneObj(cell?.font||{}),rt=cell?.value&&typeof cell.value==='object'&&Array.isArray(cell.value.richText)?cell.value.richText:[];
+    const fonts=rt.map(x=>x&&x.font).filter(f=>f&&Object.keys(f).length);if(!fonts.length)return base;
+    const first=cloneObj(fonts[0]||{}),withColor=fonts.find(f=>f?.color),out={...base,...first};
+    if(withColor?.color)out.color=cloneObj(withColor.color);
+    return out;
+  }
 
   function buildStyleIndexV83(){
     if(!workbook)return styleCacheV83;
     if(styleCacheV83.wb===workbook)return styleCacheV83;
-    const byBarcode=new Map(),byProduct=new Map(),order=workbook.getWorksheet('발주서');
+    const byBarcode=new Map(),byProduct=new Map(),byName=new Map(),order=workbook.getWorksheet('발주서');
     if(order){
       const end=Math.max(order.rowCount||0,8);
       for(let r=8;r<=end;r++){
-        const row=order.getRow(r),barcode=textV83(displayText(row.getCell(3))),product=textV83(displayText(row.getCell(1))),center=textV83(displayText(row.getCell(4)));
-        if((!barcode&&!product)||!center)continue; // 선적 제목/빈 행 제외
+        const row=order.getRow(r),barcode=textV83(displayText(row.getCell(3))),product=textV83(displayText(row.getCell(1))),productName=textV83(displayText(row.getCell(2))),center=textV83(displayText(row.getCell(4)));
+        if((!barcode&&!product&&!productName)||!center)continue; // 선적 제목/빈 행 제외
         const cells={};
         for(let c=1;c<=5;c++){
           const cell=row.getCell(c);
-          cells[c]={font:cloneObj(cell.font||{}),fill:cloneObj(cell.fill||{})};
+          cells[c]={font:effectiveFontV83(cell),fill:cloneObj(cell.fill||{})};
         }
-        const rec={row:r,barcode,product,center,centerKey:centerKeyV83(center),cells};
-        addStyleRecV83(byBarcode,barcode,rec);addStyleRecV83(byProduct,product,rec);
+        const rec={row:r,barcode,product,productName,center,centerKey:centerKeyV83(center),cells};
+        addStyleRecV83(byBarcode,barcodeKeyV83(barcode),rec);addStyleRecV83(byProduct,productKeyV83(product),rec);addStyleRecV83(byName,nameKeyV83(productName),rec);
       }
     }
-    styleCacheV83={wb:workbook,byBarcode,byProduct};return styleCacheV83;
+    styleCacheV83={wb:workbook,byBarcode,byProduct,byName};return styleCacheV83;
   }
 
   function sourceStyleRecV83(item){
-    if(!item)return null;const idx=buildStyleIndexV83(),barcode=textV83(item.barcode),product=textV83(item.productNumber),center=centerKeyV83(item.center);
-    let list=(barcode&&idx.byBarcode.get(barcode))||(product&&idx.byProduct.get(product))||[];
+    if(!item)return null;const idx=buildStyleIndexV83(),barcode=barcodeKeyV83(item.barcode),product=productKeyV83(item.productNumber),productName=nameKeyV83(item.productName),center=centerKeyV83(item.center);
+    let list=(barcode&&idx.byBarcode.get(barcode))||(product&&idx.byProduct.get(product))||(productName&&idx.byName.get(productName))||[];
     if(!list.length&&product)list=idx.byProduct.get(product)||[];
+    if(!list.length&&productName)list=idx.byName.get(productName)||[];
     if(!list.length)return null;if(list.length===1)return list[0];
     let hit=list.find(x=>x.centerKey===center);
     if(!hit&&center)hit=list.find(x=>x.centerKey&&((x.centerKey.includes(center))||(center.includes(x.centerKey))));
@@ -5135,9 +5146,9 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
     if(!ws||ws.name==='발주서'||!isPackWorkSheet(ws))return;
     const start=generationStartRow(ws),end=Math.max(ws.rowCount||0,start);
     for(let r=start;r<=end;r++){
-      const row=ws.getRow(r),barcode=textV83(displayText(row.getCell(3))),product=textV83(displayText(row.getCell(1)));
-      if(!barcode&&!product)continue;
-      const item={barcode,productNumber:product,center:displayText(row.getCell(4))},rec=sourceStyleRecV83(item);if(!rec)continue;
+      const row=ws.getRow(r),barcode=textV83(displayText(row.getCell(3))),product=textV83(displayText(row.getCell(1))),productName=textV83(displayText(row.getCell(2)));
+      if(!barcode&&!product&&!productName)continue;
+      const item={barcode,productNumber:product,productName,center:displayText(row.getCell(4))},rec=sourceStyleRecV83(item);if(!rec)continue;
       for(let c=1;c<=5;c++)applyOrderStyleToCellV83(row.getCell(c),rec.cells[c]);
     }
   }
@@ -5201,3 +5212,63 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 // ===== /v83 =====
 </script>
+
+
+<!-- ===== v84: current last box number + compact scanner ===== -->
+<style id="v84-current-last-box-style">
+  #palletInline .inline-scan{min-width:250px;max-width:500px;flex:0 1 500px}
+  #inlineLastBoxNoWrap{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#234534;white-space:nowrap}
+  #inlineLastBoxNo{width:82px;height:30px;border:1px solid #9bb3a1;border-radius:4px;padding:0 8px;font:inherit;font-weight:900;background:#f4f8f5;color:#173b29;text-align:center}
+  @media(max-width:1100px){#palletInline .inline-scan{min-width:230px;max-width:390px;flex-basis:390px}}
+</style>
+<script id="v84-current-last-box-number">
+(function(){
+  function startNoV84(){
+    const input=document.getElementById('inlineStartBoxNo');
+    const n=Number(String(input?.value||'').replace(/[^0-9]/g,''));
+    if(Number.isFinite(n)&&n>0)return n;
+    try{const x=Number(window.getBoxStartNoV34?.());if(Number.isFinite(x)&&x>0)return x}catch(_){}
+    return 1;
+  }
+  function addNumsV84(raw,set,count=1){
+    const text=String(raw??'').trim();if(!text)return;
+    const range=text.match(/(\d+)\s*(?:~|-|–|—|〜|～|－)\s*(\d+)/);
+    if(range){let a=Number(range[1]),b=Number(range[2]);if(a>b)[a,b]=[b,a];for(let n=a;n<=Math.min(b,a+10000);n++)if(n>0)set.add(n);return}
+    const nums=text.match(/\d+/g)||[];for(const x of nums){const n=Number(x);if(n>0)set.add(n)}
+    if(nums.length===1&&Number(count)>1){const a=Number(nums[0]),c=Math.min(10000,Math.max(1,Number(count)||1));for(let n=a;n<a+c;n++)if(n>0)set.add(n)}
+  }
+  function usedV84(){
+    const used=new Set();let sheets=[];
+    try{sheets=typeof visibleWorkSheets==='function'?visibleWorkSheets():(workbook?.worksheets||[])}catch(_){sheets=workbook?.worksheets||[]}
+    for(const ws of sheets){
+      try{
+        if(typeof isPackWorkSheet==='function'&&!isPackWorkSheet(ws))continue;
+        const st=(typeof palletStates!=='undefined'&&palletStates?.get)?palletStates.get(ws.name):null;
+        for(const g of st?.completed||[])addNumsV84(g?.boxNo,used,g?.boxCount);
+        const start=typeof generationStartRow==='function'?generationStartRow(ws):1,end=Math.max(start,Number(ws?.rowCount)||start);
+        for(let r=start;r<=end;r++){const v=typeof displayText==='function'?displayText(ws.getRow(r).getCell(16)):ws.getRow(r).getCell(16).value;if(String(v??'').trim())addNumsV84(v,used,1)}
+      }catch(_){}
+    }
+    return used;
+  }
+  function ensureV84(){
+    const startWrap=document.getElementById('inlineStartBoxNoWrap');if(!startWrap)return null;
+    let wrap=document.getElementById('inlineLastBoxNoWrap');
+    if(!wrap){wrap=document.createElement('label');wrap.id='inlineLastBoxNoWrap';wrap.innerHTML='현재 마지막 박스번호<input id="inlineLastBoxNo" type="text" value="-" readonly tabindex="-1">';startWrap.insertAdjacentElement('afterend',wrap)}
+    return wrap;
+  }
+  function updateV84(){
+    if(!ensureV84())return;const start=startNoV84(),used=usedV84();let max=0;for(const n of used)if(n>=start&&n>max)max=n;
+    const input=document.getElementById('inlineLastBoxNo');if(input)input.value=max?String(max):'-';
+  }
+  window.updateLastBoxNoV84=updateV84;
+  document.addEventListener('input',e=>{if(e.target?.id==='inlineStartBoxNo')requestAnimationFrame(updateV84)},true);
+  document.addEventListener('change',e=>{if(e.target?.id==='inlineStartBoxNo')requestAnimationFrame(updateV84)},true);
+  const renderBaseV84=renderSheet;renderSheet=function(){const ret=renderBaseV84.apply(this,arguments);requestAnimationFrame(updateV84);return ret};
+  if(typeof commitInlineBoxDraft==='function'){const base=commitInlineBoxDraft;commitInlineBoxDraft=function(){const ret=base.apply(this,arguments);requestAnimationFrame(updateV84);return ret}}
+  if(typeof cancelInlineEditedBox==='function'){const base=cancelInlineEditedBox;cancelInlineEditedBox=function(){const ret=base.apply(this,arguments);requestAnimationFrame(updateV84);return ret}}
+  if(typeof cancelGroup==='function'){const base=cancelGroup;cancelGroup=function(){const ret=base.apply(this,arguments);requestAnimationFrame(updateV84);return ret}}
+  setInterval(updateV84,1200);setTimeout(updateV84,250);
+})();
+</script>
+<!-- ===== /v84 ===== -->
