@@ -4837,6 +4837,38 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 // ===== /v79 =====
 
 </script>
+
+<!-- ===== v85: physical completed-box dedupe / corrupted repeat repair ===== -->
+<script id="v85-physical-box-dedupe">
+(function(){
+  function nbox(v){return String(v??'').trim().replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase()}
+  function rev(g){return Number(g?.boxRevisionV82||0)}
+  function clone(v){try{return JSON.parse(JSON.stringify(v))}catch(_){return v}}
+  function dedupeRaw(raw){
+    if(!raw||typeof raw!=='object'||!Array.isArray(raw.completed))return {raw,changed:false,removed:0};
+    const by=new Map(),free=[];let removed=0;
+    for(const g0 of raw.completed){const g=clone(g0);if(!g)continue;const b=nbox(g.boxNo);if(!b){free.push(g);continue}const k='BOX:'+b,cur=by.get(k);if(!cur){by.set(k,g);continue}removed++;const cr=rev(cur),nr=rev(g),cu=Number(cur.boxUpdatedAtV82||cur.boxCompletedAtV82||0),nu=Number(g.boxUpdatedAtV82||g.boxCompletedAtV82||0);let keep=(nr>cr||(nr===cr&&nu>cu))?g:cur;const seqs=[Number(cur.seq)||0,Number(g.seq)||0].filter(x=>x>0);if(seqs.length)keep.seq=Math.min(...seqs);const ats=[Number(cur.boxCompletedAtV82)||0,Number(g.boxCompletedAtV82)||0].filter(x=>x>0);if(ats.length)keep.boxCompletedAtV82=Math.min(...ats);by.set(k,keep)}
+    if(!removed)return {raw,changed:false,removed:0};const out=clone(raw);out.completed=[...by.values(),...free].sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));out.nextSeq=Math.max(1,...out.completed.map(g=>(Number(g.seq)||0)+1));return {raw:out,changed:true,removed};
+  }
+  function dedupeSaved(saved){
+    if(!saved||typeof saved!=='object'||!Array.isArray(saved.palletStates))return {saved,changed:false,removed:0};
+    let changed=false,removed=0;const out=clone(saved);out.palletStates=out.palletStates.map(pair=>{if(!Array.isArray(pair)||pair.length<2)return pair;const x=dedupeRaw(pair[1]);changed=changed||x.changed;removed+=x.removed;return [pair[0],x.raw]});if(changed){out.stateFormatV85=85;out.completedBoxDedupeV85={removed,at:Date.now()}}return {saved:out,changed,removed};
+  }
+  function cleanLive(){
+    if(typeof palletStates==='undefined'||!palletStates?.entries)return 0;let removed=0,changedSheets=[];
+    for(const [name,state] of palletStates.entries()){const x=dedupeRaw(state);if(!x.changed)continue;removed+=x.removed;palletStates.set(name,x.raw);changedSheets.push(name);try{const ws=workbook?.getWorksheet(name);if(ws&&typeof markPalletDirty==='function')markPalletDirty(ws,x.raw)}catch(e){console.warn('[v85 dedupe mark]',name,e)}}
+    if(removed){try{if(typeof schedulePersistentState==='function')schedulePersistentState(0)}catch(_){ }try{if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13()}catch(_){ }try{if(typeof renderSheet==='function')renderSheet(true)}catch(_){ }try{if(typeof recalcDashboard==='function'&&workbook)recalcDashboard(workbook)}catch(_){ }console.warn(`[v85] 중복 완료 박스 ${removed}개 정리`,changedSheets)}
+    return removed;
+  }
+  const applyBase=window.applyRecoveredState||applyRecoveredState;
+  if(typeof applyBase==='function')window.applyRecoveredState=applyRecoveredState=function(saved){const x=dedupeSaved(saved);const ret=applyBase.call(this,x.saved);setTimeout(cleanLive,0);return ret};
+  const payloadBase=persistentStatePayload;
+  if(typeof payloadBase==='function')persistentStatePayload=function(){cleanLive();const p=payloadBase.apply(this,arguments);const x=dedupeSaved(p);return x.saved};
+  setTimeout(cleanLive,500);setTimeout(cleanLive,2200);
+  window.__TC_DEDUPE_COMPLETED_V85__={cleanLive,dedupeRaw,dedupeSaved};
+})();
+</script>
+<!-- ===== /v85 ===== -->
 </body>
 </html>
 
