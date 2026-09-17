@@ -670,6 +670,60 @@ function mergeTombstonesV82(a,b){
     const dst=out[sheet]||(out[sheet]={});for(const [id,rev] of Object.entries(rows&&typeof rows==='object'?rows:{}))dst[id]=Math.max(Number(dst[id]||0),Number(rev||0));
   }return out;
 }
+
+// v86: 택배/팔레트 미완료 수량 유령행 복구
+// 같은 상품번호가 바코드 깨짐/빈값 등으로 여러 identity로 갈라져도 하나의 SKU로 계산합니다.
+function normSkuTokenV86(v){return String(v??'').trim().toUpperCase().replace(/\s+/g,'').replace(/[^0-9A-Z가-힣_-]/g,'')}
+function stableSkuKeyV86(it){
+  const pn=normSkuTokenV86(it&&it.productNumber);if(pn)return 'PN:'+pn;
+  const bc=normSkuTokenV86(it&&it.barcode);if(bc)return 'BC:'+bc;
+  const nm=String((it&&it.productName)??'').trim().toLowerCase().replace(/\s+/g,' ').replace(/[^0-9a-z가-힣 ]/g,'');
+  return nm?'NM:'+nm:'';
+}
+function barcodeScoreV86(it){
+  const raw=String((it&&it.barcode)??'').trim(),bc=normSkuTokenV86(raw);let s=0;
+  if(!bc)return 0;if(/^R[0-9A-Z]{6,}$/.test(bc))s+=100;else if(bc.length>=8)s+=70;else if(bc.length>=5)s+=25;else s+=5;
+  if(/^\d{1,4}$/.test(bc))s-=40;
+  if(normSkuTokenV86(it&&it.productNumber))s+=20;
+  if(String((it&&it.productName)??'').trim())s+=10;
+  return s;
+}
+function betterMetaV86(a,b){
+  if(!a)return cloneJsonV82(b||{});if(!b)return cloneJsonV82(a||{});
+  const sa=barcodeScoreV86(a),sb=barcodeScoreV86(b);let pick=sb>sa?b:a;
+  // 같은 점수라면 더 앞선 원본 행(order)을 우선합니다.
+  if(sa===sb){const ao=Number(a.order??999999999),bo=Number(b.order??999999999);if(bo<ao)pick=b}
+  const out=cloneJsonV82(pick||{});const orders=[Number(a.order),Number(b.order)].filter(Number.isFinite);if(orders.length)out.order=Math.min(...orders);return out;
+}
+function inventoryStableV86(raw){
+  const exactTotals=new Map(),exactMeta=new Map(),exactStable=new Map();
+  const add=(it,q)=>{const stable=stableSkuKeyV86(it);if(!stable)return;const exact=normBoxItemKeyV82(it)||stable;const ek=stable+'||'+exact;const n=Math.max(0,Number(q||0));exactTotals.set(ek,(exactTotals.get(ek)||0)+n);exactStable.set(ek,stable);exactMeta.set(ek,betterMetaV86(exactMeta.get(ek),it))};
+  for(const it of (raw&&Array.isArray(raw.incomplete)?raw.incomplete:[]))add(it,it&&it.remainingQty);
+  for(const g of (raw&&Array.isArray(raw.completed)?raw.completed:[]))for(const it of (g&&Array.isArray(g.items)?g.items:[]))add(it,it&&it.totalQty);
+  const totals=new Map(),meta=new Map();
+  for(const [ek,total] of exactTotals){const stable=exactStable.get(ek);totals.set(stable,Math.max(Number(totals.get(stable)||0),Number(total||0)));meta.set(stable,betterMetaV86(meta.get(stable),exactMeta.get(ek)))}
+  return {totals,meta};
+}
+function repairInventoryRawV86(raw){
+  if(!raw||typeof raw!=='object')return {raw:raw||{},changed:false,removed:0};
+  const d=dedupeCompletedPhysicalV85(raw),out=cloneJsonV82(d.raw)||{},inv=inventoryStableV86(out),consumed=new Map();
+  for(const g of (out.completed||[]))for(const it of (g&&Array.isArray(g.items)?g.items:[])){const k=stableSkuKeyV86(it);if(!k)continue;consumed.set(k,(consumed.get(k)||0)+Math.max(0,Number(it.totalQty||0)));if(!inv.meta.has(k))inv.meta.set(k,cloneJsonV82(it))}
+  const incomplete=[];
+  for(const [k,total] of inv.totals){const remain=Math.max(0,Number(total||0)-Number(consumed.get(k)||0));if(remain>0){const it=cloneJsonV82(inv.meta.get(k)||{});it.remainingQty=remain;delete it.totalQty;delete it.perBoxQty;incomplete.push(it)}}
+  incomplete.sort((a,b)=>(Number(a.order??999999999)-Number(b.order??999999999))||String(stableSkuKeyV86(a)).localeCompare(String(stableSkuKeyV86(b))));
+  const oldSig=JSON.stringify((out.incomplete||[]).map(it=>[stableSkuKeyV86(it),normBoxItemKeyV82(it),Number(it.remainingQty||0)]));
+  const newSig=JSON.stringify(incomplete.map(it=>[stableSkuKeyV86(it),normBoxItemKeyV82(it),Number(it.remainingQty||0)]));
+  out.incomplete=incomplete;
+  const changed=d.changed||oldSig!==newSig;
+  if(changed){out.inventoryRepairV86={at:Date.now(),reason:'stable-sku-repair'}}
+  return {raw:out,changed,removed:Number(d.removed||0)};
+}
+function sanitizeStateV86(state){
+  const base=sanitizeCompletedStateV85(state),out=cloneJsonV82(base.state)||{};let changed=!!base.changed,removed=Number(base.removed||0),repaired=0;
+  if(Array.isArray(out.palletStates))out.palletStates=out.palletStates.map(pair=>{if(!Array.isArray(pair)||pair.length<2)return pair;const x=repairInventoryRawV86(pair[1]);if(x.changed){changed=true;repaired++}removed+=Number(x.removed||0);return [pair[0],x.raw]});
+  if(changed){out.stateFormatV86=86;out.inventoryRepairStateV86={at:Date.now(),sheets:repaired,removedCompletedDuplicates:removed}}
+  return {state:out,changed,removed,repaired};
+}
 function inventoryV82(raw){
   const totals=new Map(),meta=new Map();
   const add=(it,q)=>{const k=normBoxItemKeyV82(it);if(k==='||')return;const n=Math.max(0,Number(q||0));totals.set(k,(totals.get(k)||0)+n);if(!meta.has(k))meta.set(k,cloneJsonV82(it))};
@@ -678,34 +732,38 @@ function inventoryV82(raw){
   return {totals,meta};
 }
 function mergeOnePalletRawV82(oldRaw,newRaw,tombs){
-  oldRaw=dedupeCompletedPhysicalV85(oldRaw||{}).raw;newRaw=dedupeCompletedPhysicalV85(newRaw||{}).raw;const out=cloneJsonV82(newRaw&&Object.keys(newRaw).length?newRaw:oldRaw)||{};
+  // v86: 각 snapshot 자체를 먼저 안정 SKU 기준으로 정리합니다.
+  oldRaw=repairInventoryRawV86(oldRaw||{}).raw;newRaw=repairInventoryRawV86(newRaw||{}).raw;const out=cloneJsonV82(newRaw&&Object.keys(newRaw).length?newRaw:oldRaw)||{};
   const chosen=new Map();
   const take=(g,sourceRank)=>{if(!g||!g.id)return;const id=String(g.id),cur=chosen.get(id),rev=boxGroupRevV82(g);if(!cur||rev>cur.rev||(rev===cur.rev&&sourceRank>cur.rank))chosen.set(id,{g:cloneJsonV82(g),rev,rank:sourceRank})};
   for(const g of (oldRaw.completed||[]))take(g,1);for(const g of (newRaw.completed||[]))take(g,2);
   const completed=[];for(const [id,row] of chosen){const tomb=Number(tombs&&tombs[id]||0);if(tomb>row.rev)continue;completed.push(row.g)}
   completed.sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));out.completed=dedupeCompletedPhysicalV85({completed}).raw.completed;
 
-  // 원본 총수량은 불변이므로 old/new 각각의 (미완료+완료) 총량 중 큰 값을 기준으로 재계산합니다.
-  const oi=inventoryV82(oldRaw),ni=inventoryV82(newRaw),totals=new Map(),meta=new Map();
+  // v86 핵심: 상품번호가 같으면 바코드가 '33'/빈값/정상 R코드로 갈라져도 같은 SKU입니다.
+  // 각 snapshot 안에서는 동일 exact identity의 행은 합산하되, 서로 다른 깨진 identity끼리는 합산하지 않고 최대 원본수량만 채택합니다.
+  const oi=inventoryStableV86(oldRaw),ni=inventoryStableV86(newRaw),totals=new Map(),meta=new Map();
   for(const k of new Set([...oi.totals.keys(),...ni.totals.keys()])){
     totals.set(k,Math.max(Number(oi.totals.get(k)||0),Number(ni.totals.get(k)||0)));
-    meta.set(k,cloneJsonV82(ni.meta.get(k)||oi.meta.get(k)||{}));
+    // 최신 snapshot 메타를 우선하되, 깨진 짧은 바코드보다 정상 바코드를 선호합니다.
+    meta.set(k,betterMetaV86(ni.meta.get(k),oi.meta.get(k)));
   }
-  const consumed=new Map();for(const g of completed)for(const it of (g.items||[])){const k=normBoxItemKeyV82(it);consumed.set(k,(consumed.get(k)||0)+Math.max(0,Number(it.totalQty||0)));if(!meta.has(k))meta.set(k,cloneJsonV82(it))}
-  const incomplete=[];for(const [k,total] of totals){const remain=Math.max(0,Number(total||0)-Number(consumed.get(k)||0));if(remain>0){const it=cloneJsonV82(meta.get(k)||{});it.remainingQty=remain;incomplete.push(it)}}
+  const consumed=new Map();for(const g of out.completed)for(const it of (g.items||[])){const k=stableSkuKeyV86(it);if(!k)continue;consumed.set(k,(consumed.get(k)||0)+Math.max(0,Number(it.totalQty||0)));meta.set(k,betterMetaV86(meta.get(k),it))}
+  const incomplete=[];for(const [k,total] of totals){const remain=Math.max(0,Number(total||0)-Number(consumed.get(k)||0));if(remain>0){const it=cloneJsonV82(meta.get(k)||{});it.remainingQty=remain;delete it.totalQty;delete it.perBoxQty;incomplete.push(it)}}
+  incomplete.sort((a,b)=>(Number(a.order??999999999)-Number(b.order??999999999))||String(stableSkuKeyV86(a)).localeCompare(String(stableSkuKeyV86(b))));
   out.incomplete=incomplete;
-  out.nextSeq=Math.max(Number(oldRaw.nextSeq||1),Number(newRaw.nextSeq||1),...completed.map(g=>(Number(g.seq)||0)+1));
+  out.nextSeq=Math.max(Number(oldRaw.nextSeq||1),Number(newRaw.nextSeq||1),...out.completed.map(g=>(Number(g.seq)||0)+1));
   out.templateRow=Number(newRaw.templateRow||oldRaw.templateRow||0);out.nextItemId=Math.max(Number(oldRaw.nextItemId||1),Number(newRaw.nextItemId||1));
-  return out;
+  return repairInventoryRawV86(out).raw;
 }
 function protectCompletedBoxesV82(existingRow,incomingState){
-  const oldState=sanitizeCompletedStateV85(existingRow&&existingRow.state&&typeof existingRow.state==='object'?existingRow.state:{}).state;
-  const next=sanitizeCompletedStateV85(incomingState&&typeof incomingState==='object'?incomingState:{}).state;
+  const oldState=sanitizeStateV86(existingRow&&existingRow.state&&typeof existingRow.state==='object'?existingRow.state:{}).state;
+  const next=sanitizeStateV86(incomingState&&typeof incomingState==='object'?incomingState:{}).state;
   const tombs=mergeTombstonesV82(oldState.boxTombstonesV82,next.boxTombstonesV82);next.boxTombstonesV82=tombs;
   const oldMap=palletRawMapV82(oldState),newMap=palletRawMapV82(next),names=new Set([...oldMap.keys(),...newMap.keys()]);
   const merged=[];for(const name of names)merged.push([name,mergeOnePalletRawV82(oldMap.get(name),newMap.get(name),tombs[name]||{})]);
   if(merged.length)next.palletStates=merged;
-  next.stateFormatV82=Math.max(Number(next.stateFormatV82||0),82);const clean=sanitizeCompletedStateV85(next);return clean.state;
+  next.stateFormatV82=Math.max(Number(next.stateFormatV82||0),82);const clean=sanitizeStateV86(next);return clean.state;
 }
 
 // v50: 직원 계정 쿠팡 API는 레거시 공용 라우트보다 먼저 개인 저장소에서 처리합니다.
@@ -728,7 +786,7 @@ app.use('/api/coupang-shared',(req,res,next)=>{
   if(!part){if(req.method==='PATCH'){if(req.body?.name!==undefined)proj.name=String(req.body.name||proj.name).slice(0,120);if(req.body?.status!==undefined)proj.status=req.body.status==='archived'?'archived':'active';proj.updatedAt=Date.now();saveIdx(idx);return res.json({ok:true,project:proj})}}
   if(part==='status'&&req.method==='GET'){const st=readJsonFileV48(paths.state,null),bs=k=>{const meta=readJsonFileV48(paths[k].meta,null);return meta&&fs.existsSync(paths[k].data)?{updatedAt:Number(meta.updatedAt||0),size:Number(meta.size||0),name:meta.name||''}:null};return res.json({ok:true,state:st?{updatedAt:Number(st.updatedAt||0)}:null,source:bs('source'),workbookSnapshot:bs('workbookSnapshot')})}
   if(part==='state'){
-    if(req.method==='GET'){let st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});const clean=sanitizeCompletedStateV85(st.state);if(clean.changed){st={...st,updatedAt:Date.now(),state:clean.state};atomicJsonV48(paths.state,st)}res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
+    if(req.method==='GET'){let st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});const clean=sanitizeStateV86(st.state);if(clean.changed){st={...st,updatedAt:Date.now(),state:clean.state};atomicJsonV48(paths.state,st)}res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
     if(req.method==='DELETE'){fs.rmSync(paths.state,{force:true});touch(id);return res.json({ok:true})}
     if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const existing=readJsonFileV48(paths.state,null),guard=guardWholeStateV78(existing,state);if(guard.keepExisting)return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,boxGuardV82:true});state=protectManualPalletCloseV77(existing,guard.state);state=protectCompletedBoxesV82(existing,state);const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),manualCloseGuardV77:true,boxGuardV82:true})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
   }
@@ -1370,8 +1428,10 @@ app.get('/api/coupang-shared/status', coupangAuth, (req, res) => {
 });
 
 app.get('/api/coupang-shared/state', coupangAuth, (req, res) => {
-  const row = readJsonSafe(COUPANG_STATE_PATH);
+  let row = readJsonSafe(COUPANG_STATE_PATH);
   if (!row) return res.status(404).json({ ok: false, error: '저장된 작업 상태가 없습니다.' });
+  const clean=sanitizeStateV86(row.state);
+  if(clean.changed){row={...row,updatedAt:Date.now(),state:clean.state};backupFileV46(COUPANG_STATE_PATH);writeAtomic(COUPANG_STATE_PATH,JSON.stringify(row))}
   res.set('Cache-Control', 'no-store');
   res.set('X-Updated-At', String(row.updatedAt || 0));
   res.json(row);
@@ -1857,7 +1917,7 @@ app.delete('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
 });
 
 app.get('/api/coupang-shared/projects/:projectId/status',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const {paths}=found;res.set('Cache-Control','no-store');res.json({ok:true,state:projectStateStatusV18(paths),source:projectBlobStatusV18(paths,'source'),workbookSnapshot:projectBlobStatusV18(paths,'workbookSnapshot')})});
-app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;let row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});const clean=sanitizeCompletedStateV85(row.state);if(clean.changed){row={...row,updatedAt:Date.now(),state:clean.state};backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify(row))}res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
+app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;let row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});const clean=sanitizeStateV86(row.state);if(clean.changed){row={...row,updatedAt:Date.now(),state:clean.state};backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify(row))}res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
 app.put('/api/coupang-shared/projects/:projectId/state',coupangAuth,express.text({type:['text/plain','application/json'],limit:'15mb'}),(req,res)=>{
   try{const found=getProjectOr404V18(req,res);if(!found)return;let state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});const existing=readJsonSafe(found.paths.state),guard=guardWholeStateV78(existing,state);if(guard.keepExisting){res.set('Cache-Control','no-store');return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,manualCloseGuardV77:true})}state=protectManualPalletCloseV77(existing,guard.state);state=protectCompletedBoxesV82(existing,state);const updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),staleIgnoredV78:false,manualCloseGuardV77:true,boxGuardV82:true})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
 });
