@@ -5745,3 +5745,241 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 // ===== /v88 =====
 </script>
+
+<!-- ===== v90: order-sheet source-of-truth center reconciliation ===== -->
+<script id="v90-order-center-reconciliation">
+(function(){
+  const V90_VERSION=90;
+  function text(cell){
+    try{return String(typeof displayText==='function'?displayText(cell):(cell?.text??cell?.value??'')).trim()}catch(_){return ''}
+  }
+  function qty(cell){
+    try{
+      if(typeof cellNum==='function'){
+        const n=Number(cellNum(cell));
+        if(Number.isFinite(n))return n;
+      }
+      const v=cell?.value;
+      if(typeof v==='number'&&Number.isFinite(v))return v;
+      if(v&&typeof v==='object'&&Number.isFinite(Number(v.result)))return Number(v.result);
+      const t=String(cell?.text??v??'').replace(/,/g,'').trim();
+      const m=t.match(/-?\d+(?:\.\d+)?/);
+      return m?Number(m[0])||0:0;
+    }catch(_){return 0}
+  }
+  function companyFromTitle(title,current='코리아원'){
+    const t=String(title||'').trim();
+    if(!t)return current;
+    try{
+      if(typeof normalizeCompany==='function'&&/선적/.test(t)){
+        const c=String(normalizeCompany(t)||'').trim();
+        if(c)return c;
+      }
+    }catch(_){ }
+    if(/봄날애/.test(t))return '봄날애';
+    if(/차통/.test(t))return '차통익스프레스';
+    if(/코리아원/.test(t))return '코리아원';
+    return current;
+  }
+  function sourceSpec(company,center){
+    try{if(typeof v24SheetSpec==='function')return v24SheetSpec(company,center)}catch(_){ }
+    return {name:String(center||'').trim(),kind:/팔레트|밀크런/i.test(String(center||''))?'pallet':'parcel',company,center};
+  }
+  function parseOrderSource(wb=workbook){
+    const order=wb?.getWorksheet?.('발주서');
+    const groups=[],byKey=new Map();
+    if(!order)return {order:null,groups,grand:0,rows:[]};
+    let company='코리아원',grand=0;
+    const rows=[];
+    const end=Math.max(8,Number(order.rowCount)||0);
+    for(let r=8;r<=end;r++){
+      const row=order.getRow(r);
+      const a=text(row.getCell(1)),b=text(row.getCell(2)),c=text(row.getCell(3)),d=text(row.getCell(4)),q=qty(row.getCell(5));
+      if(!d&&!(q>0)){
+        if(a&&/선적|입고/.test(a))company=companyFromTitle(a,company);
+        continue;
+      }
+      if(!d||!(q>0))continue;
+      // 제품행만 센터 집계에 포함. dashboard/header의 숫자가 섞이지 않도록 A/B/C 중 하나는 있어야 합니다.
+      if(!a&&!b&&!c)continue;
+      const spec=sourceSpec(company,d);
+      const ckey=(typeof v24CompanyKey==='function'?v24CompanyKey(company):company)+'|'+(typeof v24CenterKey==='function'?v24CenterKey(d):d.replace(/\s+/g,'').toLowerCase());
+      let g=byKey.get(ckey);
+      if(!g){g={key:ckey,company,center:d,name:spec.name,kind:spec.kind,sourceOrder:groups.length,total:0,items:[]};byKey.set(ckey,g);groups.push(g)}
+      const item={
+        sourceRow:r,productNumber:row.getCell(1).value,productName:b,barcode:c,center:d,qty:q,
+        centerFill:typeof cloneObj==='function'?cloneObj(row.getCell(4).fill):row.getCell(4).fill,
+        centerFont:typeof cloneObj==='function'?cloneObj(row.getCell(4).font):row.getCell(4).font,
+        sourceFonts:[1,2,3,4,5].map(cc=>{try{return typeof cloneObj==='function'?cloneObj(row.getCell(cc).font):row.getCell(cc).font}catch(_){return null}})
+      };
+      g.items.push(item);g.total+=q;grand+=q;rows.push(item);
+    }
+    return {order,groups,grand,rows};
+  }
+  window.v90ParseOrderSource=parseOrderSource;
+  window.v88OriginalCenterTotals=function(){
+    const src=parseOrderSource();const m=new Map();for(const g of src.groups)m.set(g.name,g.total);return m;
+  };
+
+  function normv(v){try{return typeof norm==='function'?norm(v):String(v??'').trim()}catch(_){return String(v??'').trim()}}
+  function sameProduct(a,b){
+    const ap=normv(a?.productNumber),bp=normv(b?.productNumber);
+    if(ap&&bp)return ap===bp;
+    const ab=normv(a?.barcode),bb=normv(b?.barcode);
+    if(ab&&bb)return ab===bb;
+    const an=normv(a?.productName),bn=normv(b?.productName);
+    return !!an&&an===bn;
+  }
+  function itemFromSource(g,it,left,idx){
+    let centerText=it.center;
+    try{if(typeof centerDisplay==='function')centerText=centerDisplay(g.company,it.center)}catch(_){ }
+    return {
+      id:`v90:${g.key}:${it.sourceRow}:${idx}`,
+      productNumber:typeof cloneObj==='function'?cloneObj(it.productNumber):it.productNumber,
+      productName:it.productName,barcode:it.barcode,center:centerText,
+      qty:Number(left)||0,remainingQty:Number(left)||0,
+      centerFill:typeof cloneObj==='function'?cloneObj(it.centerFill):it.centerFill,
+      centerFont:typeof cloneObj==='function'?cloneObj(it.centerFont):it.centerFont,
+      order:it.sourceRow
+    };
+  }
+  function incompleteSig(arr){
+    return (arr||[]).map(x=>`${normv(x.productNumber)}|${normv(x.barcode)}|${Number(x.remainingQty||0)}`).join(';;');
+  }
+  function ensureSourceSheet(g){
+    let ws=workbook?.getWorksheet?.(g.name);
+    if(ws)return ws;
+    try{
+      if(typeof cloneTemplateSheet!=='function')return null;
+      ws=cloneTemplateSheet(workbook,g.kind,g.name);
+      ws._webKind=g.kind;ws._webSourceOrder=g.sourceOrder;ws._webCompany=g.company;ws._webWorkType=g.kind==='parcel'?'parcel':(/밀크런/i.test(g.center)?'milkrun':'pallet');
+      ws.getCell('A1').value=g.name;
+      const start=generationStartRow(ws);
+      const incomplete=g.items.map((it,i)=>itemFromSource(g,it,it.qty,i));
+      const state=assignVisualRows(ws,{completed:[],incomplete,nextSeq:1,templateRow:start,nextItemId:1});
+      palletStates.set(ws.name,state);
+      try{if(typeof markPalletDirty==='function')markPalletDirty(ws,state)}catch(_){ }
+      console.warn('[v90] source center sheet restored',g.name,g.total);
+      return ws;
+    }catch(e){console.warn('[v90 create source sheet]',g.name,e);return null}
+  }
+  function reconcileGroup(g,ws){
+    if(!ws)return false;
+    if(typeof boxDraft!=='undefined'&&boxDraft&&boxDraft.sheetName===ws.name)return false;
+    let state;
+    try{state=ensurePalletState(ws)}catch(_){return false}
+    if(!state)return false;
+    // 완료 작업은 절대 삭제/변경하지 않습니다. 완료수량만 원본에서 차감해 미완료 목록을 다시 만듭니다.
+    const completedParts=[];
+    for(const cg of (state.completed||[]))for(const ci of (cg.items||[])){
+      const q=Number(ci.totalQty||0);if(q>0)completedParts.push({item:ci,left:q});
+    }
+    const rebuilt=[];let idx=0;
+    for(const src of g.items){
+      let left=Number(src.qty)||0;
+      for(const cp of completedParts){
+        if(left<=0)break;if(cp.left<=0||!sameProduct(src,cp.item))continue;
+        const take=Math.min(left,cp.left);left-=take;cp.left-=take;
+      }
+      if(left>0)rebuilt.push(itemFromSource(g,src,left,idx++));
+    }
+    const before=incompleteSig(state.incomplete),after=incompleteSig(rebuilt);
+    state.incomplete=rebuilt;
+    try{assignVisualRows(ws,state)}catch(_){ }
+    ws.getCell('E3').value=Number(g.total)||0;
+    if(before!==after){
+      try{if(typeof markPalletDirty==='function')markPalletDirty(ws,state)}catch(_){ }
+      return true;
+    }
+    return false;
+  }
+  function reconcileAll({createMissing=true,persist=true}={}){
+    if(!workbook)return {changed:false,created:false,source:null};
+    const src=parseOrderSource(workbook);let changed=false,created=false;
+    for(const g of src.groups){
+      let ws=workbook.getWorksheet(g.name);
+      if(!ws&&createMissing){ws=ensureSourceSheet(g);if(ws)created=true}
+      if(ws&&reconcileGroup(g,ws))changed=true;
+    }
+    if((changed||created)&&persist){try{if(typeof schedulePersistentState==='function')schedulePersistentState(80)}catch(_){ }}
+    return {changed,created,source:src};
+  }
+  window.v90ReconcileAll=reconcileAll;
+
+  const recalcWorkSheetBaseV90=recalcWorkSheet;
+  recalcWorkSheet=function(ws){
+    const s=recalcWorkSheetBaseV90.apply(this,arguments);
+    if(!ws||ws.name==='발주서'||!s)return s;
+    try{
+      const src=parseOrderSource(workbook),g=src.groups.find(x=>x.name===ws.name);
+      if(g){s.total=Number(g.total)||0;ws.getCell('E3').value=s.total}
+    }catch(e){console.warn('[v90 recalc sheet]',ws?.name,e)}
+    return s;
+  };
+
+  function copyDashStyle(order,col){
+    if(col<=29)return;
+    try{
+      const donor=order.getColumn(29),target=order.getColumn(col);if(donor?.width)target.width=donor.width;
+      for(let r=2;r<=7;r++){const s=order.getRow(r).getCell(29),d=order.getRow(r).getCell(col);d.style=typeof cloneObj==='function'?cloneObj(s.style):s.style;if(s.numFmt)d.numFmt=s.numFmt}
+    }catch(_){ }
+  }
+  const recalcDashboardBaseV90=recalcDashboard;
+  recalcDashboard=function(wb=workbook){
+    // 기존 부가기능은 먼저 유지하되, 마지막 숫자/센터 매핑은 v90 원본행 기준으로 완전히 덮어씁니다.
+    let ret;try{ret=recalcDashboardBaseV90.apply(this,arguments)}catch(e){console.warn('[v90 base dashboard]',e)}
+    const old=workbook;
+    try{
+      if(!wb)return ret;if(wb!==workbook)workbook=wb;
+      const source=parseOrderSource(wb),order=source.order;if(!order)return ret;
+      let totalBoxes=0,totalPacked=0,shown=0;
+      const sourceNames=new Set();
+      for(let i=0;i<source.groups.length;i++){
+        const g=source.groups[i],col=10+i;sourceNames.add(g.name);copyDashStyle(order,col);
+        let ws=wb.getWorksheet(g.name);if(!ws)ws=ensureSourceSheet(g);
+        const s=ws?(recalcWorkSheet(ws)||{boxes:0,packed:0}):{boxes:0,packed:0};
+        const c2=order.getRow(2).getCell(col),c3=order.getRow(3).getCell(col),c4=order.getRow(4).getCell(col),c5=order.getRow(5).getCell(col),c6=order.getRow(6).getCell(col),c7=order.getRow(7).getCell(col);
+        c2.value=ws?.name||g.name;try{if(ws)setInternalMove(c3,ws.name);else c3.value=''}catch(_){c3.value='이동'}
+        c4.value=Number(g.total)||0;c5.value=Number(s.boxes)||0;c6.value=Number(s.packed)||0;c7.value=g.total>0&&s.packed>0?Math.min(Number(s.packed)/Number(g.total),1):'작업전';
+        shown+=Number(g.total)||0;totalBoxes+=Number(s.boxes)||0;totalPacked+=Number(s.packed)||0;
+      }
+      const prev=Math.max(Number(window.__v90LastCenterCount||0),Number(window.__v89LastDashboardCount||0),20);
+      for(let i=source.groups.length;i<prev;i++)for(let r=2;r<=7;r++)order.getRow(r).getCell(10+i).value=null;
+      window.__v90LastCenterCount=source.groups.length;
+      // 총 팩킹수량은 각 센터 원본수량의 합계와 반드시 동일합니다.
+      order.getCell('E4').value=source.grand;order.getCell('G4').value=source.grand;
+      order.getCell('I2').value=totalBoxes;order.getCell('G7').value=totalPacked;
+      const diff=Number(source.grand)-Number(shown);
+      order.getCell('F4').value=Math.abs(diff)<1e-9?'맞음':`불일치 ${diff>0?'+':''}${diff}`;
+      if(Math.abs(diff)>=1e-9)console.error('[v90 impossible source total mismatch]',{grand:source.grand,shown,diff,groups:source.groups});
+    }catch(e){console.warn('[v90 dashboard]',e)}finally{if(wb!==old)workbook=old}
+    return ret;
+  };
+
+  // 서버/브라우저 상태 복구 후에도 발주서 원본과 센터탭 미완료 목록을 다시 맞춥니다.
+  try{
+    if(typeof applyRecoveredState==='function'){
+      const applyBaseV90=applyRecoveredState;
+      applyRecoveredState=function(saved){
+        const r=applyBaseV90.apply(this,arguments);
+        setTimeout(()=>{try{const x=reconcileAll({createMissing:true,persist:true});if(x.created&&typeof renderTabs==='function')renderTabs();recalcDashboard(workbook);if(activeSheet==='발주서'||workbook?.getWorksheet?.(activeSheet))renderSheet(true)}catch(e){console.warn('[v90 post recovery]',e)}},120);
+        return r;
+      };
+      window.applyRecoveredState=applyRecoveredState;
+    }
+  }catch(e){console.warn('[v90 hook recovery]',e)}
+
+  setTimeout(()=>{
+    try{
+      if(!workbook)return;
+      const x=reconcileAll({createMissing:true,persist:true});
+      if(x.created&&typeof renderTabs==='function')renderTabs();
+      recalcDashboard(workbook);
+      if(activeSheet==='발주서'||workbook.getWorksheet(activeSheet))renderSheet(true);
+      console.log('[v90] center source reconciliation',{centers:x.source?.groups?.length||0,grand:x.source?.grand||0,changed:x.changed,created:x.created});
+    }catch(e){console.warn('[v90 initial]',e)}
+  },450);
+  setTimeout(()=>{try{if(workbook){reconcileAll({createMissing:true,persist:true});recalcDashboard(workbook)}}catch(e){console.warn('[v90 delayed]',e)}},2200);
+})();
+</script>
+<!-- ===== /v90 ===== -->
