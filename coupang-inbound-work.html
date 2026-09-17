@@ -5531,3 +5531,122 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v87 ===== -->
+
+<!-- ===== v88: immutable order-center totals for dashboard/work-sheet headers ===== -->
+<script id="v88-order-center-total-source-of-truth">
+(function(){
+  // 센터 총 팩킹수량은 작업 중 변형되는 completed/incomplete state가 아니라
+  // 발주서 원본 A:E의 센터별 발주수량을 단일 기준(source of truth)으로 사용합니다.
+  function v88Text(v){return String(v??'').trim()}
+  function v88NumCell(cell){
+    try{
+      if(typeof cellNum==='function')return Number(cellNum(cell))||0;
+      const v=cell?.value;
+      if(typeof v==='number'&&Number.isFinite(v))return v;
+      const t=String(typeof displayText==='function'?displayText(cell):(cell?.text??v??'')).replace(/,/g,'').trim();
+      return /^-?\d+(?:\.\d+)?$/.test(t)?Number(t):0;
+    }catch(_){return 0}
+  }
+  function v88CellText(cell){
+    try{return v88Text(typeof displayText==='function'?displayText(cell):(cell?.text??cell?.value??''))}catch(_){return ''}
+  }
+  function v88CompanyFromTitle(title,current){
+    const t=v88Text(title);
+    if(!t)return current||'코리아원';
+    // 기존 normalizeCompany가 이해하는 '업체명 + 날짜 + 선적' 형식을 우선 사용합니다.
+    try{
+      if(typeof normalizeCompany==='function'&&(/선적/.test(t)||/\d{1,2}월\s*\d{1,2}일/.test(t))){
+        const c=v88Text(normalizeCompany(t));if(c)return c;
+      }
+    }catch(_){ }
+    if(/봄날애/.test(t))return '봄날애';
+    if(/차통/.test(t))return '차통익스프레스';
+    if(/코리아원/.test(t))return '코리아원';
+    return current||'코리아원';
+  }
+  function v88SheetNameFor(company,center){
+    try{
+      if(typeof v24SheetSpec==='function')return v24SheetSpec(company,center).name;
+      if(typeof makeSheetName==='function')return makeSheetName(company,center);
+    }catch(_){ }
+    return v88Text(center);
+  }
+  function v88BuildOriginalCenterTotals(){
+    const totals=new Map(), order=workbook?.getWorksheet?.('발주서');
+    if(!order)return totals;
+    let company='코리아원';
+    const end=Math.max(Number(order.rowCount)||0,8);
+    for(let r=8;r<=end;r++){
+      const row=order.getRow(r),a=v88CellText(row.getCell(1)),d=v88CellText(row.getCell(4)),qty=v88NumCell(row.getCell(5));
+      // 제목행은 D/E가 비어 있고 A에 선적/입고 제목이 들어갑니다.
+      if(!d&&!(qty>0)){
+        if(a)company=v88CompanyFromTitle(a,company);
+        continue;
+      }
+      if(!d||!(qty>0))continue;
+      const sheetName=v88SheetNameFor(company,d);
+      if(!sheetName)continue;
+      totals.set(sheetName,(totals.get(sheetName)||0)+qty);
+    }
+    return totals;
+  }
+  window.v88OriginalCenterTotals=v88BuildOriginalCenterTotals;
+
+  const recalcWorkSheetBaseV88=recalcWorkSheet;
+  recalcWorkSheet=function(ws){
+    const s=recalcWorkSheetBaseV88.apply(this,arguments);
+    if(!ws||ws.name==='발주서'||!s)return s;
+    try{
+      const totals=v88BuildOriginalCenterTotals();
+      if(totals.has(ws.name)){
+        const original=Number(totals.get(ws.name))||0;
+        // E3(출고총수량)와 dashboard의 s.total 모두 원본 발주서 합계로 고정합니다.
+        ws.getCell('E3').value=original;
+        s.total=original;
+      }
+    }catch(e){console.warn('[v88 center total]',ws?.name,e)}
+    return s;
+  };
+
+  // 발주서 dashboard를 갱신할 때 모든 센터 합계가 반드시 원본 발주서와 일치하도록 한번 더 검증합니다.
+  const recalcDashboardBaseV88=recalcDashboard;
+  recalcDashboard=function(wb=workbook){
+    const ret=recalcDashboardBaseV88.apply(this,arguments);
+    try{
+      if(!wb)return ret;
+      const old=workbook;if(wb!==workbook)workbook=wb;
+      const order=wb.getWorksheet('발주서'), totals=v88BuildOriginalCenterTotals(), sheets=visibleWorkSheets();
+      let grand=0;
+      for(let i=0;i<20;i++){
+        const ws=sheets[i];if(!ws)continue;
+        const original=totals.has(ws.name)?Number(totals.get(ws.name))||0:null;
+        if(original===null)continue;
+        order.getRow(4).getCell(10+i).value=original;
+        ws.getCell('E3').value=original;
+        grand+=original;
+        const packed=Number(order.getRow(6).getCell(10+i).value)||0;
+        order.getRow(7).getCell(10+i).value=original>0&&packed>0?Math.min(packed/original,1):'작업전';
+      }
+      // 모든 visible 센터가 원본 map에 있으면 전체 합계도 원본 센터 합계로 고정합니다.
+      const mappedVisible=sheets.filter(ws=>totals.has(ws.name));
+      if(mappedVisible.length){
+        const mappedGrand=mappedVisible.reduce((a,ws)=>a+(Number(totals.get(ws.name))||0),0);
+        order.getCell('E4').value=mappedGrand;order.getCell('G4').value=mappedGrand;order.getCell('F4').value='맞음';
+      }
+      if(wb!==old)workbook=old;
+    }catch(e){console.warn('[v88 dashboard source total]',e)}
+    return ret;
+  };
+
+  // 이미 열려 있는 프로젝트에도 배포 즉시 반영합니다.
+  setTimeout(()=>{
+    try{
+      if(!workbook)return;
+      for(const ws of visibleWorkSheets())recalcWorkSheet(ws);
+      recalcDashboard(workbook);
+      if(activeSheet==='발주서'||workbook.getWorksheet(activeSheet))renderSheet(true);
+    }catch(e){console.warn('[v88 initial refresh]',e)}
+  },250);
+})();
+// ===== /v88 =====
+</script>
