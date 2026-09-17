@@ -50,7 +50,7 @@ init();
 
 // ===== v82 deployment guard: all authenticated work screens =====
 (function(){
-  let baseBoot='',overlayOn=false,lockedAt=0,stableBoot='',stableCount=0,countTimer=null,pollTimer=null,keyBlocker=null;
+  let baseBoot='',overlayOn=false,lockedAt=0,stableBoot='',stableCount=0,countTimer=null,pollTimer=null,keyBlocker=null,heartbeatFailCount=0;
   const WAIT_MS=30000;
   function ensureOverlay(){
     let el=document.getElementById('tcDeployGuardV82');if(el)return el;
@@ -75,14 +75,18 @@ init();
     const c=new AbortController(),tm=setTimeout(()=>c.abort(),2500);
     try{
       const r=await fetch('/api/system/deploy-heartbeat?ts='+Date.now(),{cache:'no-store',signal:c.signal,headers:{'Cache-Control':'no-cache'}});if(!r.ok)throw new Error('heartbeat '+r.status);const j=await r.json();const boot=String(j.bootId||'');if(!boot)throw new Error('no boot id');
+      heartbeatFailCount=0;
       if(!baseBoot){baseBoot=boot;return}
+      // v85: 전체화면 잠금은 '실제로 서버 세대가 바뀐 것이 성공 응답으로 확인된 경우'에만 켭니다.
+      // 단순 네트워크 지연/일시적인 heartbeat 실패는 배포로 오인하지 않습니다.
       if(boot!==baseBoot)activate('server-changed',boot);
       if(overlayOn){if(!stableBoot||stableBoot===boot){stableBoot=boot;stableCount++}else{stableBoot=boot;stableCount=1}if(Date.now()-lockedAt>=WAIT_MS&&stableCount>=2)location.reload()}
-    }catch(e){activate('heartbeat-failed','');stableCount=0}
+    }catch(e){heartbeatFailCount++;stableCount=0;console.warn('[v85 deploy heartbeat temporary failure]',heartbeatFailCount,e?.message||e)}
     finally{clearTimeout(tm)}
   }
   function start(){ensureOverlay();heartbeat();pollTimer=setInterval(heartbeat,2000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)heartbeat()})}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
   window.__TC_DEPLOY_GUARD_V82__={activate,heartbeat};
 })();
+// v85: heartbeat 실패 자체로는 업데이트 잠금을 띄우지 않음. 서버 bootId 변경 확인시에만 30초 잠금.
 // ===== /v82 deployment guard =====
