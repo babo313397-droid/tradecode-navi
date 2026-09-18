@@ -8046,3 +8046,117 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v105 ===== -->
+
+<!-- ===== v106: pasted order-row style + live shipment-total sync ===== -->
+<script id="v106-order-paste-style-live-total">
+(function(){
+  if(window.__TC_V106__)return;window.__TC_V106__=true;
+  const clone106=v=>{try{return typeof cloneObj==='function'?cloneObj(v):JSON.parse(JSON.stringify(v))}catch(_){return v}};
+  const txt106=v=>{try{return String(v??'').trim().replace(/\s+/g,' ')}catch(_){return ''}};
+  const cellText106=cell=>{try{return txt106(typeof displayText==='function'?displayText(cell):(cell?.text??cell?.value??''))}catch(_){return txt106(cell?.value)}};
+  const norm106=v=>txt106(v).toLowerCase().replace(/\s+/g,' ');
+  const num106=cell=>{try{if(typeof cellNum==='function')return Number(cellNum(cell))||0}catch(_){ }const n=Number(cellText106(cell).replace(/,/g,''));return Number.isFinite(n)?n:0};
+  function key106(a,b,c){const p=norm106(a),bc=norm106(b),n=norm106(c);return p?'p:'+p:(bc?'b:'+bc:(n?'n:'+n:''))}
+  function rowKey106(row){return key106(cellText106(row.getCell(1)),cellText106(row.getCell(3)),cellText106(row.getCell(2)))}
+  function orderProductRow106(row){return !!rowKey106(row)&&!!cellText106(row.getCell(4))}
+  function rowBlank106(row){for(let c=1;c<=6;c++)if(cellText106(row.getCell(c)))return false;return true}
+
+  // 1) When additional order rows are pasted into blank rows, copy the exact A:F row style
+  //    from the nearest existing order item BEFORE values are written. This keeps font name,
+  //    size, boldness, borders/alignment, and the logistics-center fill identical to the list.
+  function captureOrderStyle106(order,rowNo,targetRows){
+    const end=Math.max(9,Number(order?.rowCount)||9);
+    let donor=null;
+    for(let d=1;d<=end+5&&!donor;d++){
+      for(const r of [rowNo-d,rowNo+d]){
+        if(r<8||r>end||targetRows?.has(r))continue;
+        const cand=order.getRow(r);if(orderProductRow106(cand)){donor=cand;break}
+      }
+    }
+    if(!donor){const r=order.getRow(9);if(r)donor=r}
+    if(!donor)return null;
+    return {height:donor.height,styles:Array.from({length:6},(_,i)=>({style:clone106(donor.getCell(i+1).style||{}),numFmt:donor.getCell(i+1).numFmt||''}))};
+  }
+  function applyOrderStyle106(order,rowNo,spec){
+    if(!order||!spec)return;const row=order.getRow(rowNo);try{row.height=spec.height}catch(_){ }
+    for(let c=1;c<=6;c++)try{row.getCell(c).style=clone106(spec.styles[c-1]?.style||{});if(spec.styles[c-1]?.numFmt)row.getCell(c).numFmt=spec.styles[c-1].numFmt}catch(_){ }
+  }
+  try{
+    const basePaste106=v26PasteMatrix;
+    v26PasteMatrix=async function(text){
+      const ws=workbook?.getWorksheet?.(activeSheet),start=typeof v26ParseAddr==='function'?v26ParseAddr(selectedCell):null;
+      let prepared=[];
+      if(ws?.name==='발주서'&&start){
+        const matrix=typeof v26ClipboardMatrix==='function'?v26ClipboardMatrix(text):[];
+        const targets=new Set(matrix.map((_,i)=>start.r+i));
+        for(const r of targets){const row=ws.getRow(r);if(rowBlank106(row)){const spec=captureOrderStyle106(ws,r,targets);if(spec){applyOrderStyle106(ws,r,spec);prepared.push(r)}}}
+      }
+      const ret=await basePaste106.apply(this,arguments);
+      if(ret&&ws?.name==='발주서'&&prepared.length){
+        try{if(typeof renderSheet==='function'&&activeSheet==='발주서')renderSheet(true)}catch(_){ }
+        try{scheduleWorkbookSnapshot?.(500);schedulePersistentState?.(40)}catch(_){ }
+      }
+      return ret;
+    };
+    window.v26PasteMatrix=v26PasteMatrix;
+  }catch(e){console.warn('[v106 order paste style]',e)}
+
+  // 2) A center sheet's E3 "출고총수량" follows the quantities currently listed in that sheet.
+  //    For canonical source-managed center tabs, a manual quantity edit is first reflected back
+  //    to the matching order row(s). The existing v92/v103 source-of-truth logic then preserves
+  //    the edited number across dashboard recalculation, autosave, and another-PC recovery.
+  function currentListByProduct106(ws){
+    const out=new Map();if(!ws)return out;
+    const start=Math.max(1,typeof generationStartRow==='function'?generationStartRow(ws):4),end=Math.max(start,Number(ws.rowCount)||start);
+    for(let r=start;r<=end;r++){
+      const row=ws.getRow(r),k=rowKey106(row);if(!k)continue;
+      const q=num106(row.getCell(5));out.set(k,(out.get(k)||0)+q);
+    }
+    return out;
+  }
+  function syncCanonicalSheetQtyToOrder106(ws){
+    if(!ws||ws.name==='발주서')return false;
+    if(ws._webManualCenterV95===true&&ws._webSourceManagedV92!==true)return false;
+    const parse=window.v92ParseOrderSource||window.v90ParseOrderSource;if(typeof parse!=='function')return false;
+    let src=null;try{src=parse(workbook)}catch(_){return false}
+    const g=src?.groups?.find?.(x=>x?.name===ws.name);if(!g?.items?.length||!src.order)return false;
+    const live=currentListByProduct106(ws),byKey=new Map();
+    for(const it of g.items){
+      const k=key106(it.productNumber,it.barcode,it.productName);if(!k)continue;
+      if(!byKey.has(k))byKey.set(k,[]);byKey.get(k).push(it);
+    }
+    let changed=false;
+    for(const [k,items] of byKey){
+      if(!live.has(k))continue;
+      let desired=Math.max(0,Number(live.get(k))||0),oldTotal=0;
+      const rows=[];
+      for(const it of items){const row=src.order.getRow(Number(it.sourceRow)||0);if(!row)continue;const q=num106(row.getCell(5));oldTotal+=q;rows.push({row,q})}
+      if(!rows.length||Math.abs(oldTotal-desired)<1e-9)continue;
+      // Preserve existing duplicate-row distribution as much as possible; the final row absorbs
+      // any increase/decrease so the order-source sum exactly equals the edited center list sum.
+      let remain=desired;
+      for(let i=0;i<rows.length;i++){
+        const take=i===rows.length-1?remain:Math.min(rows[i].q,remain);remain=Math.max(0,remain-take);
+        if(Math.abs(rows[i].q-take)>1e-9){rows[i].row.getCell(5).value=take;changed=true}
+      }
+    }
+    return changed;
+  }
+  try{
+    const basePost106=window.v28PostCellMutation||v28PostCellMutation;
+    window.v28PostCellMutation=v28PostCellMutation=function(ws,message=''){
+      let orderQtyChanged=false;
+      try{orderQtyChanged=syncCanonicalSheetQtyToOrder106(ws)}catch(e){console.warn('[v106 live total sync]',e)}
+      const ret=basePost106.apply(this,arguments);
+      if(orderQtyChanged){
+        try{if(typeof recalcDashboard==='function')recalcDashboard(workbook)}catch(_){ }
+        try{if(typeof schedulePersistentState==='function')schedulePersistentState(40);if(typeof scheduleWorkbookSnapshot==='function')scheduleWorkbookSnapshot(550)}catch(_){ }
+      }
+      return ret;
+    };
+  }catch(e){console.warn('[v106 mutation hook]',e)}
+
+  window.__TC_V106_API__={syncCanonicalSheetQtyToOrder106,currentListByProduct106};
+})();
+</script>
+<!-- ===== /v106 ===== -->
