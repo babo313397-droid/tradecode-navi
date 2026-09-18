@@ -805,6 +805,28 @@ function protectCompletedBoxesV82(existingRow,incomingState){
   next.stateFormatV82=Math.max(Number(next.stateFormatV82||0),82);const clean=sanitizeStateV86(next);return clean.state;
 }
 
+// v100: manually-added pallet/parcel tabs are server state, not merely a browser/workbook-snapshot side effect.
+// Merge them by sheet name so an older browser that does not know v100 cannot erase a tab created on another PC.
+function protectUserAddedSheetsV100(existingRow,incomingState){
+  const oldState=existingRow&&existingRow.state&&typeof existingRow.state==='object'?existingRow.state:{};
+  const next=incomingState&&typeof incomingState==='object'?incomingState:{};
+  // v100 clients always send the current delete list, so they may intentionally clear a tombstone by re-adding
+  // the same sheet name. Older clients do not know that contract; for them we retain old tombstones defensively.
+  const aware100=Number(next.stateFormatV100||0)>=100||Array.isArray(next.userAddedSheetsV100);
+  const deleted=new Set((aware100?(next.deletedSheetNamesV99||[]):[...(oldState.deletedSheetNamesV99||[]),...(next.deletedSheetNamesV99||[])]).map(String).filter(Boolean));
+  next.deletedSheetNamesV99=[...deleted];
+  const map=new Map();
+  const take=(b,rank)=>{if(!b||!b.name)return;const name=String(b.name);if(deleted.has(name))return;const cur=map.get(name),at=Number(b.updatedAt||0);if(!cur||at>cur.at||(at===cur.at&&rank>cur.rank))map.set(name,{b:JSON.parse(JSON.stringify(b)),at,rank})};
+  for(const b of (Array.isArray(oldState.userAddedSheetsV100)?oldState.userAddedSheetsV100:[]))take(b,1);
+  for(const b of (Array.isArray(next.userAddedSheetsV100)?next.userAddedSheetsV100:[]))take(b,2);
+  next.userAddedSheetsV100=[...map.values()].map(x=>x.b);
+  const meta={...(oldState.userAddedSheetMetaV95&&typeof oldState.userAddedSheetMetaV95==='object'?oldState.userAddedSheetMetaV95:{}),...(next.userAddedSheetMetaV95&&typeof next.userAddedSheetMetaV95==='object'?next.userAddedSheetMetaV95:{})};
+  for(const n of deleted)delete meta[n];next.userAddedSheetMetaV95=meta;
+  const names=new Set([...(oldState.userEditableAddedSheetsV26||[]),...(next.userEditableAddedSheetsV26||[]),...next.userAddedSheetsV100.map(x=>x.name)].map(String).filter(Boolean));
+  for(const n of deleted)names.delete(n);next.userEditableAddedSheetsV26=[...names];
+  next.stateFormatV100=Math.max(Number(next.stateFormatV100||0),100);return next;
+}
+
 // v50: 직원 계정 쿠팡 API는 레거시 공용 라우트보다 먼저 개인 저장소에서 처리합니다.
 // v64: 직원 계정의 Excel blob 업로드는 express.raw로 확실히 수신합니다.
 // 프로젝트 시간만 생성되고 실제 선적 엑셀이 비는 현상을 방지합니다.
@@ -827,7 +849,7 @@ app.use('/api/coupang-shared',(req,res,next)=>{
   if(part==='state'){
     if(req.method==='GET'){let st=readJsonFileV48(paths.state,null);if(!st)return res.status(404).json({ok:false,error:'저장 상태가 없습니다.'});const clean=sanitizeStateV86(st.state);if(clean.changed){st={...st,updatedAt:Date.now(),state:clean.state};atomicJsonV48(paths.state,st)}res.set('X-Updated-At',String(st.updatedAt||0));return res.json(st)}
     if(req.method==='DELETE'){fs.rmSync(paths.state,{force:true});touch(id);return res.json({ok:true})}
-    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const existing=readJsonFileV48(paths.state,null),guard=guardWholeStateV78(existing,state);if(guard.keepExisting)return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,boxGuardV82:true});state=protectManualPalletCloseV77(existing,guard.state);state=protectCompletedBoxesV82(existing,state);const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),manualCloseGuardV77:true,boxGuardV82:true})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
+    if(req.method==='PUT')return rawBodyV48(req).then(buf=>{let state={};try{state=JSON.parse(buf.toString('utf8')||'{}')}catch(_){state=req.body||{}}const existing=readJsonFileV48(paths.state,null),guard=guardWholeStateV78(existing,state);if(guard.keepExisting)return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,boxGuardV82:true});state=protectManualPalletCloseV77(existing,guard.state);state=protectCompletedBoxesV82(existing,state);state=protectUserAddedSheetsV100(existing,state);const updatedAt=Date.now();atomicJsonV48(paths.state,{ok:true,updatedAt,state});touch(id);res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),manualCloseGuardV77:true,boxGuardV82:true})}).catch(e=>res.status(400).json({ok:false,error:e.message}));
   }
   if(part.startsWith('blob/')){const key=part.split('/')[1],info=paths[key];if(!info)return res.status(404).json({ok:false,error:'파일 키 오류'});if(req.method==='GET'){const meta=readJsonFileV48(info.meta,null);if(!meta||!fs.existsSync(info.data))return res.status(404).json({ok:false,error:'저장된 파일이 없습니다.'});res.set('Cache-Control','no-store');res.set('Content-Type',meta.type||'application/octet-stream');res.set('Content-Length',String(fs.statSync(info.data).size));res.set('X-Updated-At',String(meta.updatedAt||0));res.set('X-File-Name',meta.name||'');res.set('X-File-Type',meta.type||'');res.set('X-File-Mode',meta.mode||'');res.set('X-Saved-At',String(meta.savedAt||meta.updatedAt||0));return res.sendFile(info.data)}if(req.method==='DELETE'){fs.rmSync(info.data,{force:true});fs.rmSync(info.meta,{force:true});touch(id);return res.json({ok:true})}if(req.method==='PUT'){const writeBlobV64=()=>{try{const buf=Buffer.isBuffer(req.body)?req.body:Buffer.from(req.body||'');if(!buf.length)return res.status(400).json({ok:false,error:'빈 파일입니다.'});fs.mkdirSync(paths.dir,{recursive:true});const updatedAt=Date.now(),meta={updatedAt,size:buf.length,name:String(req.get('X-File-Name')||''),type:String(req.get('X-File-Type')||''),mode:String(req.get('X-File-Mode')||''),savedAt:Number(req.get('X-Saved-At')||updatedAt)};fs.writeFileSync(info.data,buf);atomicJsonV48(info.meta,meta);if(key==='source'){fs.rmSync(paths.state,{force:true});fs.rmSync(paths.workbookSnapshot.data,{force:true});fs.rmSync(paths.workbookSnapshot.meta,{force:true})}touch(id);return res.json({ok:true,updatedAt,size:buf.length,accountScoped:true})}catch(e){return res.status(500).json({ok:false,error:e.message})}};if(Buffer.isBuffer(req.body))return writeBlobV64();return accountCoupangBlobRawV64(req,res,err=>{if(err)return res.status(err.type==='entity.too.large'?413:400).json({ok:false,error:err.message||'파일 업로드를 읽지 못했습니다.'});return writeBlobV64()})}}
   next();
@@ -1636,6 +1658,16 @@ function recoverProjectsIndexV53(){
   return {version:53,projects:rebuilt};
 }
 function readProjectsV18(){
+  // v100 performance: the full multi-root merge is a recovery/audit operation, not a per-request operation.
+  // Server startup already runs the v57 merge once. After that, normal project/status/state requests read the
+  // canonical projects.json directly. Only an empty/missing canonical index falls back to the expensive recovery.
+  try{
+    ensureCoupangSharedDir();fs.mkdirSync(COUPANG_PROJECTS_DIR,{recursive:true});
+    const current=validProjectIndexV53(readJsonSafe(COUPANG_PROJECTS_PATH));
+    if(current&&Array.isArray(current.projects)&&current.projects.length)return {version:100,projects:current.projects};
+    const dirs=listProjectDirsV53();
+    if(!dirs.length&&current)return {version:100,projects:current.projects||[]};
+  }catch(e){console.warn('[v100 coupang fast index] canonical read failed:',e.message)}
   try{
     if(typeof mergeAllCoupangRootsV57==='function')return mergeAllCoupangRootsV57();
   }catch(e){console.warn('[v57 coupang safety] 전체 저장소 병합 실패, 현재 저장소로 폴백:',e.message)}
@@ -1913,10 +1945,11 @@ app.get('/api/coupang-shared/safety-status',coupangAuth,(req,res)=>{
 });
 
 app.get('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
-  const idx=mergeAllCoupangRootsV57();
+  const idx=readProjectsV18();
   const rows=[...(idx.projects||[])].sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
   res.set('Cache-Control','no-store');
-  res.json({ok:true,projects:rows,safety:{version:57,empty:rows.length===0,storageRoot:COUPANG_SHARED_DIR,projectFolderCount:listProjectDirsV53().length,mergedAcrossRoots:true,sourceRoots:idx._v57?.sourceRoots||[],deletedProjectIds:idx._v57?.deletedIds||[]}});
+  res.set('X-Coupang-Index-Mode','v100-fast-canonical');
+  res.json({ok:true,projects:rows,safety:{version:100,empty:rows.length===0,storageRoot:COUPANG_SHARED_DIR,projectFolderCount:listProjectDirsV53().length,mergedAcrossRoots:false,startupMergeProtected:true}});
 });
 app.post('/api/coupang-shared/projects',coupangAuth,(req,res)=>{
   try{const idx=migrateLegacyProjectV18(),id=newProjectIdV18(),now=Date.now(),name=String(req.body?.name||'').trim().slice(0,120)||`새 선적 작업 ${new Date().toLocaleDateString('ko-KR')}`;const p={id,name,status:'active',createdAt:now,updatedAt:now};fs.mkdirSync(projectPathsV18(id).dir,{recursive:true});idx.projects.push(p);saveProjectsV18(idx);res.json({ok:true,project:p})}catch(err){res.status(500).json({ok:false,error:err.message})}
@@ -1958,7 +1991,7 @@ app.delete('/api/coupang-shared/projects/:projectId',coupangAuth,(req,res)=>{
 app.get('/api/coupang-shared/projects/:projectId/status',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;const {paths}=found;res.set('Cache-Control','no-store');res.json({ok:true,state:projectStateStatusV18(paths),source:projectBlobStatusV18(paths,'source'),workbookSnapshot:projectBlobStatusV18(paths,'workbookSnapshot')})});
 app.get('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;let row=readJsonSafe(found.paths.state);if(!row)return res.status(404).json({ok:false,error:'저장된 작업 상태가 없습니다.'});const clean=sanitizeStateV86(row.state);if(clean.changed){row={...row,updatedAt:Date.now(),state:clean.state};backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify(row))}res.set('Cache-Control','no-store');res.set('X-Updated-At',String(row.updatedAt||0));res.json(row)});
 app.put('/api/coupang-shared/projects/:projectId/state',coupangAuth,express.text({type:['text/plain','application/json'],limit:'15mb'}),(req,res)=>{
-  try{const found=getProjectOr404V18(req,res);if(!found)return;let state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});const existing=readJsonSafe(found.paths.state),guard=guardWholeStateV78(existing,state);if(guard.keepExisting){res.set('Cache-Control','no-store');return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,manualCloseGuardV77:true})}state=protectManualPalletCloseV77(existing,guard.state);state=protectCompletedBoxesV82(existing,state);const updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),staleIgnoredV78:false,manualCloseGuardV77:true,boxGuardV82:true})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
+  try{const found=getProjectOr404V18(req,res);if(!found)return;let state=typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});const existing=readJsonSafe(found.paths.state),guard=guardWholeStateV78(existing,state);if(guard.keepExisting){res.set('Cache-Control','no-store');return res.json({ok:true,updatedAt:Number(existing?.updatedAt||0),stateRevisionV78:guard.oldRev,staleIgnoredV78:true,manualCloseGuardV77:true})}state=protectManualPalletCloseV77(existing,guard.state);state=protectCompletedBoxesV82(existing,state);state=protectUserAddedSheetsV100(existing,state);const updatedAt=Date.now();backupFileV46(found.paths.state);writeAtomic(found.paths.state,JSON.stringify({ok:true,updatedAt,state}));touchProjectV18(found.id);res.set('Cache-Control','no-store');res.json({ok:true,updatedAt,stateRevisionV78:Number(state.stateRevisionV78||0),staleIgnoredV78:false,manualCloseGuardV77:true,boxGuardV82:true})}catch(err){res.status(400).json({ok:false,error:`작업 상태 저장 실패: ${err.message}`})}
 });
 app.delete('/api/coupang-shared/projects/:projectId/state',coupangAuth,(req,res)=>{const found=getProjectOr404V18(req,res);if(!found)return;try{unlinkSafe(found.paths.state);touchProjectV18(found.id);res.json({ok:true})}catch(err){res.status(500).json({ok:false,error:err.message})}});
 
