@@ -5268,6 +5268,184 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 <!-- ===== /v101 ===== -->
 
+
+<!-- ===== v104: order row edit/reconcile + per-center draft keep + row scan buttons + sidebar account bar ===== -->
+<style id="v104-ui-style">
+  #tradecodeAccountBar.tc-sidebar-account-v104{
+    position:static!important;right:auto!important;bottom:auto!important;left:auto!important;top:auto!important;
+    width:100%!important;box-sizing:border-box!important;margin:10px 0 0!important;padding:8px 9px!important;
+    border-radius:9px!important;box-shadow:none!important;background:rgba(255,255,255,.08)!important;
+    border:1px solid rgba(255,255,255,.14)!important;display:flex!important;justify-content:center!important;
+    flex-wrap:wrap!important;gap:7px!important;z-index:auto!important;
+  }
+  #sheetHost td.cell.v104-barcode-cell{position:relative!important;padding-right:42px!important}
+  .v104-row-scan-btn{position:absolute;right:3px;top:50%;transform:translateY(-50%);height:22px;min-width:34px;padding:0 6px;
+    border:1px solid #0b6ea8;border-radius:4px;background:#0b6ea8;color:#fff;cursor:pointer;font-size:0;line-height:20px;font-weight:900;z-index:2}
+  .v104-row-scan-btn::before{content:'스캔';font-size:9px;line-height:20px}
+  .v104-row-scan-btn:hover{background:#095b8b}.v104-row-scan-btn:active{transform:translateY(-50%) scale(.96)}
+  #v104OrderRowMenu{position:fixed;z-index:12000;display:none;min-width:150px;background:#fff;border:1px solid #8e9aa1;border-radius:7px;
+    box-shadow:0 8px 24px #0003;padding:5px;font:800 11px "Malgun Gothic",Arial,sans-serif}
+  #v104OrderRowMenu button{display:block;width:100%;border:0;background:#fff;text-align:left;padding:8px 9px;border-radius:4px;cursor:pointer;font:inherit;color:#263b49}
+  #v104OrderRowMenu button:hover{background:#eef5f8}#v104OrderRowMenu button.danger{color:#b31c1c}
+  #sheetHost td.cell{touch-action:manipulation}
+</style>
+<script id="v104-order-row-draft-scan-ui">
+(function(){
+  if(window.__TC_V104__)return;window.__TC_V104__=true;
+  const $id=id=>document.getElementById(id);
+  const text=v=>String(v??'').trim().replace(/\s+/g,' ');
+  const norm104=v=>{try{return typeof norm==='function'?norm(v):text(v)}catch(_){return text(v)}};
+  const clone104=v=>{try{return typeof cloneObj==='function'?cloneObj(v):JSON.parse(JSON.stringify(v))}catch(_){return v}};
+  function cellText104(cell){try{return typeof displayText==='function'?text(displayText(cell)):text(cell?.value)}catch(_){return text(cell?.value)}}
+  function cellQty104(cell){try{if(typeof cellNum==='function'){const n=Number(cellNum(cell));if(Number.isFinite(n))return n}}catch(_){ }const m=cellText104(cell).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0])||0:0}
+  function company104(v){const s=norm104(v);if(/봄날애/.test(s))return'봄날애';if(/차통익스프레스|차통/.test(s))return'차통익스프레스';if(/코리아원/.test(s))return'코리아원';return''}
+  function stripCompany104(v){return norm104(v).replace(/^\s*(?:코리아원|봄날애|차통익스프레스|차통)\s*/,'').trim()}
+  function productKey104(row){const p=norm104(cellText104(row.getCell(1))),b=norm104(cellText104(row.getCell(3))),n=norm104(cellText104(row.getCell(2)));return p?'P:'+p:(b?'B:'+b:(n?'N:'+n:''))}
+  function productRow104(row){return !!productKey104(row)&&!!cellText104(row.getCell(4))&&cellQty104(row.getCell(5))>0}
+  function headerCompany104(row){if(productRow104(row))return'';for(let c=1;c<=6;c++){const s=cellText104(row.getCell(c));if(!s)continue;const co=company104(s);if(co)return co}return''}
+  function centerKey104(v){return stripCompany104(v).replace(/\s+/g,'').toLowerCase()}
+
+  // --- 1) Order sheet: Excel-like row insert/delete and duplicate merge ---
+  let orderNormalizeBusy104=false,orderNormalizeTimer104=null;
+  function nearestOrderStyleRow104(order,rowNo){
+    const end=Math.max(8,Number(order.rowCount)||8);
+    for(let d=0;d<end;d++)for(const r of [rowNo-d,rowNo+d])if(r>=8&&r<=end&&productRow104(order.getRow(r)))return r;
+    return 9;
+  }
+  function copyOrderRowStyle104(order,from,to){
+    const src=order.getRow(from),dst=order.getRow(to);dst.height=src.height;
+    const max=Math.max(38,Number(order.columnCount)||0);
+    for(let c=1;c<=max;c++){try{dst.getCell(c).style=clone104(src.getCell(c).style);if(src.getCell(c).numFmt)dst.getCell(c).numFmt=src.getCell(c).numFmt}catch(_){ }}
+  }
+  function refreshOrder104(message){
+    try{if(typeof window.v92ReconcileAll==='function')window.v92ReconcileAll({persist:false,cleanup:true})}catch(e){console.warn('[v104 reconcile]',e)}
+    try{if(typeof recalcDashboard==='function')recalcDashboard(workbook)}catch(e){console.warn('[v104 dashboard]',e)}
+    try{if(typeof renderTabs==='function')renderTabs()}catch(_){ }
+    try{if(activeSheet==='발주서'&&typeof renderSheet==='function')renderSheet(true)}catch(_){ }
+    try{if(typeof schedulePersistentState==='function')schedulePersistentState(60);if(typeof scheduleWorkbookSnapshot==='function')scheduleWorkbookSnapshot(800)}catch(_){ }
+    if(message)try{setStatus(message,'ok')}catch(_){ }
+  }
+  function normalizeOrderDuplicates104(){
+    if(orderNormalizeBusy104||!workbook)return false;const order=workbook.getWorksheet?.('발주서');if(!order)return false;
+    orderNormalizeBusy104=true;let changed=false;
+    try{
+      let co='코리아원';const seen=new Map(),end=Math.max(8,Number(order.rowCount)||8);
+      for(let r=8;r<=end;r++){
+        const row=order.getRow(r),hdr=headerCompany104(row);if(hdr){co=hdr;continue}if(!productRow104(row))continue;
+        const dc=company104(cellText104(row.getCell(4))),rowCo=dc||co||'코리아원',center=stripCompany104(cellText104(row.getCell(4))),pk=productKey104(row);if(!center||!pk)continue;
+        const key=`${rowCo}|${centerKey104(center)}|${pk}`,first=seen.get(key),isMarker=cellText104(row.getCell(36))==='__V96_EXTRA_ORDER__';
+        if(!first){seen.set(key,{row:r,marker:isMarker});continue}
+        const firstInfo=typeof first==='object'?first:{row:first,marker:false},keep=order.getRow(firstInfo.row);
+        // v96 marker rows mirror an added center sheet; they must never be added a second time to a real Order row.
+        if(firstInfo.marker!==isMarker){
+          if(firstInfo.marker&&!isMarker){for(let c=1;c<=6;c++)keep.getCell(c).value=null;for(let c=36;c<=38;c++)keep.getCell(c).value=null;seen.set(key,{row:r,marker:false})}
+          else{for(let c=1;c<=6;c++)row.getCell(c).value=null;for(let c=36;c<=38;c++)row.getCell(c).value=null}
+          changed=true;continue;
+        }
+        const sum=cellQty104(keep.getCell(5))+cellQty104(row.getCell(5));keep.getCell(5).value=sum;
+        for(let c=1;c<=6;c++)row.getCell(c).value=null;for(let c=36;c<=38;c++)row.getCell(c).value=null;changed=true;
+      }
+    }finally{orderNormalizeBusy104=false}
+    if(changed)refreshOrder104('✓ 동일 업체·센터의 같은 제품은 기존 행에 수량을 합산했습니다.');
+    else{
+      try{if(typeof window.v92ReconcileAll==='function'){const x=window.v92ReconcileAll({persist:false,cleanup:true});if(x?.created||x?.changed){recalcDashboard(workbook);renderTabs();if(activeSheet==='발주서')renderSheet(true);schedulePersistentState?.(60);scheduleWorkbookSnapshot?.(800)}}}catch(e){console.warn('[v104 new center]',e)}
+    }
+    return changed;
+  }
+  function scheduleOrderNormalize104(){clearTimeout(orderNormalizeTimer104);orderNormalizeTimer104=setTimeout(normalizeOrderDuplicates104,40)}
+  window.v104NormalizeOrder=normalizeOrderDuplicates104;
+
+  function insertOrderRow104(rowNo,after){
+    const order=workbook?.getWorksheet?.('발주서');if(!order)return;let at=Math.max(8,Number(rowNo)||8)+(after?1:0),donor=nearestOrderStyleRow104(order,Number(rowNo)||8);
+    try{order.spliceRows(at,0,[])}catch(e){console.warn('[v104 insert]',e);return}
+    if(donor>=at)donor++;
+    copyOrderRowStyle104(order,donor,at);const row=order.getRow(at);for(let c=1;c<=6;c++)row.getCell(c).value=null;for(let c=36;c<=38;c++)row.getCell(c).value=null;
+    try{if(typeof v27EnsureOrderBlankRows==='function')v27EnsureOrderBlankRows(order,40)}catch(_){ }
+    renderSheet(true);schedulePersistentState?.(60);scheduleWorkbookSnapshot?.(700);setStatus?.(`✓ 발주서 ${at}행을 삽입했습니다. A~E를 입력하세요.`,'ok');
+  }
+  function deleteOrderRow104(rowNo){
+    const order=workbook?.getWorksheet?.('발주서');if(!order||rowNo<8)return;const row=order.getRow(rowNo),hdr=headerCompany104(row);
+    if(hdr){alert('코리아원/봄날애/차통 업체 제목 행은 삭제할 수 없습니다. 제품 행에서 삭제해 주세요.');return}
+    const desc=[cellText104(row.getCell(1)),cellText104(row.getCell(2))].filter(Boolean).join(' · ')||`${rowNo}행`;
+    if(!confirm(`${desc}\n이 발주서 행을 삭제할까요?\n삭제 후 해당 센터 목록/진행현황도 다시 계산됩니다.`))return;
+    try{order.spliceRows(rowNo,1)}catch(e){console.warn('[v104 delete]',e);return}
+    refreshOrder104('✓ 발주서 행을 삭제하고 센터 목록/진행현황을 다시 계산했습니다.');
+  }
+  function ensureOrderMenu104(){
+    let m=$id('v104OrderRowMenu');if(m)return m;m=document.createElement('div');m.id='v104OrderRowMenu';m.innerHTML='<button data-a="before">위에 행 삽입</button><button data-a="after">아래에 행 삽입</button><button class="danger" data-a="delete">행 삭제</button>';document.body.appendChild(m);return m;
+  }
+  let orderMenuRow104=0;
+  function showOrderMenu104(e,rowNo){const m=ensureOrderMenu104();orderMenuRow104=rowNo;m.style.left=Math.min(e.clientX,window.innerWidth-170)+'px';m.style.top=Math.min(e.clientY,window.innerHeight-125)+'px';m.style.display='block'}
+  function hideOrderMenu104(){const m=$id('v104OrderRowMenu');if(m)m.style.display='none'}
+  document.addEventListener('click',e=>{const m=$id('v104OrderRowMenu');if(!m||m.style.display==='none')return;const b=e.target.closest('#v104OrderRowMenu button');if(!b){hideOrderMenu104();return}e.preventDefault();e.stopPropagation();const a=b.dataset.a,row=orderMenuRow104;hideOrderMenu104();if(a==='before')insertOrderRow104(row,false);else if(a==='after')insertOrderRow104(row,true);else if(a==='delete')deleteOrderRow104(row)},true);
+  document.addEventListener('contextmenu',e=>{
+    if(activeSheet!=='발주서')return;const host=$id('sheetHost');if(!host||!host.contains(e.target))return;const th=e.target.closest('th.row-number');if(!th)return;const rowNo=Number(th.dataset.rowNo||th.textContent||0);if(rowNo<8)return;e.preventDefault();e.stopImmediatePropagation();showOrderMenu104(e,rowNo);
+  },true);
+  try{
+    const baseMut104=window.v28PostCellMutation||v28PostCellMutation;
+    window.v28PostCellMutation=v28PostCellMutation=function(ws,message=''){const ret=baseMut104.apply(this,arguments);if(ws?.name==='발주서')scheduleOrderNormalize104();return ret};
+  }catch(e){console.warn('[v104 order mutation hook]',e)}
+
+  // --- 2) Preserve the in-progress scanned box separately for each center tab ---
+  const draftMap104=new Map();
+  function projectKey104(){try{return String(currentProjectIdV18||currentProjectId||'local')}catch(_){return'local'}}
+  function draftKey104(sheet){return `${projectKey104()}|${sheet}`}
+  function storageKey104(sheet){return `tcInlineDraftV104:${draftKey104(sheet)}`}
+  function safeDraft104(d){
+    if(!d||d.mode!=='new'||!d.sheetName)return null;
+    try{return JSON.parse(JSON.stringify(d))}catch(_){return null}
+  }
+  function saveDraft104(d=boxDraft,pull=true){
+    if(!d||d.mode!=='new'||!d.sheetName)return;if(pull&&d===boxDraft)try{pullInlineDraft()}catch(_){ }
+    const x=safeDraft104(d);if(!x)return;draftMap104.set(draftKey104(d.sheetName),x);try{sessionStorage.setItem(storageKey104(d.sheetName),JSON.stringify(x))}catch(_){ }
+  }
+  function loadDraft104(ws){
+    const k=draftKey104(ws.name);let x=draftMap104.get(k)||null;if(!x)try{x=JSON.parse(sessionStorage.getItem(storageKey104(ws.name))||'null')}catch(_){x=null}
+    if(!x||x.mode!=='new'||x.sheetName!==ws.name)return null;draftMap104.set(k,x);return x;
+  }
+  try{
+    ensureInlineDraft=function(ws,forceNew=false){
+      if(!isPackWorkSheet(ws))return null;
+      if(boxDraft&&boxDraft.mode==='new'&&boxDraft.sheetName!==ws.name)saveDraft104(boxDraft,true);
+      if(forceNew){boxDraft=newDraft(ws);saveDraft104(boxDraft,false);return boxDraft}
+      if(boxDraft&&boxDraft.sheetName===ws.name&&['new','edit'].includes(boxDraft.mode)){if(boxDraft.mode==='new')saveDraft104(boxDraft,false);return boxDraft}
+      const saved=loadDraft104(ws);boxDraft=saved||newDraft(ws);if(boxDraft.mode==='new')saveDraft104(boxDraft,false);return boxDraft;
+    };
+    window.ensureInlineDraft=ensureInlineDraft;
+  }catch(e){console.warn('[v104 draft ensure]',e)}
+  try{
+    const baseRenderDraft104=renderInlineDraft;
+    renderInlineDraft=function(){const ret=baseRenderDraft104.apply(this,arguments);try{if(boxDraft?.mode==='new')saveDraft104(boxDraft,false)}catch(_){ }return ret};window.renderInlineDraft=renderInlineDraft;
+  }catch(e){console.warn('[v104 draft render]',e)}
+
+  // --- 3) A real Scan button beside every visible barcode. Click = scan + Enter ---
+  function installRowScanButtons104(){
+    const ws=workbook?.getWorksheet?.(activeSheet);if(!ws||ws.name==='발주서'||!isPackWorkSheet(ws))return;
+    const start=typeof generationStartRow==='function'?generationStartRow(ws):4;
+    const cells=[...document.querySelectorAll('#sheetHost td.cell[data-c="3"]')];
+    for(const td of cells){const r=Number(td.dataset.r||0);if(r<start||td.querySelector('.v104-row-scan-btn'))continue;const barcode=cellText104(ws.getRow(r).getCell(3));if(!barcode)continue;td.classList.add('v104-barcode-cell');const b=document.createElement('button');b.type='button';b.className='v104-row-scan-btn';b.title=`${barcode} 스캔`;b.setAttribute('aria-label',`${barcode} 스캔`);b.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation()});b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const input=$id('inlineScanInput');if(input){input.value=barcode;try{addInlineBarcodeFromInput()}catch(_){scanBarcodeInline(barcode)}}else scanBarcodeInline(barcode)});td.appendChild(b)}
+  }
+  try{
+    const baseRenderSheet104=renderSheet;
+    renderSheet=function(){const ret=baseRenderSheet104.apply(this,arguments);requestAnimationFrame(installRowScanButtons104);return ret};window.renderSheet=renderSheet;
+  }catch(e){console.warn('[v104 scan buttons]',e)}
+
+  // --- 4) Move account bar below the Purchase Order navigation button ---
+  function placeAccountBar104(){
+    const sidebar=document.querySelector('nav.sidebar,.sidebar'),bar=$id('tradecodeAccountBar');if(!sidebar||!bar)return false;
+    const po=[...sidebar.querySelectorAll('a,button')].find(el=>((el.getAttribute('href')||'').includes('/purchase-order.html')||(el.textContent||'').includes('발주서 작성')));
+    if(po)po.insertAdjacentElement('afterend',bar);else sidebar.appendChild(bar);bar.classList.add('tc-sidebar-account-v104');return true;
+  }
+  window.addEventListener('tradecode-auth-ready',()=>setTimeout(placeAccountBar104,0));
+  const accountObserver104=new MutationObserver(()=>{if(placeAccountBar104())accountObserver104.disconnect()});accountObserver104.observe(document.body,{childList:true,subtree:true});setTimeout(placeAccountBar104,0);
+
+  // --- 5) Perceived click responsiveness: select on pointer-down; existing click/edit logic remains authoritative. ---
+  function installFastPointer104(){const host=$id('sheetHost');if(!host||host.dataset.v104Pointer==='1')return;host.dataset.v104Pointer='1';host.addEventListener('pointerdown',e=>{if(e.target.closest('.v104-row-scan-btn'))return;const td=e.target.closest('td.cell');if(!td)return;document.querySelector('#sheetHost .cell.selected')?.classList.remove('selected');td.classList.add('selected');selectedCell=td.dataset.addr||selectedCell;selectedRow=Number(td.dataset.r||selectedRow||0)},true)}
+  installFastPointer104();requestAnimationFrame(()=>{installRowScanButtons104();placeAccountBar104()});
+})();
+</script>
+<!-- ===== /v104 ===== -->
+
 </body>
 </html>
 
@@ -7735,280 +7913,3 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v103 ===== -->
-
-<!-- ===== v104: order row insert/delete + duplicate merge + auto center sheet + responsive order editing ===== -->
-<style id="v104-order-row-menu-style">
-#orderRowMenuV104{position:fixed;z-index:5200;display:none;min-width:190px;background:#fff;border:1px solid #9aa4a0;box-shadow:0 8px 24px rgba(0,0,0,.22);border-radius:5px;padding:4px;font:11px "Malgun Gothic",Arial,sans-serif}
-#orderRowMenuV104.show{display:block}
-#orderRowMenuV104 .title{padding:6px 9px 4px;color:#65736c;font-size:10px}
-#orderRowMenuV104 button{display:block;width:100%;border:0;background:#fff;text-align:left;padding:8px 10px;border-radius:3px;cursor:pointer;font:inherit}
-#orderRowMenuV104 button:hover{background:#eef6f1}
-#orderRowMenuV104 button.danger{color:#c62828}
-#orderRowMenuV104 hr{border:0;border-top:1px solid #e3e8e5;margin:3px 0}
-#sheetHost .sheet-table td.cell.selected{outline:2px solid #217346;outline-offset:-2px}
-#sheetHost .sheet-table td.cell,#sheetHost .sheet-table th.row-number{touch-action:manipulation}
-</style>
-<script id="v104-order-row-editing">
-(function(){
-  const MARK_COL=39, UID_COL=40, MARK='__V104_ORDER_MANUAL__';
-  let selectedOrderRow=0, pendingEdit=null, pendingPaste=null, rebuildTimer=0, normalizing=false;
-
-  function txt(v){
-    try{return String(typeof displayText==='function'&&v?.address?displayText(v):(v??'')).trim().replace(/\s+/g,' ')}catch(_){return String(v??'').trim()}
-  }
-  function num104(v){
-    if(v&&typeof v==='object'&&v.address){try{if(typeof cellNum==='function')return Number(cellNum(v))||0}catch(_){}v=v.value}
-    if(typeof v==='number'&&Number.isFinite(v))return v;
-    if(v&&typeof v==='object'&&Number.isFinite(Number(v.result)))return Number(v.result);
-    const m=String(v??'').replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0])||0:0;
-  }
-  function norm104(v){return txt(v).toLowerCase().replace(/\s+/g,' ').trim()}
-  function companyFromText(s){
-    s=txt(s);
-    if(/^봄날애(?:\s|$)/.test(s))return '봄날애';
-    if(/^(?:차통익스프레스|차통)(?:\s|$)/.test(s))return '차통익스프레스';
-    if(/^코리아원(?:\s|$)/.test(s))return '코리아원';
-    return '';
-  }
-  function stripCompany(s){return txt(s).replace(/^\s*(?:코리아원|봄날애|차통익스프레스|차통)\s*/,'').trim()}
-  function productLike(row){
-    const a=txt(row.getCell(1)),b=txt(row.getCell(2)),c=txt(row.getCell(3)),d=txt(row.getCell(4)),q=num104(row.getCell(5));
-    return !!(a||b||c)&&!!d&&q>0;
-  }
-  function rowHasAny(row){for(let c=1;c<=5;c++)if(txt(row.getCell(c))!=='')return true;return false}
-  function rowCompanyHeader(row){
-    if(productLike(row))return '';
-    for(let c=1;c<=6;c++){
-      const s=txt(row.getCell(c));if(!s)continue;
-      if(/봄날애/.test(s))return '봄날애';
-      if(/차통익스프레스|차통/.test(s))return '차통익스프레스';
-      if(/코리아원/.test(s))return '코리아원';
-    }
-    return '';
-  }
-  function companyAt(order,r){
-    let co='코리아원';
-    for(let i=8;i<=Math.min(r,Math.max(8,Number(order.rowCount)||8));i++){const h=rowCompanyHeader(order.getRow(i));if(h)co=h}
-    return co;
-  }
-  function itemOf(row){return {productNumber:row.getCell(1).value,productName:txt(row.getCell(2)),barcode:txt(row.getCell(3)),center:txt(row.getCell(4)),qty:num104(row.getCell(5))}}
-  function sameProduct(a,b){
-    const ap=norm104(a?.productNumber),bp=norm104(b?.productNumber);if(ap&&bp)return ap===bp;
-    const ab=norm104(a?.barcode),bb=norm104(b?.barcode);if(ab&&bb)return ab===bb;
-    const an=norm104(a?.productName),bn=norm104(b?.productName);return !!an&&an===bn;
-  }
-  function centerKey(v){return stripCompany(v).replace(/\s+/g,'').toLowerCase()}
-  function rowIdentity(order,r){
-    const row=order.getRow(r),d=txt(row.getCell(4));
-    return {company:companyFromText(d)||companyAt(order,r),center:stripCompany(d),item:itemOf(row)};
-  }
-  function manualRow(row){return txt(row.getCell(MARK_COL))===MARK}
-  function markManual(order,r){
-    if(r<8)return;const row=order.getRow(r);row.getCell(MARK_COL).value=MARK;if(!txt(row.getCell(UID_COL)))row.getCell(UID_COL).value=`v104-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
-    try{order.getColumn(MARK_COL).hidden=true;order.getColumn(UID_COL).hidden=true}catch(_){}
-  }
-  function clearRow(order,r,hide=true){
-    const row=order.getRow(r);for(let c=1;c<=6;c++)row.getCell(c).value=null;for(let c=36;c<=40;c++)row.getCell(c).value=null;if(hide)row.hidden=true;
-  }
-  function sections(order){
-    const out=[];let cur=null,end=Math.max(8,Number(order.rowCount)||8);
-    for(let r=8;r<=end;r++){
-      const h=rowCompanyHeader(order.getRow(r));if(!h)continue;
-      if(cur)cur.end=r-1;cur={company:h,header:r,start:r+1,end};out.push(cur);
-    }
-    if(cur)cur.end=end;return out;
-  }
-  function copyStyle(order,target,company){
-    let donor=0;const ss=sections(order),sec=ss.find(s=>s.company===company);
-    if(sec){for(let r=sec.start;r<=sec.end;r++)if(productLike(order.getRow(r))){donor=r;break}}
-    if(!donor){for(let r=8;r<=Math.max(8,Number(order.rowCount)||8);r++)if(productLike(order.getRow(r))){donor=r;break}}
-    if(!donor)return;const src=order.getRow(donor),dst=order.getRow(target);dst.height=src.height;dst.hidden=false;
-    for(let c=1;c<=6;c++)try{dst.getCell(c).style=typeof cloneObj==='function'?cloneObj(src.getCell(c).style):src.getCell(c).style}catch(_){}
-  }
-  function ensureSection(order,company){
-    let sec=sections(order).find(s=>s.company===company);if(sec)return sec;
-    const all=sections(order),at=Math.max(8,(Number(order.rowCount)||7)+1),donor=all[0]?.header||8,row=order.getRow(at),src=order.getRow(donor);row.hidden=false;row.height=src.height;
-    for(let c=1;c<=6;c++)try{row.getCell(c).style=typeof cloneObj==='function'?cloneObj(src.getCell(c).style):src.getCell(c).style}catch(_){}
-    row.getCell(1).value=`${company==='차통익스프레스'?'차통':company} 추가 목록`;
-    try{order.mergeCells(at,1,at,6)}catch(_){}
-    return sections(order).find(s=>s.company===company)||{company,header:at,start:at+1,end:at};
-  }
-  function insertionRow(order,company,center,exclude=0){
-    const sec=ensureSection(order,company),ck=centerKey(center);let lastSame=0,lastProduct=0;
-    for(let r=sec.start;r<=sec.end;r++){
-      if(r===exclude)continue;const row=order.getRow(r);if(!productLike(row))continue;lastProduct=r;
-      const id=rowIdentity(order,r);if(id.company===company&&centerKey(id.center)===ck)lastSame=r;
-    }
-    return (lastSame||lastProduct||sec.header)+1;
-  }
-  function findExisting(order,company,center,item,exclude=0){
-    let best=0,markerBest=0;const end=Math.max(8,Number(order.rowCount)||8),ck=centerKey(center);
-    for(let r=8;r<=end;r++){
-      if(r===exclude)continue;const row=order.getRow(r);if(!productLike(row))continue;const id=rowIdentity(order,r);
-      if(id.company!==company||centerKey(id.center)!==ck||!sameProduct(item,id.item))continue;
-      if(txt(row.getCell(36))==='__V96_EXTRA_ORDER__'){if(!markerBest)markerBest=r}else return r;
-    }
-    return markerBest;
-  }
-  function addToExisting(order,target,delta){
-    const row=order.getRow(target);row.getCell(5).value=num104(row.getCell(5))+num104(delta);
-    // If this was a v96 mirror row from a manually-added tab, make the merged Order row real.
-    // Otherwise the next v96 sync could overwrite the manually added quantity.
-    if(txt(row.getCell(36))==='__V96_EXTRA_ORDER__'){for(const c of [36,37,38])row.getCell(c).value=null}
-  }
-  function moveManualRow(order,r,company,center){
-    const old=order.getRow(r),item=itemOf(old),uid=`old-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;old.getCell(UID_COL).value=uid;
-    const style=[1,2,3,4,5,6].map(c=>{try{return typeof cloneObj==='function'?cloneObj(old.getCell(c).style):old.getCell(c).style}catch(_){return null}});
-    let at=insertionRow(order,company,center,r);
-    try{if(typeof order.insertRow==='function')order.insertRow(at,[]);else order.spliceRows(at,0,[])}catch(e){console.warn('[v104 insert relocate]',e);at=Math.max(8,(Number(order.rowCount)||7)+1)}
-    copyStyle(order,at,company);const nr=order.getRow(at);nr.hidden=false;
-    nr.getCell(1).value=typeof cloneObj==='function'?cloneObj(item.productNumber):item.productNumber;nr.getCell(2).value=item.productName;nr.getCell(3).value=item.barcode;nr.getCell(4).value=center;nr.getCell(5).value=item.qty;nr.getCell(6).value=null;
-    for(let c=1;c<=6;c++)if(style[c-1])try{nr.getCell(c).style=style[c-1]}catch(_){}
-    markManual(order,at);
-    // locate original row after insertion shifted row numbers
-    const end=Math.max(8,Number(order.rowCount)||8);for(let rr=8;rr<=end;rr++)if(txt(order.getRow(rr).getCell(UID_COL))===uid){clearRow(order,rr,true);break}
-    return at;
-  }
-  function normalizeManualRows(){
-    if(normalizing||!workbook)return {changed:false,merged:0,moved:0};const order=workbook.getWorksheet?.('발주서');if(!order)return {changed:false,merged:0,moved:0};normalizing=true;
-    let changed=false,merged=0,moved=0;
-    try{
-      const rows=[];for(let r=8;r<=Math.max(8,Number(order.rowCount)||8);r++)if(manualRow(order.getRow(r))&&rowHasAny(order.getRow(r)))rows.push(r);
-      for(const r0 of rows){
-        let r=r0;if(r>order.rowCount)continue;const row=order.getRow(r);if(!manualRow(row)||!productLike(row))continue;
-        const rawCenter=txt(row.getCell(4)),company=companyFromText(rawCenter)||'코리아원',center=stripCompany(rawCenter);if(!center)continue;const item=itemOf(row);
-        const existing=findExisting(order,company,center,item,r);
-        if(existing){addToExisting(order,existing,item.qty);clearRow(order,r,true);changed=true;merged++;continue}
-        const currentCompany=companyAt(order,r),normalizedCenter=stripCompany(rawCenter);row.getCell(4).value=normalizedCenter;
-        const wanted=insertionRow(order,company,normalizedCenter,r);
-        // Keep the row only when it is already in the right company and adjacent to the right center block.
-        if(currentCompany!==company||!(wanted===r||wanted===r+1)){
-          moveManualRow(order,r,company,normalizedCenter);changed=true;moved++;
-        }
-      }
-      try{order.getColumn(MARK_COL).hidden=true;order.getColumn(UID_COL).hidden=true}catch(_){}
-    }finally{normalizing=false}
-    return {changed,merged,moved};
-  }
-
-  function tabSignature(){try{return (typeof visibleWorksheets==='function'?visibleWorksheets():[]).map(w=>w.name).join('|')}catch(_){return ''}}
-  function rebuildFromOrder(reason='edit'){
-    clearTimeout(rebuildTimer);rebuildTimer=setTimeout(()=>{
-      if(!workbook)return;const before=tabSignature();let normed={changed:false};
-      try{normed=normalizeManualRows()}catch(e){console.warn('[v104 normalize]',e)}
-      let rr=null;try{if(typeof window.v92ReconcileAll==='function')rr=window.v92ReconcileAll({persist:false,cleanup:true})}catch(e){console.warn('[v104 reconcile]',e)}
-      try{if(typeof recalcDashboard==='function')recalcDashboard(workbook)}catch(e){console.warn('[v104 dashboard]',e)}
-      const after=tabSignature(),tabsChanged=before!==after||!!rr?.created||!!rr?.removed;
-      try{if(tabsChanged&&typeof renderTabs==='function')renderTabs()}catch(_){}
-      try{if(activeSheet&&workbook.getWorksheet?.(activeSheet)&&typeof renderSheet==='function')renderSheet(true)}catch(_){}
-      try{schedulePersistentState?.(90);scheduleWorkbookSnapshot?.(900)}catch(_){}
-      if(normed.merged)setStatus(`✓ 기존 제품과 합산했습니다. · 중복 ${normed.merged}건 정리`,'ok');
-      else if(rr?.created)setStatus(`✓ 신규 센터 ${rr.created}개를 생성하고 발주목록을 연결했습니다.`,'ok');
-    },70);
-  }
-  window.v104RebuildOrderCenters=rebuildFromOrder;
-
-  // Keep Order editing light: do not run the old full dashboard+tab rebuild synchronously on every keystroke.
-  try{
-    const basePost=v28PostCellMutation;
-    window.v28PostCellMutation=v28PostCellMutation=function(ws,message=''){
-      if(ws?.name!=='발주서')return basePost.apply(this,arguments);
-      const order=ws;
-      try{
-        if(pendingEdit?.wasBlank&&pendingEdit.r>=8)markManual(order,pendingEdit.r);
-        for(const r of (pendingPaste?.blankRows||[]))markManual(order,r);
-        if(typeof v28EnsureTrailingRows==='function')v28EnsureTrailingRows(order,40);
-        if(message)setStatus(message,'ok');
-        // Immediate local redraw only; expensive center reconciliation is debounced below.
-        if(activeSheet==='발주서'&&typeof renderSheet==='function')requestAnimationFrame(()=>{try{renderSheet(true)}catch(_){}});
-        try{schedulePersistentState?.(120);scheduleWorkbookSnapshot?.(950)}catch(_){}
-        rebuildFromOrder('cell');
-      }catch(e){console.warn('[v104 order post]',e)}
-    };
-  }catch(e){console.warn('[v104 post hook]',e)}
-
-  // Mark direct typing into a previously blank Order row as a manual row.
-  try{
-    const baseBegin=beginCellEdit;
-    beginCellEdit=function(td,cell,ws,r,c){
-      if(ws?.name==='발주서')pendingEdit={r,wasBlank:!rowHasAny(ws.getRow(r))};else pendingEdit=null;
-      return baseBegin.apply(this,arguments);
-    };
-    window.beginCellEdit=beginCellEdit;
-  }catch(e){console.warn('[v104 begin hook]',e)}
-
-  // Mark rows created by Excel paste into blank Order rows, so duplicate merge / company relocation applies to them too.
-  try{
-    const basePaste=v26PasteMatrix;
-    v26PasteMatrix=async function(text){
-      const ws=workbook?.getWorksheet(activeSheet);pendingPaste=null;
-      if(ws?.name==='발주서'){
-        try{
-          const pos=v26ParseAddr(selectedCell),matrix=v26ClipboardMatrix(text),blankRows=[];
-          if(pos)for(let i=0;i<matrix.length;i++){const r=pos.r+i;if(!rowHasAny(ws.getRow(r)))blankRows.push(r)}
-          pendingPaste={blankRows};
-        }catch(_){}
-      }
-      try{return await basePaste.apply(this,arguments)}finally{setTimeout(()=>{pendingPaste=null},0)}
-    };
-    window.v26PasteMatrix=v26PasteMatrix;
-  }catch(e){console.warn('[v104 paste hook]',e)}
-
-  function ensureMenu(){
-    let m=document.getElementById('orderRowMenuV104');if(m)return m;
-    m=document.createElement('div');m.id='orderRowMenuV104';m.innerHTML='<div class="title">발주서 행 작업</div><button data-act="above">＋ 위에 행 삽입</button><button data-act="below">＋ 아래에 행 삽입</button><hr><button data-act="delete" class="danger">🗑 행 삭제</button>';
-    m.addEventListener('click',e=>{const b=e.target.closest('button[data-act]');if(!b)return;const a=b.dataset.act;hideMenu();if(a==='above')insertOrderRow(selectedOrderRow,false);else if(a==='below')insertOrderRow(selectedOrderRow,true);else deleteOrderRow(selectedOrderRow)});
-    document.body.appendChild(m);return m;
-  }
-  function hideMenu(){document.getElementById('orderRowMenuV104')?.classList.remove('show')}
-  function showMenu(e,r){
-    selectedOrderRow=r;const m=ensureMenu();m.querySelector('.title').textContent=`발주서 ${r}행`;
-    m.style.left=Math.min(e.clientX,window.innerWidth-210)+'px';m.style.top=Math.min(e.clientY,window.innerHeight-135)+'px';m.classList.add('show');
-  }
-  function nearestStyleCompany(order,r){const row=order.getRow(r);return productLike(row)?rowIdentity(order,r).company:companyAt(order,r)}
-  function insertOrderRow(r,below){
-    const order=workbook?.getWorksheet?.('발주서');if(!order||r<8)return;let at=r+(below?1:0),company=nearestStyleCompany(order,r)||'코리아원';
-    try{if(typeof order.insertRow==='function')order.insertRow(at,[]);else order.spliceRows(at,0,[])}catch(e){console.warn('[v104 insert]',e);return alert('행을 삽입하지 못했습니다.')}
-    copyStyle(order,at,company);const row=order.getRow(at);row.hidden=false;for(let c=1;c<=6;c++)row.getCell(c).value=null;markManual(order,at);
-    selectedCell=`A${at}`;selectedOrderRow=at;try{if(typeof orderVisibleEndV27!=='undefined')orderVisibleEndV27.delete(order)}catch(_){}
-    try{v27EnsureOrderBlankRows?.(order,40)}catch(_){};renderSheet(true);setStatus(`✓ 발주서 ${at}행을 삽입했습니다. · A~E를 입력하면 기존 제품은 수량 합산, 신규 센터는 자동 생성됩니다.`,'ok');schedulePersistentState?.(80);scheduleWorkbookSnapshot?.(700);
-  }
-  function removeMatchingManualSheetRows(order,r){
-    try{
-      const row=order.getRow(r),id=rowIdentity(order,r),company=id.company||'코리아원',center=id.center,item=id.item;if(!center)return 0;
-      let name='';try{if(typeof v24SheetSpec==='function')name=v24SheetSpec(company,center)?.name||''}catch(_){ }
-      if(!name)name=company==='코리아원'?center:(company==='봄날애'?`봄날애 ${center}`:`차통 ${center}`);
-      const ws=workbook?.getWorksheet?.(name);if(!ws)return 0;
-      const manual=ws._webManualCenterV95===true||ws._webUserAddedV26===true||(typeof userEditableAddedSheetsV26!=='undefined'&&userEditableAddedSheetsV26.has(ws.name));
-      if(!manual)return 0;let removed=0;const start=typeof generationStartRow==='function'?generationStartRow(ws):4,end=Math.max(start,Number(ws.rowCount)||start);
-      for(let rr=start;rr<=end;rr++){const wr=ws.getRow(rr),wi={productNumber:wr.getCell(1).value,productName:txt(wr.getCell(2)),barcode:txt(wr.getCell(3))};if(!sameProduct(item,wi))continue;for(let c=1;c<=5;c++)wr.getCell(c).value=null;removed++}
-      return removed;
-    }catch(e){console.warn('[v104 delete mirror source]',e);return 0}
-  }
-  function deleteOrderRow(r){
-    const order=workbook?.getWorksheet?.('발주서');if(!order||r<8)return;const row=order.getRow(r);if(rowCompanyHeader(row)){alert('업체 구분 제목 행은 삭제할 수 없습니다.');return}
-    if(!rowHasAny(row)){clearRow(order,r,true);renderSheet(true);return}
-    const label=[txt(row.getCell(1)),txt(row.getCell(2))].filter(Boolean).join(' · ');if(!confirm(`${r}행${label?' ('+label+')':''}을 삭제하시겠습니까?\n\n센터 목록과 진행현황에서도 이 수량이 함께 제거됩니다.`))return;
-    removeMatchingManualSheetRows(order,r);clearRow(order,r,true);selectedOrderRow=0;selectedCell='';rebuildFromOrder('delete');setStatus(`✓ 발주서 ${r}행을 삭제했습니다.`,'ok');
-  }
-  window.v104InsertOrderRow=insertOrderRow;window.v104DeleteOrderRow=deleteOrderRow;
-
-  // Excel-like right click on Order row numbers. Use one delegated handler, so thousands of cell listeners are not added.
-  document.addEventListener('contextmenu',e=>{
-    if(activeSheet!=='발주서')return;const th=e.target.closest?.('#sheetHost th.row-number');if(!th)return;const r=Number(th.textContent||0);if(r<8)return;e.preventDefault();e.stopPropagation();showMenu(e,r);
-  },true);
-  document.addEventListener('click',e=>{if(!e.target.closest?.('#orderRowMenuV104'))hideMenu()});
-  window.addEventListener('blur',hideMenu);document.addEventListener('keydown',e=>{if(e.key==='Escape')hideMenu()});
-
-  // Fast cell selection for the Order sheet: delegated selection avoids extra work and makes single clicks feel immediate.
-  document.addEventListener('pointerdown',e=>{
-    if(activeSheet!=='발주서'||e.button!==0)return;const td=e.target.closest?.('#sheetHost td.cell');if(!td||td.classList.contains('editing'))return;
-    document.querySelector('#sheetHost .cell.selected')?.classList.remove('selected');td.classList.add('selected');selectedCell=td.dataset.addr||'';const m=String(selectedCell).match(/(\d+)$/);selectedRow=m?Number(m[1]):0;
-  },true);
-
-  // One normalization after load/recovery. No polling timer is added.
-  setTimeout(()=>{try{normalizeManualRows();}catch(e){console.warn('[v104 initial normalize]',e)}},300);
-  window.__TC_ORDER_EDIT_V104__={normalizeManualRows,rebuildFromOrder};
-})();
-</script>
-<!-- ===== /v104 ===== -->
