@@ -7607,3 +7607,131 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 <!-- ===== /v99 ===== -->
 
+
+
+<!-- ===== v103: canonical center quantity lock / prevent server autosave quantity oscillation ===== -->
+<script id="v103-canonical-quantity-lock">
+(function(){
+  function clone103(v){try{return JSON.parse(JSON.stringify(v))}catch(_){return v}}
+  function txt103(v){try{return String(v??'').trim().replace(/\s+/g,' ')}catch(_){return ''}}
+  function n103(v){const n=Number(v);return Number.isFinite(n)?n:0}
+  function norm103(v){return txt103(v).toLowerCase().replace(/\s+/g,' ')}
+  function same103(a,b){
+    const ap=norm103(a?.productNumber),bp=norm103(b?.productNumber);if(ap&&bp)return ap===bp;
+    const ab=norm103(a?.barcode),bb=norm103(b?.barcode);if(ab&&bb)return ab===bb;
+    const an=norm103(a?.productName),bn=norm103(b?.productName);return !!an&&an===bn;
+  }
+  function centerText103(g,it){
+    try{if(typeof centerDisplay==='function')return centerDisplay(g.company,it.center)}catch(_){ }
+    return it.center||g.center||'';
+  }
+  function item103(g,it,left,idx){
+    return {
+      id:`v103:${g.key||g.name}:${it.sourceRow||idx}:${idx}`,
+      productNumber:clone103(it.productNumber),productName:it.productName||'',barcode:it.barcode||'',
+      center:centerText103(g,it),qty:n103(left),remainingQty:n103(left),
+      centerFill:clone103(it.centerFill),centerFont:clone103(it.centerFont),order:Number(it.sourceRow)||idx
+    };
+  }
+  function sourceItems103(g){
+    return (g?.items||[]).map((it,idx)=>({
+      productNumber:clone103(it.productNumber),productName:it.productName||'',barcode:it.barcode||'',
+      center:centerText103(g,it),qty:n103(it.qty),order:Number(it.sourceRow)||idx
+    })).filter(x=>x.qty>0);
+  }
+  function canonicalRaw103(g,raw){
+    if(!raw||typeof raw!=='object')return raw;
+    const out=clone103(raw)||{};
+    const completed=[];
+    for(const cg of (out.completed||[]))for(const ci of (cg?.items||[])){
+      const q=n103(ci?.totalQty);if(q>0)completed.push({item:ci,left:q});
+    }
+    const rebuilt=[];let idx=0;
+    for(const src of (g?.items||[])){
+      let left=n103(src.qty);
+      for(const cp of completed){
+        if(left<=0)break;if(cp.left<=0||!same103(src,cp.item))continue;
+        const take=Math.min(left,cp.left);left-=take;cp.left-=take;
+      }
+      if(left>0)rebuilt.push(item103(g,src,left,idx++));
+    }
+    out.incomplete=rebuilt;
+    out.canonicalSourceV103=true;
+    out.canonicalSourceTotalV103=(g?.items||[]).reduce((a,x)=>a+n103(x.qty),0);
+    out.sourceInventoryV103=sourceItems103(g);
+    out.stateFormatV103=103;
+    return out;
+  }
+  function source103(){
+    try{const f=window.v92ParseOrderSource||window.v90ParseOrderSource;return typeof f==='function'&&workbook?f(workbook):null}catch(_){return null}
+  }
+  function canonicalizeSaved103(saved){
+    if(!saved||typeof saved!=='object'||!Array.isArray(saved.palletStates)||!workbook)return saved;
+    const src=source103();if(!src?.groups?.length)return saved;
+    const out=clone103(saved)||{},gm=new Map(src.groups.map(g=>[String(g.name),g]));
+    out.palletStates=(out.palletStates||[]).map(pair=>{
+      if(!Array.isArray(pair)||pair.length<2)return pair;
+      const name=String(pair[0]||''),g=gm.get(name);return g?[name,canonicalRaw103(g,pair[1])]:pair;
+    });
+    out.stateFormatV103=103;out.canonicalQtySavedAtV103=Date.now();
+    return out;
+  }
+  function sig103(list){return (list||[]).map(x=>`${norm103(x.productNumber)}|${norm103(x.barcode)}|${n103(x.remainingQty??x.qty)}`).join(';;')}
+  function stabilizeLive103(){
+    if(!workbook||typeof palletStates==='undefined')return 0;
+    const src=source103();if(!src?.groups?.length)return 0;let changed=0;
+    for(const g of src.groups){
+      const ws=workbook.getWorksheet?.(g.name);if(!ws)continue;
+      try{if(typeof boxDraft!=='undefined'&&boxDraft?.sheetName===ws.name)continue}catch(_){ }
+      let st=null;try{st=typeof ensurePalletState==='function'?ensurePalletState(ws):palletStates.get(ws.name)}catch(_){st=palletStates.get(ws.name)}
+      if(!st)continue;
+      const fixed=canonicalRaw103(g,st);if(sig103(st.incomplete)!==sig103(fixed.incomplete))changed++;
+      st.incomplete=fixed.incomplete;st.canonicalSourceV103=true;st.canonicalSourceTotalV103=fixed.canonicalSourceTotalV103;st.sourceInventoryV103=fixed.sourceInventoryV103;st.stateFormatV103=103;
+      try{if(typeof assignVisualRows==='function')assignVisualRows(ws,st)}catch(_){ }
+      try{if(typeof dirtyPalletSheets!=='undefined')dirtyPalletSheets.add(ws.name)}catch(_){ }
+      try{ws.getCell('E3').value=fixed.canonicalSourceTotalV103}catch(_){ }
+    }
+    return changed;
+  }
+
+  // Old v86 normalization can mutate live remaining quantities during autosave.
+  // Restore source-of-truth quantities synchronously before the browser can paint a wrong number,
+  // and send only canonical quantities to the server.
+  try{
+    const basePayload103=persistentStatePayload;
+    persistentStatePayload=function(){
+      stabilizeLive103();
+      let p=basePayload103.apply(this,arguments);
+      stabilizeLive103();
+      p=canonicalizeSaved103(p);
+      return p;
+    };
+    window.persistentStatePayload=persistentStatePayload;
+  }catch(e){console.warn('[v103 payload hook]',e)}
+
+  // Server/other-PC state is normalized BEFORE the old recovery code renders it.
+  // This removes the visible up/down quantity flash caused by an older server snapshot.
+  try{
+    const baseApply103=applyRecoveredState;
+    applyRecoveredState=function(saved){
+      const fixed=canonicalizeSaved103(saved);
+      const ret=baseApply103.call(this,fixed);
+      stabilizeLive103();
+      return ret;
+    };
+    window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v103 apply hook]',e)}
+
+  // Initial one-shot correction only; no polling timer is added.
+  setTimeout(()=>{
+    try{
+      const n=stabilizeLive103();
+      if(n&&activeSheet&&workbook?.getWorksheet?.(activeSheet)){renderSheet(true);schedulePersistentState?.(40)}
+      console.log('[v103 canonical quantity lock]',{changedSheets:n});
+    }catch(e){console.warn('[v103 initial]',e)}
+  },250);
+
+  window.__TC_QTY_LOCK_V103__={canonicalizeSaved103,stabilizeLive103};
+})();
+</script>
+<!-- ===== /v103 ===== -->
