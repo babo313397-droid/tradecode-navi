@@ -4966,6 +4966,262 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 
 
 
+
+
+<!-- ===== v96: sync manual center rows into order detail + independent order/center total audit ===== -->
+<script id="v96-order-detail-sync-total-audit">
+(function(){
+  const V96_MARK='__V96_EXTRA_ORDER__';
+  const COL_MARK=36, COL_SHEET=37, COL_KEY=38;
+  let syncing=false;
+
+  function t96(v){
+    try{return String(typeof displayText==='function'&&v?.address?displayText(v):(v??'')).trim().replace(/\s+/g,' ')}catch(_){return String(v??'').trim()}
+  }
+  function n96(v){
+    if(v&&typeof v==='object'&&v.address){
+      try{if(typeof cellNum==='function'){const n=Number(cellNum(v));if(Number.isFinite(n))return n}}catch(_){ }
+      v=v.value;
+    }
+    if(typeof v==='number'&&Number.isFinite(v))return v;
+    if(v&&typeof v==='object'&&Number.isFinite(Number(v.result)))return Number(v.result);
+    const m=String(v??'').replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0])||0:0;
+  }
+  function norm96(v){try{return typeof norm==='function'?norm(v):t96(v)}catch(_){return t96(v)}}
+  function company96(v){
+    const s=norm96(v);
+    if(/봄날애/.test(s))return '봄날애';
+    if(/차통익스프레스|차통/.test(s))return '차통익스프레스';
+    if(/코리아원/.test(s))return '코리아원';
+    return '';
+  }
+  function stripCompany96(v){return norm96(v).replace(/^\s*(?:코리아원|봄날애|차통익스프레스|차통)\s*/,'').trim()}
+  function userSheet96(ws){
+    if(!ws||ws.name==='발주서')return false;
+    try{return ws._webManualCenterV95===true||ws._webUserAddedV26===true||(typeof userEditableAddedSheetsV26!=='undefined'&&userEditableAddedSheetsV26.has(ws.name))}catch(_){return !!ws._webManualCenterV95||!!ws._webUserAddedV26}
+  }
+  function sheetCompany96(ws){return company96(ws?._webCompany)||company96(ws?.name)||'코리아원'}
+  function sheetCenter96(ws){return stripCompany96(ws?._webCenter||ws?.name||'')}
+  function productKey96(it){
+    const p=norm96(it?.productNumber),b=norm96(it?.barcode),nm=norm96(it?.productName);
+    if(p)return 'P:'+p;if(b)return 'B:'+b;if(nm)return 'N:'+nm;return '';
+  }
+  function sameProduct96(a,b){
+    const ap=norm96(a?.productNumber),bp=norm96(b?.productNumber);if(ap&&bp)return ap===bp;
+    const ab=norm96(a?.barcode),bb=norm96(b?.barcode);if(ab&&bb)return ab===bb;
+    const an=norm96(a?.productName),bn=norm96(b?.productName);return !!an&&an===bn;
+  }
+  function productRow96(row){
+    const a=t96(row.getCell(1)),b=t96(row.getCell(2)),c=t96(row.getCell(3)),d=t96(row.getCell(4)),q=n96(row.getCell(5));
+    return !!(a||b||c)&&!!d&&q>0;
+  }
+  function headerCompany96(row){
+    if(productRow96(row))return '';
+    for(let c=1;c<=6;c++){
+      const s=t96(row.getCell(c));if(!s)continue;
+      const co=company96(s);if(co)return co;
+    }
+    return '';
+  }
+  function collectSections96(order){
+    const out=[];let current=null;
+    const end=Math.max(8,Number(order.rowCount)||8);
+    for(let r=8;r<=end;r++){
+      const co=headerCompany96(order.getRow(r));
+      if(!co)continue;
+      if(current)current.end=r-1;
+      current={company:co,header:r,start:r+1,end};out.push(current);
+    }
+    if(current)current.end=end;
+    return out;
+  }
+  function ensureSection96(order,company){
+    let secs=collectSections96(order),sec=secs.find(s=>s.company===company);if(sec)return sec;
+    // Extremely defensive fallback: create a company block only if the source order truly lacks it.
+    const r=Math.max(8,(Number(order.rowCount)||7)+1);
+    const donor=secs[0]?.header||8;
+    try{
+      const dr=order.getRow(donor),rr=order.getRow(r);rr.height=dr.height;
+      for(let c=1;c<=6;c++)rr.getCell(c).style=typeof cloneObj==='function'?cloneObj(dr.getCell(c).style):dr.getCell(c).style;
+      rr.getCell(1).value=`${company==='차통익스프레스'?'차통':company} 추가 작업`;
+      try{order.mergeCells(r,1,r,6)}catch(_){ }
+    }catch(_){order.getRow(r).getCell(1).value=`${company} 추가 작업`}
+    secs=collectSections96(order);return secs.find(s=>s.company===company)||{company,header:r,start:r+1,end:r};
+  }
+  function aggregateUserRows96(ws){
+    const map=new Map();if(!ws)return [];
+    const start=typeof generationStartRow==='function'?generationStartRow(ws):4,end=Math.max(start,Number(ws.rowCount)||start);
+    for(let r=start;r<=end;r++){
+      const row=ws.getRow(r),a=row.getCell(1).value,b=t96(row.getCell(2)),c=t96(row.getCell(3)),q=n96(row.getCell(5));
+      if(!(t96(row.getCell(1))||b||c)||!(q>0))continue;
+      const obj={productNumber:a,productName:b,barcode:c,qty:q,sourceRow:r,source:row};
+      const key=productKey96(obj);if(!key)continue;
+      const old=map.get(key);
+      if(old){old.qty+=q;old.lastSource=row}else map.set(key,{...obj,key,lastSource:row});
+    }
+    return [...map.values()];
+  }
+  function existingOrderProduct96(order,company,center,item,ignoreMarker=false){
+    let co='코리아원';const ck=norm96(center).replace(/\s+/g,'').toLowerCase();
+    const end=Math.max(8,Number(order.rowCount)||8);
+    for(let r=8;r<=end;r++){
+      const row=order.getRow(r),h=headerCompany96(row);if(h){co=h;continue}
+      if(!productRow96(row)||co!==company)continue;
+      if(ignoreMarker&&t96(row.getCell(COL_MARK))===V96_MARK)continue;
+      const d=stripCompany96(t96(row.getCell(4))).replace(/\s+/g,'').toLowerCase();if(d!==ck)continue;
+      if(sameProduct96(item,{productNumber:row.getCell(1).value,productName:t96(row.getCell(2)),barcode:t96(row.getCell(3))}))return r;
+    }
+    return 0;
+  }
+  function markerRowMap96(order,sheetName){
+    const m=new Map(),end=Math.max(8,Number(order.rowCount)||8);
+    for(let r=8;r<=end;r++){
+      const row=order.getRow(r);if(t96(row.getCell(COL_MARK))!==V96_MARK||t96(row.getCell(COL_SHEET))!==sheetName)continue;
+      const k=t96(row.getCell(COL_KEY));if(k)m.set(k,r);
+    }
+    return m;
+  }
+  function copyOrderRowStyle96(order,targetRow,company){
+    const secs=collectSections96(order),sec=secs.find(s=>s.company===company);let donor=0;
+    if(sec){for(let r=sec.start;r<=sec.end;r++)if(productRow96(order.getRow(r))){donor=r;break}}
+    if(!donor){for(let r=8;r<=Math.max(8,Number(order.rowCount)||8);r++)if(productRow96(order.getRow(r))){donor=r;break}}
+    if(!donor)return;
+    const src=order.getRow(donor),dst=order.getRow(targetRow);dst.height=src.height;
+    for(let c=1;c<=6;c++){
+      try{dst.getCell(c).style=typeof cloneObj==='function'?cloneObj(src.getCell(c).style):src.getCell(c).style}catch(_){ }
+    }
+  }
+  function insertionRow96(order,company,center){
+    const sec=ensureSection96(order,company);let lastSame=0,lastProduct=0;
+    const ck=norm96(center).replace(/\s+/g,'').toLowerCase();
+    for(let r=sec.start;r<=sec.end;r++){
+      const row=order.getRow(r);if(!productRow96(row))continue;lastProduct=r;
+      const d=stripCompany96(t96(row.getCell(4))).replace(/\s+/g,'').toLowerCase();if(d===ck)lastSame=r;
+    }
+    return (lastSame||lastProduct||sec.header)+1;
+  }
+  function insertRow96(order,at,company,center,item,sheetName){
+    try{order.spliceRows(at,0,[])}catch(e){console.warn('[v96 splice row]',e);at=(Number(order.rowCount)||0)+1}
+    copyOrderRowStyle96(order,at,company);
+    const row=order.getRow(at),src=item.lastSource||item.source;
+    row.getCell(1).value=typeof cloneObj==='function'?cloneObj(item.productNumber):item.productNumber;
+    row.getCell(2).value=item.productName;row.getCell(3).value=item.barcode;row.getCell(4).value=center;row.getCell(5).value=item.qty;row.getCell(6).value=null;
+    // Preserve product text color/font and center fill when the manually added tab contains those styles.
+    if(src){
+      for(let c=1;c<=5;c++)try{if(src.getCell(c).font)row.getCell(c).font=typeof cloneObj==='function'?cloneObj(src.getCell(c).font):src.getCell(c).font}catch(_){ }
+      try{if(src.getCell(4).fill)row.getCell(4).fill=typeof cloneObj==='function'?cloneObj(src.getCell(4).fill):src.getCell(4).fill}catch(_){ }
+    }
+    row.getCell(COL_MARK).value=V96_MARK;row.getCell(COL_SHEET).value=sheetName;row.getCell(COL_KEY).value=item.key;
+    try{order.getColumn(COL_MARK).hidden=true;order.getColumn(COL_SHEET).hidden=true;order.getColumn(COL_KEY).hidden=true}catch(_){ }
+    return at;
+  }
+  function syncSheetToOrder96(ws,order){
+    if(!userSheet96(ws))return {changed:false,inserted:0,updated:0,cleared:0};
+    const company=sheetCompany96(ws),center=sheetCenter96(ws);if(!center)return {changed:false,inserted:0,updated:0,cleared:0};
+    const items=aggregateUserRows96(ws),byKey=new Map(items.map(x=>[x.key,x]));let markers=markerRowMap96(order,ws.name);
+    let changed=false,inserted=0,updated=0,cleared=0;
+
+    // Remove obsolete V96-synced detail rows by clearing them.  We intentionally do not splice them
+    // out because company-title merged rows below must never be disturbed by a delete operation.
+    for(const [key,r] of [...markers.entries()])if(!byKey.has(key)){
+      const row=order.getRow(r);for(let c=1;c<=6;c++)row.getCell(c).value=null;row.getCell(COL_MARK).value=null;row.getCell(COL_SHEET).value=null;row.getCell(COL_KEY).value=null;
+      markers.delete(key);changed=true;cleared++;
+    }
+
+    for(const item of items){
+      // A real order row already in the correct company+center is the source of truth. Do not duplicate it.
+      const real=existingOrderProduct96(order,company,center,item,true);
+      if(real){
+        const mr=markers.get(item.key);if(mr){const row=order.getRow(mr);for(let c=1;c<=6;c++)row.getCell(c).value=null;row.getCell(COL_MARK).value=null;row.getCell(COL_SHEET).value=null;row.getCell(COL_KEY).value=null;changed=true;cleared++}
+        continue;
+      }
+      let r=markers.get(item.key)||0;
+      if(r){
+        const row=order.getRow(r);if(n96(row.getCell(5))!==n96(item.qty)||t96(row.getCell(4))!==center||t96(row.getCell(2))!==item.productName||t96(row.getCell(3))!==item.barcode){
+          row.getCell(1).value=typeof cloneObj==='function'?cloneObj(item.productNumber):item.productNumber;row.getCell(2).value=item.productName;row.getCell(3).value=item.barcode;row.getCell(4).value=center;row.getCell(5).value=item.qty;changed=true;updated++;
+        }
+      }else{
+        r=insertionRow96(order,company,center);insertRow96(order,r,company,center,item,ws.name);markers=markerRowMap96(order,ws.name);changed=true;inserted++;
+      }
+    }
+    return {changed,inserted,updated,cleared,company,center,count:items.length};
+  }
+  function syncAllUserSheets96(wb=workbook){
+    if(syncing||!wb)return {changed:false,details:[]};syncing=true;
+    try{
+      const order=wb.getWorksheet?.('발주서');if(!order)return {changed:false,details:[]};
+      const details=[];let changed=false;
+      for(const ws of (wb.worksheets||[])){
+        if(!userSheet96(ws))continue;
+        const x=syncSheetToOrder96(ws,order);details.push({sheet:ws.name,...x});changed=changed||x.changed;
+      }
+      if(changed){
+        try{if(typeof orderVisibleEndV27!=='undefined')orderVisibleEndV27.delete(order)}catch(_){ }
+        try{if(typeof v27EnsureOrderBlankRows==='function')v27EnsureOrderBlankRows(order,40)}catch(_){ }
+      }
+      return {changed,details};
+    }finally{syncing=false}
+  }
+  window.v96SyncAddedTabsIntoOrder=syncAllUserSheets96;
+
+  function orderDetailTotal96(order){
+    let total=0,co='코리아원';const end=Math.max(8,Number(order?.rowCount)||8);
+    for(let r=8;r<=end;r++){
+      const row=order.getRow(r),h=headerCompany96(row);if(h){co=h;continue}
+      if(!productRow96(row))continue;total+=n96(row.getCell(5));
+    }
+    return total;
+  }
+  function dashboardCenterTotal96(order){
+    let count=0;
+    try{count=Math.max(Number(window.__v91LastCenterCount||0),typeof visibleWorkSheets==='function'?visibleWorkSheets().length:0)}catch(_){count=Number(window.__v91LastCenterCount||0)}
+    let total=0;for(let i=0;i<count;i++)total+=n96(order.getRow(4).getCell(10+i));return total;
+  }
+  function applyAudit96(order){
+    if(!order)return null;
+    const orderTotal=orderDetailTotal96(order),centerTotal=dashboardCenterTotal96(order),diff=centerTotal-orderTotal;
+    // E4 = detailed order-list sum / G4 = sum of center dashboard totals. F4 is the independent comparison.
+    order.getCell('E4').value=orderTotal;order.getCell('G4').value=centerTotal;
+    const ok=Math.abs(diff)<1e-9;order.getCell('F4').value=ok?'맞음':`불일치 ${diff>0?'+':''}${diff}`;
+    try{order.getCell('F4').font={...(order.getCell('F4').font||{}),bold:true,color:{argb:ok?'FF217346':'FFD00000'}}}catch(_){ }
+    window.__v96TotalAudit={orderTotal,centerTotal,diff,ok,at:Date.now()};return window.__v96TotalAudit;
+  }
+  window.v96ApplyOrderCenterAudit=applyAudit96;
+
+  const baseDash96=recalcDashboard;
+  window.recalcDashboard=recalcDashboard=function(wb=workbook){
+    const old=workbook;let sync={changed:false};
+    try{if(wb&&wb!==workbook)workbook=wb;sync=syncAllUserSheets96(wb)}catch(e){console.warn('[v96 pre-dashboard sync]',e)}
+    let ret;try{ret=baseDash96.apply(this,arguments)}catch(e){console.warn('[v96 base dashboard]',e)}
+    try{const order=wb?.getWorksheet?.('발주서');applyAudit96(order);if(sync.changed){try{if(typeof schedulePersistentState==='function')schedulePersistentState(50);if(typeof scheduleWorkbookSnapshot==='function')scheduleWorkbookSnapshot(600)}catch(_){ }}}catch(e){console.warn('[v96 total audit]',e)}
+    finally{if(wb!==old)workbook=old}
+    return ret;
+  };
+
+  // Any edit/paste in an added tab must update the order detail immediately, not only its dashboard column.
+  try{
+    const baseMut96=window.v28PostCellMutation||v28PostCellMutation;
+    window.v28PostCellMutation=v28PostCellMutation=function(ws,message=''){
+      const ret=baseMut96.apply(this,arguments);
+      if(userSheet96(ws))setTimeout(()=>{try{const x=syncAllUserSheets96(workbook);recalcDashboard(workbook);if(activeSheet==='발주서')renderSheet(true);if(x.changed){schedulePersistentState(40);scheduleWorkbookSnapshot(500)}}catch(e){console.warn('[v96 manual row sync]',e)}},0);
+      return ret;
+    };
+  }catch(e){console.warn('[v96 mutation hook]',e)}
+
+  // On add/recovery, run once after v95/v94 have restored metadata and canonical state.
+  try{
+    const baseApply96=applyRecoveredState;
+    window.applyRecoveredState=applyRecoveredState=function(saved){
+      const ret=baseApply96.apply(this,arguments);
+      setTimeout(()=>{try{syncAllUserSheets96(workbook);recalcDashboard(workbook);if(activeSheet==='발주서')renderSheet(true)}catch(e){console.warn('[v96 recovery sync]',e)}},220);
+      return ret;
+    };
+  }catch(e){console.warn('[v96 recovery hook]',e)}
+
+  setTimeout(()=>{try{if(workbook){const x=syncAllUserSheets96(workbook);recalcDashboard(workbook);if(activeSheet==='발주서')renderSheet(true);console.log('[v96 order detail sync]',x,window.__v96TotalAudit)}}catch(e){console.warn('[v96 initial]',e)}},700);
+})();
+</script>
+<!-- ===== /v96 ===== -->
 </body>
 </html>
 
