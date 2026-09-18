@@ -6533,3 +6533,94 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v93 ===== -->
+
+
+<!-- ===== v94: canonical source tabs must stay isolated after every server recovery ===== -->
+<script id="v94-canonical-source-tab-lock">
+(function(){
+  let busy=false;
+  function n94(v){const n=Number(v);return Number.isFinite(n)?n:0}
+  function isCanonicalSourceSheet94(ws,src){return !!ws&&!!src?.groups?.some(g=>g.name===ws.name)}
+  function stateSignature94(st){
+    try{
+      const comp=(st?.completed||[]).map(g=>`${g.id||''}:${g.seq||''}:${(g.items||[]).map(i=>`${String(i.productNumber??'')}|${String(i.barcode??'')}|${n94(i.totalQty)}`).join(',')}`).join(';');
+      const inc=(st?.incomplete||[]).map(i=>`${String(i.productNumber??'')}|${String(i.barcode??'')}|${n94(i.remainingQty??i.qty)}`).join(';');
+      return comp+'###'+inc;
+    }catch(_){return ''}
+  }
+  function repairAll94(label,renderNow=true){
+    if(busy||!window.workbook&&typeof workbook==='undefined')return null;
+    const wb=(typeof workbook!=='undefined'?workbook:window.workbook);if(!wb)return null;
+    busy=true;
+    try{
+      // v93 owns the company+center classification. Re-run it first so a remote/old state can never
+      // become the visible truth for KoreaOne tabs such as "안성 5".
+      const before=new Map();
+      for(const ws of (wb.worksheets||[])){
+        if(ws?.name==='발주서')continue;
+        try{const st=typeof ensurePalletState==='function'?ensurePalletState(ws):null;if(st)before.set(ws.name,stateSignature94(st))}catch(_){ }
+      }
+      let rr=null;
+      if(typeof window.v92ReconcileAll==='function')rr=window.v92ReconcileAll({persist:false,cleanup:true});
+      const src=rr?.source||(typeof window.v92ParseOrderSource==='function'?window.v92ParseOrderSource(wb):null);
+      let changed=false;
+      // Important: v93 rebuilt the in-memory incomplete list but did not always rewrite/clear the
+      // physical worksheet rows. Force the canonical state back into each auto-generated source tab.
+      for(const g of (src?.groups||[])){
+        const ws=wb.getWorksheet(g.name);if(!ws)continue;
+        try{
+          const st=ensurePalletState(ws);
+          assignVisualRows(ws,st);
+          if(typeof syncPalletState==='function')syncPalletState(ws,st);
+          ws._webCompany=g.company;ws._webSourceManagedV94=true;ws.getCell('E3').value=n94(g.total);
+          if(before.get(ws.name)!==stateSignature94(st))changed=true;
+        }catch(e){console.warn('[v94 canonical sheet sync]',ws.name,e)}
+      }
+      try{if(typeof recalcDashboard==='function')recalcDashboard(wb)}catch(e){console.warn('[v94 dashboard]',e)}
+      if(renderNow){
+        try{if(typeof renderTabs==='function')renderTabs()}catch(_){ }
+        try{if(typeof activeSheet!=='undefined'&&activeSheet&&wb.getWorksheet(activeSheet)&&typeof renderSheet==='function')renderSheet(true)}catch(e){console.warn('[v94 render]',e)}
+      }
+      if(changed||rr?.changed||rr?.moved||rr?.removed){
+        setTimeout(()=>{try{if(typeof schedulePersistentState==='function')schedulePersistentState(80);if(typeof scheduleWorkbookSnapshot==='function')scheduleWorkbookSnapshot(700)}catch(_){ }},120);
+      }
+      console.log('[v94 canonical source tab lock]',label,{changed,repair:rr&&{changed:rr.changed,moved:rr.moved,removed:rr.removed},groups:(src?.groups||[]).map(g=>({name:g.name,company:g.company,total:g.total}))});
+      return {changed,repair:rr,source:src};
+    }catch(e){console.warn('[v94 canonical repair]',label,e);return null}
+    finally{busy=false}
+  }
+  window.v94RepairCanonicalSourceTabs=repairAll94;
+
+  // The real cause of the repeated mixing was remote autosave recovery re-applying an old mixed
+  // palletState after the one-time v93 cleanup. Sanitize synchronously after every recovery.
+  try{
+    if(typeof applyRecoveredState==='function'){
+      const baseApply94=applyRecoveredState;
+      window.applyRecoveredState=applyRecoveredState=function(saved){
+        const ret=baseApply94.apply(this,arguments);
+        repairAll94('after-recovered-state',true);
+        setTimeout(()=>repairAll94('after-recovered-state-250',true),250);
+        return ret;
+      };
+    }
+  }catch(e){console.warn('[v94 recovery hook]',e)}
+
+  // New file/source loads also finish with the same invariant.
+  try{
+    if(typeof loadSourceFile==='function'){
+      const baseLoad94=loadSourceFile;
+      window.loadSourceFile=loadSourceFile=async function(file,mode='source'){
+        const ret=await baseLoad94.apply(this,arguments);
+        if(mode==='source')setTimeout(()=>repairAll94('source-load',true),100);
+        return ret;
+      };
+    }
+  }catch(e){console.warn('[v94 source hook]',e)}
+
+  // Run after old delayed recovery hooks as well. These are one-shot guards, not polling loops.
+  setTimeout(()=>repairAll94('initial-120',true),120);
+  setTimeout(()=>repairAll94('initial-900',true),900);
+  setTimeout(()=>repairAll94('initial-3200',true),3200);
+})();
+</script>
+<!-- ===== /v94 ===== -->
