@@ -770,6 +770,21 @@ function inventoryV82(raw){
   for(const g of (raw&&Array.isArray(raw.completed)?raw.completed:[]))for(const it of (g&&Array.isArray(g.items)?g.items:[]))add(it,it&&it.totalQty);
   return {totals,meta};
 }
+
+
+// v103: canonical order-source inventory.
+// Once a v103 client sends the true source rows for a center, never resurrect an older inflated
+// incomplete quantity from a previous snapshot. Completed boxes are still merged/protected below.
+function sourceInventoryCanonicalV103(raw){
+  if(!raw||raw.canonicalSourceV103!==true||!Array.isArray(raw.sourceInventoryV103))return null;
+  const totals=new Map(),meta=new Map();
+  for(const it0 of raw.sourceInventoryV103){
+    const it=cloneJsonV82(it0||{}),k=stableSkuKeyV86(it),q=Math.max(0,Number(it&&it.qty||0));if(!k||!(q>0))continue;
+    totals.set(k,(totals.get(k)||0)+q);meta.set(k,betterMetaV86(meta.get(k),it));
+  }
+  return totals.size?{totals,meta,items:cloneJsonV82(raw.sourceInventoryV103)}:null;
+}
+
 function mergeOnePalletRawV82(oldRaw,newRaw,tombs){
   // v86: 각 snapshot 자체를 먼저 안정 SKU 기준으로 정리합니다.
   oldRaw=repairInventoryRawV86(oldRaw||{}).raw;newRaw=repairInventoryRawV86(newRaw||{}).raw;const out=cloneJsonV82(newRaw&&Object.keys(newRaw).length?newRaw:oldRaw)||{};
@@ -782,10 +797,18 @@ function mergeOnePalletRawV82(oldRaw,newRaw,tombs){
   // v86 핵심: 상품번호가 같으면 바코드가 '33'/빈값/정상 R코드로 갈라져도 같은 SKU입니다.
   // 각 snapshot 안에서는 동일 exact identity의 행은 합산하되, 서로 다른 깨진 identity끼리는 합산하지 않고 최대 원본수량만 채택합니다.
   const oi=inventoryStableV86(oldRaw),ni=inventoryStableV86(newRaw),totals=new Map(),meta=new Map();
-  for(const k of new Set([...oi.totals.keys(),...ni.totals.keys()])){
-    totals.set(k,Math.max(Number(oi.totals.get(k)||0),Number(ni.totals.get(k)||0)));
-    // 최신 snapshot 메타를 우선하되, 깨진 짧은 바코드보다 정상 바코드를 선호합니다.
-    meta.set(k,betterMetaV86(ni.meta.get(k),oi.meta.get(k)));
+  const canonical103=sourceInventoryCanonicalV103(newRaw)||sourceInventoryCanonicalV103(oldRaw);
+  if(canonical103){
+    // Canonical order rows are the quantity source of truth. Never use Math.max(old,new) here:
+    // an old inflated snapshot would otherwise keep reviving quantities such as 100 after autosave.
+    for(const [k,total] of canonical103.totals){totals.set(k,Number(total||0));meta.set(k,cloneJsonV82(canonical103.meta.get(k)||{}))}
+    out.canonicalSourceV103=true;out.sourceInventoryV103=cloneJsonV82(canonical103.items);out.stateFormatV103=103;
+  }else{
+    for(const k of new Set([...oi.totals.keys(),...ni.totals.keys()])){
+      totals.set(k,Math.max(Number(oi.totals.get(k)||0),Number(ni.totals.get(k)||0)));
+      // 최신 snapshot 메타를 우선하되, 깨진 짧은 바코드보다 정상 바코드를 선호합니다.
+      meta.set(k,betterMetaV86(ni.meta.get(k),oi.meta.get(k)));
+    }
   }
   const consumed=new Map();for(const g of out.completed)for(const it of (g.items||[])){const k=stableSkuKeyV86(it);if(!k)continue;consumed.set(k,(consumed.get(k)||0)+Math.max(0,Number(it.totalQty||0)));meta.set(k,betterMetaV86(meta.get(k),it))}
   const incomplete=[];for(const [k,total] of totals){const remain=Math.max(0,Number(total||0)-Number(consumed.get(k)||0));if(remain>0){const it=cloneJsonV82(meta.get(k)||{});it.remainingQty=remain;delete it.totalQty;delete it.perBoxQty;incomplete.push(it)}}
