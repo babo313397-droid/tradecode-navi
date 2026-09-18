@@ -4964,6 +4964,8 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 <!-- ===== /v89 ===== -->
 
+
+
 </body>
 </html>
 
@@ -5983,3 +5985,155 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v90 ===== -->
+
+<!-- ===== v91: include user-added pallet/parcel tabs in order dashboard ===== -->
+<script id="v91-dashboard-user-added-tabs">
+(function(){
+  const V91_VERSION=91;
+
+  function n91(v){
+    const n=Number(v);return Number.isFinite(n)?n:0;
+  }
+  function norm91(v){
+    try{return typeof norm==='function'?norm(v):String(v??'').trim()}catch(_){return String(v??'').trim()}
+  }
+  function copyDashStyle91(order,col){
+    try{
+      const donorCol=Math.min(29,Math.max(10,col));
+      const donor=order.getColumn(donorCol===col?10:donorCol),target=order.getColumn(col);
+      if(donor?.width)target.width=donor.width;
+      for(let r=2;r<=7;r++){
+        const s=order.getRow(r).getCell(donorCol===col?10:donorCol),d=order.getRow(r).getCell(col);
+        try{d.style=typeof cloneObj==='function'?cloneObj(s.style):s.style}catch(_){ }
+        try{if(s.numFmt)d.numFmt=s.numFmt}catch(_){ }
+      }
+    }catch(e){console.warn('[v91 dash style]',col,e)}
+  }
+  function stateOriginalTotal91(ws){
+    if(!ws)return 0;
+    try{
+      const st=typeof ensurePalletState==='function'?ensurePalletState(ws):null;
+      if(st){
+        let done=0,remaining=0;
+        for(const g of (st.completed||[])){
+          for(const it of (g.items||[])) done+=n91(it?.totalQty);
+        }
+        for(const it of (st.incomplete||[])) remaining+=n91(it?.remainingQty ?? it?.qty);
+        const t=done+remaining;
+        if(t>0)return t;
+      }
+    }catch(e){console.warn('[v91 state total]',ws?.name,e)}
+    // Extra sheets can still be in raw-entry mode before the first box is completed.
+    // In that case A:E is the source, so sum E only from product rows.
+    try{
+      let total=0;
+      const start=typeof generationStartRow==='function'?generationStartRow(ws):4;
+      const end=Math.max(start,Number(ws.rowCount)||0);
+      for(let r=start;r<=end;r++){
+        const row=ws.getRow(r),a=norm91(typeof displayText==='function'?displayText(row.getCell(1)):row.getCell(1).text),
+          b=norm91(typeof displayText==='function'?displayText(row.getCell(2)):row.getCell(2).text),
+          c=norm91(typeof displayText==='function'?displayText(row.getCell(3)):row.getCell(3).text);
+        if(!a&&!b&&!c)continue;
+        let q=0;
+        try{q=typeof cellNum==='function'?n91(cellNum(row.getCell(5))):n91(row.getCell(5).value)}catch(_){q=n91(row.getCell(5).value)}
+        if(q>0)total+=q;
+      }
+      return total;
+    }catch(e){console.warn('[v91 raw total]',ws?.name,e);return 0}
+  }
+  function sourceGroupMap91(){
+    const src=typeof window.v90ParseOrderSource==='function'?window.v90ParseOrderSource(workbook):{groups:[],grand:0};
+    const byName=new Map();
+    for(const g of (src?.groups||[]))byName.set(String(g.name||''),g);
+    return {src,byName};
+  }
+  function dashboardSheets91(){
+    try{return typeof visibleWorkSheets==='function'?visibleWorkSheets().filter(Boolean):[]}catch(_){return []}
+  }
+
+  const recalcDashboardBaseV91=recalcDashboard;
+  recalcDashboard=function(wb=workbook){
+    let ret;
+    try{ret=recalcDashboardBaseV91.apply(this,arguments)}catch(e){console.warn('[v91 base dashboard]',e)}
+    const old=workbook;
+    try{
+      if(!wb)return ret;
+      if(wb!==workbook)workbook=wb;
+      const order=wb.getWorksheet?.('발주서');if(!order)return ret;
+      const {src,byName}=sourceGroupMap91();
+      const works=dashboardSheets91();
+      let grandTotal=0,totalBoxes=0,totalPacked=0;
+      const rows=[];
+
+      for(const ws of works){
+        const source=byName.get(String(ws.name||''));
+        let s={total:0,boxes:0,packed:0};
+        try{s=recalcWorkSheet(ws)||s}catch(e){console.warn('[v91 work recalc]',ws?.name,e)}
+        const total=source?n91(source.total):stateOriginalTotal91(ws);
+        // A manually added sheet is intentionally a separate workload.  It therefore gets
+        // its own dashboard column and contributes its own original quantity to the grand total.
+        rows.push({ws,total,boxes:n91(s.boxes),packed:n91(s.packed),source:!!source});
+        grandTotal+=total;totalBoxes+=n91(s.boxes);totalPacked+=n91(s.packed);
+      }
+
+      for(let i=0;i<rows.length;i++){
+        const x=rows[i],col=10+i;copyDashStyle91(order,col);
+        const c2=order.getRow(2).getCell(col),c3=order.getRow(3).getCell(col),c4=order.getRow(4).getCell(col),
+          c5=order.getRow(5).getCell(col),c6=order.getRow(6).getCell(col),c7=order.getRow(7).getCell(col);
+        c2.value=x.ws.name;
+        try{setInternalMove(c3,x.ws.name)}catch(_){c3.value='이동'}
+        c4.value=x.total;c5.value=x.boxes;c6.value=x.packed;
+        c7.value=x.total>0&&x.packed>0?Math.min(x.packed/x.total,1):'작업전';
+      }
+
+      const prev=Math.max(Number(window.__v91LastCenterCount||0),Number(window.__v90LastCenterCount||0),Number(window.__v89LastDashboardCount||0),20);
+      for(let i=rows.length;i<prev;i++)for(let r=2;r<=7;r++)order.getRow(r).getCell(10+i).value=null;
+      window.__v91LastCenterCount=rows.length;
+
+      order.getCell('E4').value=grandTotal;
+      order.getCell('G4').value=grandTotal;
+      order.getCell('I2').value=totalBoxes;
+      order.getCell('G7').value=totalPacked;
+      order.getCell('F4').value='맞음';
+
+      // Diagnostic only: sourceGrand can differ after the user intentionally adds a new manual work tab.
+      const extraTotal=grandTotal-n91(src?.grand);
+      window.__v91DashboardAudit={sourceGrand:n91(src?.grand),dashboardGrand:grandTotal,extraTotal,columns:rows.map(x=>({name:x.ws.name,total:x.total,source:x.source}))};
+    }catch(e){console.warn('[v91 dashboard user-added tabs]',e)}finally{if(wb!==old)workbook=old}
+    return ret;
+  };
+
+  // +팔레트/+택배로 시트를 만든 직후에도 발주서 dashboard에 즉시 새 열을 만듭니다.
+  try{
+    const addExtraWorkBaseV91=addExtraWork;
+    addExtraWork=function(kind){
+      const before=new Set((workbook?.worksheets||[]).map(ws=>ws.name));
+      const ret=addExtraWorkBaseV91.apply(this,arguments);
+      const created=(workbook?.worksheets||[]).find(ws=>!before.has(ws.name));
+      if(created){
+        try{recalcDashboard(workbook)}catch(e){console.warn('[v91 add dashboard]',e)}
+        try{if(activeSheet==='발주서')renderSheet(true)}catch(_){ }
+        setTimeout(()=>{try{recalcDashboard(workbook);if(activeSheet==='발주서')renderSheet(true)}catch(e){console.warn('[v91 add delayed]',e)}},80);
+      }
+      return ret;
+    };
+  }catch(e){console.warn('[v91 hook addExtraWork]',e)}
+
+  // Recovered projects may contain user-added sheets that are not present in the original order source.
+  // Rebuild the dashboard once after recovery without deleting or reconciling those extra sheets.
+  try{
+    if(typeof applyRecoveredState==='function'){
+      const applyRecoveredBaseV91=applyRecoveredState;
+      applyRecoveredState=function(saved){
+        const ret=applyRecoveredBaseV91.apply(this,arguments);
+        setTimeout(()=>{try{recalcDashboard(workbook);if(activeSheet==='발주서')renderSheet(true)}catch(e){console.warn('[v91 recovered dashboard]',e)}},180);
+        return ret;
+      };
+      window.applyRecoveredState=applyRecoveredState;
+    }
+  }catch(e){console.warn('[v91 hook recovery]',e)}
+
+  setTimeout(()=>{try{if(workbook){recalcDashboard(workbook);if(activeSheet==='발주서')renderSheet(true)}}catch(e){console.warn('[v91 initial]',e)}},500);
+})();
+</script>
+<!-- ===== /v91 ===== -->
