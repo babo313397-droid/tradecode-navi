@@ -7163,3 +7163,239 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v96 ===== -->
+
+<!-- ===== v99: exact order widths + Excel-like sheet tab delete ===== -->
+<style id="v99-sheet-tab-menu-style">
+#sheetTabMenuV99{position:fixed;z-index:5000;display:none;min-width:170px;background:#fff;border:1px solid #9aa4a0;box-shadow:0 8px 24px rgba(0,0,0,.24);border-radius:5px;padding:4px;font:11px "Malgun Gothic",Arial,sans-serif}
+#sheetTabMenuV99.show{display:block}
+#sheetTabMenuV99 .v99-title{padding:7px 9px 5px;color:#66746d;font-size:10px;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+#sheetTabMenuV99 button{display:block;width:100%;border:0;background:#fff;text-align:left;padding:8px 10px;border-radius:3px;cursor:pointer;font:inherit}
+#sheetTabMenuV99 button:hover{background:#f4e7e7}
+#sheetTabMenuV99 button.danger{color:#b42318;font-weight:900}
+</style>
+<script id="v99-order-width-sheet-delete">
+(function(){
+  const WIDTHS99=Object.freeze({1:17,2:39.3984375,3:19.69921875,4:13.59765625,5:12.19921875,6:11});
+  const DELETE_KEY99='deletedSheetNamesV99';
+  const deleted99=new Set();
+  let deleting99=false;
+
+  function text99(v){try{return String(typeof displayText==='function'&&v?.address?displayText(v):(v??'')).trim()}catch(_){return String(v??'').trim()}}
+
+  // The original embedded template was checked directly.  These are the real A:F widths.
+  function fixOrderModelWidths99(){
+    try{
+      const order=workbook?.getWorksheet?.('발주서');
+      if(!order)return false;
+      let changed=false;
+      for(const [k,w] of Object.entries(WIDTHS99)){
+        const col=order.getColumn(Number(k));
+        if(Math.abs((Number(col.width)||0)-w)>0.001){col.width=w;changed=true;}
+      }
+      return changed;
+    }catch(e){console.warn('[v99 width model]',e);return false;}
+  }
+
+  // width:max-content can expand columns beyond ExcelJS column.width when long order text exists.
+  // Force the rendered order table to the exact sum of Excel column widths.
+  function fixRenderedOrderWidths99(){
+    try{
+      if(activeSheet!=='발주서')return;
+      const ws=workbook?.getWorksheet?.('발주서');
+      const table=document.querySelector('#sheetHost .sheet-table');
+      const cols=table?.querySelectorAll?.('colgroup col');
+      if(!ws||!table||!cols?.length)return;
+      const maxC=(typeof getExtent==='function'?getExtent(ws).maxC:ws.columnCount)||ws.columnCount||6;
+      let total=42; // row number gutter
+      for(let c=1;c<=maxC;c++){
+        const model=ws.getColumn(c);if(model.hidden)continue;
+        const px=typeof pxFromExcelWidth==='function'?pxFromExcelWidth(model.width):Math.max(18,Math.round((Number(model.width)||8.43)*7+5));
+        const colEl=cols[c];
+        if(colEl){colEl.style.width=px+'px';colEl.style.minWidth=px+'px';colEl.style.maxWidth=px+'px';}
+        total+=px;
+      }
+      table.style.tableLayout='fixed';
+      table.style.width=total+'px';
+      table.style.minWidth=total+'px';
+      table.style.maxWidth=total+'px';
+    }catch(e){console.warn('[v99 width dom]',e)}
+  }
+
+  window.v99FixOrderWidths=function(){
+    const changed=fixOrderModelWidths99();
+    if(activeSheet==='발주서')fixRenderedOrderWidths99();
+    return changed;
+  };
+
+  // Guarantee widths BEFORE and AFTER every draw.  Use lexical workbook/activeSheet, not window.*.
+  try{
+    const baseRender99=renderSheet;
+    renderSheet=function(keepScroll=false){
+      if(activeSheet==='발주서')fixOrderModelWidths99();
+      const ret=baseRender99.apply(this,arguments);
+      if(activeSheet==='발주서')fixRenderedOrderWidths99();
+      return ret;
+    };
+    window.renderSheet=renderSheet;
+  }catch(e){console.warn('[v99 render width hook]',e)}
+
+  function ensureMenu99(){
+    let m=document.getElementById('sheetTabMenuV99');
+    if(m)return m;
+    m=document.createElement('div');m.id='sheetTabMenuV99';
+    m.innerHTML='<div class="v99-title"></div><button type="button" class="danger">🗑 시트 삭제</button>';
+    document.body.appendChild(m);return m;
+  }
+  function hideMenu99(){document.getElementById('sheetTabMenuV99')?.classList.remove('show')}
+
+  function orderRowsForSheet99(sheetName){
+    const rows=new Set(),order=workbook?.getWorksheet?.('발주서');if(!order)return rows;
+    // Exact rows inserted by v96 for a user-added tab.
+    try{
+      for(let r=8;r<=Math.max(8,Number(order.rowCount)||8);r++){
+        if(text99(order.getRow(r).getCell(37))===sheetName)rows.add(r);
+      }
+    }catch(_){ }
+    // Exact source rows belonging to this sheet according to the current company+center parser.
+    try{
+      const parse=window.v92ParseOrderSource||window.v90ParseOrderSource;
+      const src=typeof parse==='function'?parse(workbook):null;
+      for(const g of (src?.groups||[]))if(String(g.name||'')===sheetName){
+        for(const it of (g.items||[]))if(Number(it.sourceRow)>0)rows.add(Number(it.sourceRow));
+      }
+    }catch(e){console.warn('[v99 delete source rows]',e)}
+    return rows;
+  }
+
+  function clearOrderRows99(sheetName){
+    const order=workbook?.getWorksheet?.('발주서');if(!order)return 0;
+    const rows=orderRowsForSheet99(sheetName);let count=0;
+    for(const r of [...rows].sort((a,b)=>a-b)){
+      const row=order.getRow(r);
+      for(let c=1;c<=6;c++)row.getCell(c).value=null;
+      for(const c of [36,37,38])row.getCell(c).value=null;
+      count++;
+    }
+    try{order.getColumn(36).hidden=true;order.getColumn(37).hidden=true;order.getColumn(38).hidden=true}catch(_){ }
+    return count;
+  }
+
+  function removeSheetNow99(sheetName,{persist=true,record=true,refresh=true}={}){
+    if(!workbook||sheetName==='발주서')return false;
+    const ws=workbook.getWorksheet(sheetName);if(!ws)return false;
+    clearOrderRows99(sheetName);
+    try{if(typeof boxDraft!=='undefined'&&boxDraft?.sheetName===sheetName)boxDraft=null}catch(_){ }
+    try{palletStates?.delete?.(sheetName)}catch(_){ }
+    try{if(typeof userEditableAddedSheetsV26!=='undefined')userEditableAddedSheetsV26.delete(sheetName)}catch(_){ }
+    try{workbook.removeWorksheet(ws.id)}catch(e){console.warn('[v99 remove worksheet]',e);return false}
+    if(record)deleted99.add(sheetName);
+    if(activeSheet===sheetName)activeSheet=workbook.getWorksheet('발주서')?'발주서':(visibleWorksheets?.()[0]?.name||'');
+    try{fixOrderModelWidths99()}catch(_){ }
+    if(refresh){
+      try{recalcDashboard(workbook)}catch(e){console.warn('[v99 delete dashboard]',e)}
+      try{renderTabs();renderSheet(false)}catch(e){console.warn('[v99 delete render]',e)}
+    }
+    if(persist){
+      try{schedulePersistentState(30);scheduleWorkbookSnapshot(350)}catch(_){ }
+    }
+    return true;
+  }
+
+  async function deleteSheet99(sheetName){
+    if(deleting99||!sheetName||sheetName==='발주서')return;
+    const ws=workbook?.getWorksheet?.(sheetName);if(!ws)return;
+    let completed=0;
+    try{completed=(ensurePalletState(ws)?.completed||[]).length}catch(_){ }
+    const extra=completed?`\n\n이 시트에는 완료 박스 ${completed}개가 있습니다. 삭제하면 이 작업내역도 함께 삭제됩니다.`:'';
+    if(!confirm(`“${sheetName}” 시트를 삭제하시겠습니까?\n\n발주서 상세목록과 센터별 진행현황에서도 함께 제거됩니다.${extra}`))return;
+    deleting99=true;
+    try{
+      const ok=removeSheetNow99(sheetName,{persist:true,record:true,refresh:true});
+      if(ok)setStatus(`✓ ${sheetName} 시트를 삭제했습니다. · 발주서 목록/센터 진행현황에서도 제거되었습니다.`,'ok');
+    }finally{deleting99=false;hideMenu99()}
+  }
+  window.v99DeleteWorkSheet=deleteSheet99;
+
+  function showMenu99(e,ws){
+    if(!ws||ws.name==='발주서')return;
+    e.preventDefault();e.stopPropagation();
+    const m=ensureMenu99();m.querySelector('.v99-title').textContent=ws.name;
+    const btn=m.querySelector('button.danger');btn.onclick=()=>deleteSheet99(ws.name);
+    m.style.left=Math.min(e.clientX,window.innerWidth-190)+'px';
+    m.style.top=Math.min(e.clientY,window.innerHeight-90)+'px';
+    m.classList.add('show');
+  }
+
+  // Excel-like right click on every visible work-sheet tab.  발주서 itself is protected.
+  try{
+    const baseMakeTab99=makeTabButton;
+    makeTabButton=function(ws){
+      const b=baseMakeTab99.apply(this,arguments);
+      if(ws?.name!=='발주서'){
+        b.title=(b.title?b.title+' · ':'')+'마우스 오른쪽 버튼: 시트 삭제';
+        b.oncontextmenu=e=>showMenu99(e,ws);
+      }
+      return b;
+    };
+    window.makeTabButton=makeTabButton;
+  }catch(e){console.warn('[v99 tab context hook]',e)}
+
+  document.addEventListener('click',e=>{if(!e.target.closest?.('#sheetTabMenuV99'))hideMenu99()});
+  window.addEventListener('blur',hideMenu99);
+  window.addEventListener('scroll',hideMenu99,true);
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')hideMenu99()});
+
+  // Persist a delete tombstone so an older server/browser recovery cannot resurrect a deleted tab.
+  try{
+    const basePayload99=persistentStatePayload;
+    persistentStatePayload=function(){
+      const p=basePayload99.apply(this,arguments)||{};
+      p[DELETE_KEY99]=[...deleted99];return p;
+    };
+    window.persistentStatePayload=persistentStatePayload;
+  }catch(e){console.warn('[v99 payload hook]',e)}
+
+  try{
+    const baseApply99=applyRecoveredState;
+    applyRecoveredState=function(saved){
+      const ret=baseApply99.apply(this,arguments);
+      try{for(const n of (saved?.[DELETE_KEY99]||[]))if(n)deleted99.add(String(n))}catch(_){ }
+      setTimeout(()=>{
+        try{
+          let changed=false;
+          for(const n of [...deleted99])if(workbook?.getWorksheet?.(n))changed=removeSheetNow99(n,{persist:false,record:false,refresh:false})||changed;
+          fixOrderModelWidths99();
+          if(changed)recalcDashboard(workbook);
+          renderTabs();if(activeSheet&&workbook?.getWorksheet?.(activeSheet))renderSheet(true);
+          if(changed){schedulePersistentState(50);scheduleWorkbookSnapshot(450)}
+        }catch(e){console.warn('[v99 recovery delete guard]',e)}
+      },80);
+      return ret;
+    };
+    window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v99 recovery hook]',e)}
+
+  // Re-adding a sheet with the same name is an explicit user action, so remove its tombstone.
+  try{
+    const baseAdd99=addExtraWork;
+    addExtraWork=function(kind){
+      const ret=baseAdd99.apply(this,arguments);
+      try{if(ret?.name&&deleted99.delete(ret.name)){schedulePersistentState(30);scheduleWorkbookSnapshot(350)}}catch(_){ }
+      return ret;
+    };
+    window.addExtraWork=addExtraWork;
+  }catch(e){console.warn('[v99 add hook]',e)}
+
+  setTimeout(()=>{
+    try{
+      const changed=fixOrderModelWidths99();
+      try{renderTabs()}catch(_){ }
+      if(activeSheet==='발주서')renderSheet(true);
+      if(changed){schedulePersistentState(80);scheduleWorkbookSnapshot(600)}
+      console.log('[v99 order A:F widths]',[1,2,3,4,5,6].map(c=>workbook?.getWorksheet?.('발주서')?.getColumn(c).width));
+    }catch(e){console.warn('[v99 initial]',e)}
+  },350);
+})();
+</script>
+<!-- ===== /v99 ===== -->
+
