@@ -535,14 +535,53 @@ app.get('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))ret
 app.post('/api/auth/users',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});try{const db=usersV48(),username=normUserV48(req.body?.username),pw=String(req.body?.password||''),displayName=String(req.body?.displayName||username).trim().slice(0,80);if(username.length<3||pw.length<8)return res.status(400).json({ok:false,error:'아이디 3자 이상, 비밀번호 8자 이상이 필요합니다.'});if(db.users.some(x=>x.username===username))return res.status(409).json({ok:false,error:'이미 사용 중인 아이디입니다.'});const hp=hashPwV48(pw),u={id:'u_'+crypto.randomBytes(8).toString('hex'),username,displayName,role:req.body?.role==='admin'?'admin':'user',legacyOwner:false,approved:false,approvedAt:0,disabled:false,salt:hp.salt,passwordHash:hp.hash,createdAt:Date.now()};db.users.push(u);saveUsersV48(db);res.json({ok:true,user:publicUserV48(u),approvalRequired:true})}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.patch('/api/auth/users/:id',requireLoginApiV48,(req,res)=>{if(!isAdminV48(req))return res.status(403).json({ok:false,error:'관리자만 사용할 수 있습니다.'});const db=usersV48(),u=db.users.find(x=>x.id===req.params.id);if(!u)return res.status(404).json({ok:false,error:'계정을 찾지 못했습니다.'});if(req.body?.displayName!==undefined)u.displayName=String(req.body.displayName||u.username).slice(0,80);if(req.body?.disabled!==undefined&&!u.legacyOwner)u.disabled=!!req.body.disabled;if(req.body?.role!==undefined&&!u.legacyOwner)u.role=req.body.role==='admin'?'admin':'user';if(req.body?.approved!==undefined&&!u.legacyOwner){u.approved=!!req.body.approved;u.approvedAt=u.approved?Date.now():0}if(req.body?.password){const pw=String(req.body.password);if(pw.length<8)return res.status(400).json({ok:false,error:'비밀번호는 8자 이상이어야 합니다.'});const hp=hashPwV48(pw);u.salt=hp.salt;u.passwordHash=hp.hash}saveUsersV48(db);res.json({ok:true,user:publicUserV48(u)})});
 
-// v82: 배포/재시작 감지용 heartbeat. 작업 화면은 bootId가 바뀌거나 서버 연결이 끊기면
-// 30초 동안 전체 입력을 잠그고 새 서버가 안정된 뒤 자동 새로고침합니다.
+// v97: Render 배포 시작 순간부터 작업 잠금
+// - 기존 bootId 변경 감지는 유지합니다.
+// - RENDER_API_KEY가 설정되어 있으면 Render Deploy API를 서버에서만 조회해
+//   created/build_in_progress/pre_deploy_in_progress/update_in_progress 단계부터 deploying=true를 내려줍니다.
+// - RENDER_SERVICE_ID는 Render 런타임이 자동으로 제공합니다.
 const TC_SERVER_STARTED_AT_V82=Date.now();
 const TC_DEPLOY_BUILD_V82=String(process.env.RENDER_GIT_COMMIT||process.env.RENDER_INSTANCE_ID||process.env.RENDER_SERVICE_ID||'local');
 const TC_DEPLOY_BOOT_ID_V82=crypto.createHash('sha1').update(`${TC_DEPLOY_BUILD_V82}:${TC_SERVER_STARTED_AT_V82}:${process.pid}`).digest('hex').slice(0,16);
-app.get('/api/system/deploy-heartbeat',(req,res)=>{
+const TC_RENDER_SERVICE_ID_V97=String(process.env.RENDER_SERVICE_ID||'').trim();
+const TC_RENDER_API_KEY_V97=String(process.env.RENDER_API_KEY||process.env.TRADECODE_RENDER_API_KEY||'').trim();
+const TC_RENDER_WATCH_CONFIGURED_V97=!!(TC_RENDER_SERVICE_ID_V97&&TC_RENDER_API_KEY_V97);
+const TC_RENDER_TERMINAL_STATUSES_V97=new Set(['live','deactivated','build_failed','update_failed','canceled','pre_deploy_failed']);
+let TC_RENDER_DEPLOY_CACHE_V97={checkedAt:0,deploying:false,status:'unknown',deployId:'',createdAt:'',configured:TC_RENDER_WATCH_CONFIGURED_V97,error:''};
+let TC_RENDER_DEPLOY_INFLIGHT_V97=null;
+function tcRenderDeployRowsV97(raw){
+  const list=Array.isArray(raw)?raw:(Array.isArray(raw?.deploys)?raw.deploys:(Array.isArray(raw?.results)?raw.results:[]));
+  return list.map(x=>x&&x.deploy&&typeof x.deploy==='object'?x.deploy:x).filter(x=>x&&typeof x==='object');
+}
+function tcRenderDeployTimeV97(x){const v=x?.createdAt||x?.created_at||x?.updatedAt||x?.updated_at||'';const t=Date.parse(v);return Number.isFinite(t)?t:0}
+async function tcRefreshRenderDeployV97(force=false){
+  const now=Date.now();
+  if(!TC_RENDER_WATCH_CONFIGURED_V97)return TC_RENDER_DEPLOY_CACHE_V97;
+  if(!force&&now-Number(TC_RENDER_DEPLOY_CACHE_V97.checkedAt||0)<2500)return TC_RENDER_DEPLOY_CACHE_V97;
+  if(TC_RENDER_DEPLOY_INFLIGHT_V97)return TC_RENDER_DEPLOY_INFLIGHT_V97;
+  TC_RENDER_DEPLOY_INFLIGHT_V97=(async()=>{
+    const ctrl=new AbortController();const tm=setTimeout(()=>ctrl.abort(),3500);
+    try{
+      const url=`https://api.render.com/v1/services/${encodeURIComponent(TC_RENDER_SERVICE_ID_V97)}/deploys?limit=10`;
+      const r=await fetch(url,{headers:{Accept:'application/json',Authorization:`Bearer ${TC_RENDER_API_KEY_V97}`},signal:ctrl.signal});
+      if(!r.ok)throw new Error(`Render API ${r.status}`);
+      const raw=await r.json();
+      const rows=tcRenderDeployRowsV97(raw).sort((a,b)=>tcRenderDeployTimeV97(b)-tcRenderDeployTimeV97(a));
+      const active=rows.find(d=>{const st=String(d.status||'').trim().toLowerCase();return st&&!TC_RENDER_TERMINAL_STATUSES_V97.has(st)});
+      const latest=active||rows[0]||{};
+      TC_RENDER_DEPLOY_CACHE_V97={checkedAt:Date.now(),deploying:!!active,status:String(latest.status||'unknown'),deployId:String(latest.id||latest.deployId||''),createdAt:String(latest.createdAt||latest.created_at||''),configured:true,error:''};
+    }catch(e){
+      // API가 잠깐 실패해도 이미 감지된 배포중 상태를 즉시 풀지 않습니다.
+      TC_RENDER_DEPLOY_CACHE_V97={...TC_RENDER_DEPLOY_CACHE_V97,checkedAt:Date.now(),configured:true,error:String(e?.message||e)};
+    }finally{clearTimeout(tm);TC_RENDER_DEPLOY_INFLIGHT_V97=null}
+    return TC_RENDER_DEPLOY_CACHE_V97;
+  })();
+  return TC_RENDER_DEPLOY_INFLIGHT_V97;
+}
+app.get('/api/system/deploy-heartbeat',async(req,res)=>{
   res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.json({ok:true,bootId:TC_DEPLOY_BOOT_ID_V82,startedAt:TC_SERVER_STARTED_AT_V82,build:TC_DEPLOY_BUILD_V82.slice(0,16),serverTime:Date.now()});
+  const dep=await tcRefreshRenderDeployV97(false);
+  res.json({ok:true,bootId:TC_DEPLOY_BOOT_ID_V82,startedAt:TC_SERVER_STARTED_AT_V82,build:TC_DEPLOY_BUILD_V82.slice(0,16),serverTime:Date.now(),deploying:!!dep.deploying,deployStatus:dep.status||'unknown',deployId:dep.deployId||'',deployWatchConfigured:!!dep.configured,deployWatchError:dep.error?'check_failed':''});
 });
 
 const PROTECTED_PAGE_PREFIXES_V48=['/barcode-label','/order-barcode','/shipment-list-builder','/coupang-inbound-work','/purchase-order','/detail-maker','/account-admin'];
