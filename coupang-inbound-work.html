@@ -5060,9 +5060,213 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v98 ===== -->
+<!-- ===== v101: strict visible tabs + lightweight cross-PC manual-tab persistence + style restore ===== -->
+<script id="v101-targeted-tab-persist-performance-fix">
+(function(){
+  const BUNDLE_KEY='userAddedSheetsV100'; // server v100 already protects this key
+  const bundleCache=new Map();
+  const dirtyManual=new Set();
+  let tabSignature='';
+  let sourceCacheWb=null,sourceCache=null,sourceCacheAt=0;
 
+  function t(v){
+    try{return String(typeof displayText==='function'&&v?.address?displayText(v):(v??'')).trim().replace(/\s+/g,' ')}catch(_){return String(v??'').trim()}
+  }
+  function company(v){const s=t(v);if(/봄날애/.test(s))return '봄날애';if(/차통익스프레스|차통/.test(s))return '차통익스프레스';if(/코리아원/.test(s))return '코리아원';return ''}
+  function stripCompany(v){return t(v).replace(/^\s*(?:코리아원|봄날애|차통익스프레스|차통)\s*/,'').trim()}
+  function centerKey(v){
+    const s=stripCompany(v);
+    try{return typeof v24CenterKey==='function'?v24CenterKey(s):s.replace(/\s+/g,'').toLowerCase()}catch(_){return s.replace(/\s+/g,'').toLowerCase()}
+  }
+  function strictManual(ws){return !!ws&&ws.name!=='발주서'&&ws._webManualCenterV95===true&&ws._webSourceManagedV92!==true}
+  function completedCount(ws){try{return (ensurePalletState(ws)?.completed||[]).length}catch(_){return 0}}
+  function sourceNow(force=false){
+    try{
+      if(!workbook)return null;const now=Date.now();
+      if(!force&&sourceCacheWb===workbook&&sourceCache&&now-sourceCacheAt<30000)return sourceCache;
+      sourceCache=typeof window.v92ParseOrderSource==='function'?window.v92ParseOrderSource(workbook):null;sourceCacheWb=workbook;sourceCacheAt=now;return sourceCache;
+    }catch(_){return sourceCacheWb===workbook?sourceCache:null}
+  }
+  function invalidateSource101(){sourceCacheAt=0;tabSignature=''}
+  function sameCenterGroups(src,center){const ck=centerKey(center);return (src?.groups||[]).filter(g=>centerKey(g.center)===ck)}
+  function isBareNonKoreaGhostName(name,src,declaredCompany=''){
+    if(!name||company(name))return false;
+    const same=sameCenterGroups(src,name);if(!same.length)return false;
+    const comps=new Set(same.map(g=>company(g.company)||'코리아원'));
+    const dc=company(declaredCompany)||'코리아원';
+    return dc==='코리아원'&&!comps.has('코리아원')&&(comps.has('봄날애')||comps.has('차통익스프레스'));
+  }
 
+  function safeValue(v){
+    if(v===null||v===undefined||typeof v==='string'||typeof v==='number'||typeof v==='boolean')return v??null;
+    if(v instanceof Date)return {__v101Date:v.toISOString()};
+    if(typeof v==='object'){
+      if(v.formula!==undefined)return {formula:String(v.formula||''),result:v.result??null};
+      if(Array.isArray(v.richText))return {richText:v.richText.map(x=>({text:String(x?.text||''),font:x?.font?JSON.parse(JSON.stringify(x.font)):undefined}))};
+      if(v.text!==undefined)return {text:String(v.text||''),hyperlink:v.hyperlink||undefined};
+      try{return JSON.parse(JSON.stringify(v))}catch(_){return String(v)}
+    }
+    return String(v);
+  }
+  function restoreValue(v){if(v&&typeof v==='object'&&v.__v101Date){const d=new Date(v.__v101Date);return Number.isNaN(d.getTime())?null:d}return v}
 
+  // Manual tabs only: capture A:E and stop after a short empty tail. This replaces v100's
+  // every-save 3000 x 19 full-sheet scan, which was the main browser slowdown.
+  function captureManual(ws){
+    const start=Math.max(1,typeof generationStartRow==='function'?generationStartRow(ws):4),rows=[];
+    const end=Math.min(Math.max(start,Number(ws.rowCount)||start),start+1600);
+    let seen=false,emptyRun=0;
+    for(let r=start;r<=end;r++){
+      const row=ws.getRow(r),vals=[],meaningful=false;
+      for(let c=1;c<=5;c++){
+        const cell=row.getCell(c),text=t(cell);if(text)meaningful=true;
+        vals.push(safeValue(cell.value));
+      }
+      if(meaningful){seen=true;emptyRun=0;rows.push({r,v:vals})}
+      else if(seen&&++emptyRun>=24)break;
+    }
+    return {name:ws.name,company:company(ws._webCompany)||company(ws.name)||'코리아원',center:stripCompany(ws._webCenter||ws.name),kind:(ws._webKind||sheetKind(ws))==='pallet'?'pallet':'parcel',start,rows,updatedAt:Date.now()};
+  }
+  function refreshBundleCache(){
+    if(!workbook)return;
+    const live=new Set();
+    for(const ws of (workbook.worksheets||[])){
+      if(!strictManual(ws))continue;live.add(ws.name);
+      if(!bundleCache.has(ws.name)||dirtyManual.has(ws.name))bundleCache.set(ws.name,captureManual(ws));
+    }
+    for(const n of [...bundleCache.keys()])if(!live.has(n))bundleCache.delete(n);
+    dirtyManual.clear();
+  }
+  function filteredSavedBundles(saved){
+    const src=sourceNow(),deleted=new Set((saved?.deletedSheetNamesV99||[]).map(String));
+    const arr=Array.isArray(saved?.[BUNDLE_KEY])?saved[BUNDLE_KEY]:[];
+    return arr.filter(b=>b?.name&&!deleted.has(String(b.name))&&!isBareNonKoreaGhostName(String(b.name),src,b.company));
+  }
+  function createMissingManual(saved){
+    if(!workbook)return 0;let made=0;
+    for(const b of filteredSavedBundles(saved)){
+      const name=String(b.name||'');if(!name||workbook.getWorksheet(name))continue;
+      let ws=null;try{ws=cloneTemplateSheet(workbook,b.kind==='pallet'?'pallet':'parcel',name)}catch(e){console.warn('[v101 create manual]',name,e);continue}
+      ws._webUserAddedV26=true;ws._webManualCenterV95=true;ws._webSourceManagedV92=false;
+      ws._webCompany=b.company||company(name)||'코리아원';ws._webCenter=b.center||stripCompany(name);ws._webKind=b.kind==='pallet'?'pallet':'parcel';
+      ws._webWorkType=ws._webKind==='parcel'?'parcel':(/밀크런/i.test(name)?'milkrun':'pallet');
+      try{userEditableAddedSheetsV26?.add?.(name)}catch(_){ }
+      const start=Math.max(1,Number(b.start)||generationStartRow(ws));
+      try{
+        for(const rr of (Array.isArray(b.rows)?b.rows:[])){
+          const r=Math.max(start,Number(rr?.r)||start),vals=Array.isArray(rr?.v)?rr.v:[];
+          try{if(typeof v26EnsureRowStyled==='function')v26EnsureRowStyled(ws,r)}catch(_){ }
+          for(let c=1;c<=Math.min(5,vals.length);c++)if(vals[c-1]!==null&&vals[c-1]!==undefined)ws.getRow(r).getCell(c).value=restoreValue(vals[c-1]);
+        }
+        try{if(typeof v26EnsureEntryRows==='function')v26EnsureEntryRows(ws,25)}catch(_){ }
+      }catch(e){console.warn('[v101 restore manual rows]',name,e)}
+      bundleCache.set(name,{...b,updatedAt:Number(b.updatedAt)||Date.now()});made++;
+    }
+    return made;
+  }
+
+  // Lightweight bundle persistence. It scans a manual sheet only when that sheet was actually edited.
+  try{
+    const basePayload=persistentStatePayload;
+    persistentStatePayload=function(){
+      const p=basePayload.apply(this,arguments)||{};
+      try{refreshBundleCache();p[BUNDLE_KEY]=[...bundleCache.values()]}catch(e){console.warn('[v101 bundle payload]',e)}
+      p.stateFormatV101=101;return p;
+    };
+    window.persistentStatePayload=persistentStatePayload;
+  }catch(e){console.warn('[v101 payload hook]',e)}
+
+  // Re-create only explicit manual tabs before pallet state is applied on another PC.
+  try{
+    const baseApply=applyRecoveredState;
+    applyRecoveredState=function(saved){
+      try{for(const b of filteredSavedBundles(saved))bundleCache.set(String(b.name),b);createMissingManual(saved)}catch(e){console.warn('[v101 precreate]',e)}
+      const ret=baseApply.apply(this,arguments);invalidateSource101();
+      setTimeout(()=>{try{renderTabs();restoreCanonicalStyles101();if(activeSheet&&workbook?.getWorksheet?.(activeSheet))renderSheet(true)}catch(_){ }},60);
+      return ret;
+    };
+    window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v101 apply hook]',e)}
+
+  try{
+    const baseAdd=addExtraWork;
+    addExtraWork=function(kind){
+      const ws=baseAdd.apply(this,arguments);
+      if(ws&&strictManual(ws)){
+        dirtyManual.add(ws.name);invalidateSource101();
+        Promise.resolve().then(async()=>{try{await savePersistentState();await sharedDrainStateQueue?.()}catch(e){console.warn('[v101 immediate manual save]',e)}});
+      }
+      return ws;
+    };
+    window.addExtraWork=addExtraWork;
+  }catch(e){console.warn('[v101 add hook]',e)}
+
+  try{
+    const basePost=v28PostCellMutation;
+    v28PostCellMutation=function(ws,message=''){
+      if(strictManual(ws)){dirtyManual.add(ws.name);invalidateSource101()}
+      return basePost.apply(this,arguments);
+    };
+    window.v28PostCellMutation=v28PostCellMutation;
+  }catch(e){console.warn('[v101 edit hook]',e)}
+
+  // Only show canonical source tabs + explicit user-created tabs. Old bare aliases such as
+  // 안성8/인천28/인천30 from non-KoreaOne sources are never published to the tab bar.
+  function visibleTabs101(){
+    if(!workbook)return [];
+    const src=sourceNow(),canonical=new Set((src?.groups||[]).map(g=>g.name)),allowed=new Set(canonical);
+    for(const ws of (workbook.worksheets||[])){
+      if(!ws||ws.name==='발주서'||/^__WEBTPL_/.test(ws.name))continue;
+      if(strictManual(ws))allowed.add(ws.name);
+      else if(completedCount(ws)>0)allowed.add(ws.name); // never hide completed historical work
+    }
+    let sorted=[];try{sorted=typeof v25SortedWorkSheets==='function'?v25SortedWorkSheets():visibleWorkSheets()}catch(_){sorted=visibleWorkSheets?.()||[]}
+    return sorted.filter(ws=>allowed.has(ws.name)&&!isBareNonKoreaGhostName(ws.name,src,ws._webCompany));
+  }
+  function makeArrow(dir,host){const b=document.createElement('button');b.className='sheet-nav-arrow';b.textContent=dir<0?'◀':'▶';b.onclick=()=>host.scrollBy({left:dir*320,behavior:'smooth'});return b}
+  renderTabs=function(){
+    const host=$('sheetTabs');if(!host||!workbook)return;
+    const works=visibleTabs101(),parts=['발주서',...works.map(w=>w.name)],sig=parts.join('|');
+    if(sig===tabSignature&&host.children.length){for(const b of host.querySelectorAll('.sheet-tab'))b.classList.toggle('active',b.dataset.sheet===activeSheet);return}
+    const old=host.scrollLeft,frag=document.createDocumentFragment();frag.appendChild(makeArrow(-1,host));
+    const order=workbook.getWorksheet('발주서');if(order){const b=makeTabButton(order);b.dataset.sheet='발주서';b.classList.toggle('active',activeSheet==='발주서');frag.appendChild(b)}
+    let palletAdd=false;
+    for(const ws of works){
+      let wt='';try{wt=typeof v25WorkTypeOfWorksheet==='function'?v25WorkTypeOfWorksheet(ws):sheetKind(ws)}catch(_){wt=sheetKind(ws)}
+      if(!palletAdd&&wt==='parcel'){frag.appendChild(makeAddTab('pallet'));palletAdd=true}
+      const b=makeTabButton(ws);b.dataset.sheet=ws.name;b.classList.toggle('active',activeSheet===ws.name);frag.appendChild(b);
+    }
+    if(!palletAdd)frag.appendChild(makeAddTab('pallet'));
+    frag.appendChild(makeAddTab('parcel'));frag.appendChild(makeArrow(1,host));
+    host.replaceChildren(frag);tabSignature=sig;requestAnimationFrame(()=>{host.scrollLeft=old});
+  };
+  window.renderTabs=renderTabs;
+
+  // Restore A:E visual formatting from the Order source only; no quantities, states or work data are changed.
+  window.restoreCanonicalStyles101=restoreCanonicalStyles101;
+  function restoreCanonicalStyles101(){
+    if(!workbook)return;const src=sourceNow(true),order=workbook.getWorksheet('발주서');if(!src||!order)return;
+    for(const g of (src.groups||[])){
+      const ws=workbook.getWorksheet(g.name);if(!ws)continue;
+      const byP=new Map(),byB=new Map(),byN=new Map();
+      for(const it of g.items){
+        const rec={it,row:order.getRow(it.sourceRow)};
+        const p=t(it.productNumber),b=t(it.barcode),n=t(it.productName);if(p&&!byP.has(p))byP.set(p,rec);if(b&&!byB.has(b))byB.set(b,rec);if(n&&!byN.has(n))byN.set(n,rec);
+      }
+      const start=generationStartRow(ws),end=Math.max(start,Number(ws.rowCount)||start);
+      for(let r=start;r<=end;r++){
+        const row=ws.getRow(r),p=t(row.getCell(1)),b=t(row.getCell(3)),n=t(row.getCell(2));if(!p&&!b&&!n)continue;
+        const rec=(p&&byP.get(p))||(b&&byB.get(b))||(n&&byN.get(n));if(!rec)continue;
+        for(let c=1;c<=5;c++){try{row.getCell(c).style=cloneObj(rec.row.getCell(c).style);if(rec.row.getCell(c).numFmt)row.getCell(c).numFmt=rec.row.getCell(c).numFmt}catch(_){ }}
+      }
+    }
+  }
+
+  // One style pass after the workbook is ready. Avoid periodic full-workbook scans.
+  setTimeout(()=>{try{restoreCanonicalStyles101();renderTabs();if(activeSheet&&workbook?.getWorksheet?.(activeSheet))renderSheet(true)}catch(e){console.warn('[v101 init]',e)}},450);
+})();
+</script>
+<!-- ===== /v101 ===== -->
 
 </body>
 </html>
@@ -7403,255 +7607,3 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 <!-- ===== /v99 ===== -->
 
-<!-- ===== v100: stable tabs + cross-PC manual-sheet persistence + fast project restore ===== -->
-<script id="v100-tabs-sheet-persist-fast-restore">
-(function(){
-  const BUNDLE_KEY100='userAddedSheetsV100';
-  let tabSig100='';
-  let shrinkSig100='';
-  let shrinkSince100=0;
-  let shrinkTimer100=null;
-  let fastRestoreBusy100=false;
-
-  function norm100(v){try{return typeof norm==='function'?norm(v):String(v??'').trim().replace(/\s+/g,' ')}catch(_){return String(v??'').trim()}}
-  function company100(v){const s=norm100(v);if(/봄날애/.test(s))return '봄날애';if(/차통익스프레스|차통/.test(s))return '차통';if(/코리아원/.test(s))return '코리아원';return ''}
-  function stripCompany100(v){return norm100(v).replace(/^\s*(?:코리아원|봄날애|차통익스프레스|차통)\s*/,'').trim()}
-  function isUserAdded100(ws){
-    if(!ws||ws.name==='발주서')return false;
-    try{return ws._webManualCenterV95===true||ws._webUserAddedV26===true||(typeof userEditableAddedSheetsV26!=='undefined'&&userEditableAddedSheetsV26.has(ws.name))}catch(_){return !!ws._webManualCenterV95||!!ws._webUserAddedV26}
-  }
-  function serialCell100(v){
-    if(v===undefined||v===null)return null;
-    if(typeof v==='string'||typeof v==='number'||typeof v==='boolean')return v;
-    if(v instanceof Date)return {__v100Date:v.toISOString()};
-    if(typeof v==='object'){
-      if(v.formula!==undefined)return {formula:String(v.formula||''),result:(v.result===undefined?null:v.result)};
-      if(Array.isArray(v.richText))return {richText:v.richText.map(x=>({text:String(x?.text||''),font:x?.font?JSON.parse(JSON.stringify(x.font)):undefined}))};
-      if(v.text!==undefined)return {text:String(v.text||''),hyperlink:v.hyperlink||undefined};
-      try{return JSON.parse(JSON.stringify(v))}catch(_){return String(v)}
-    }
-    return String(v);
-  }
-  function restoreCell100(v){if(v&&typeof v==='object'&&v.__v100Date){const d=new Date(v.__v100Date);return Number.isNaN(d.getTime())?null:d}return v}
-  function sheetSpec100(ws){
-    const company=company100(ws?._webCompany)||company100(ws?.name)||'코리아원';
-    const center=stripCompany100(ws?._webCenter||ws?.name||'');
-    let kind='parcel';try{kind=ws?._webKind||sheetKind(ws)||'parcel'}catch(_){kind=ws?._webKind||'parcel'}
-    return {company,center,kind:kind==='pallet'?'pallet':'parcel'};
-  }
-  function captureUserSheet100(ws){
-    const sp=sheetSpec100(ws),start=Math.max(1,typeof generationStartRow==='function'?generationStartRow(ws):4),maxC=19;
-    const rows=[];let last=start-1;
-    // Only non-empty rows are kept.  The lightweight state stays small even with many center tabs.
-    const end=Math.min(Math.max(start,Number(ws.rowCount)||start),start+3000);
-    for(let r=start;r<=end;r++){
-      const row=ws.getRow(r),vals=new Array(maxC).fill(null);let meaningful=false;
-      for(let c=1;c<=maxC;c++){
-        const v=row.getCell(c).value;
-        if(v!==null&&v!==undefined&&String(row.getCell(c).text??'').trim()!=='')meaningful=true;
-        vals[c-1]=serialCell100(v);
-      }
-      if(meaningful){rows.push({r,v:vals});last=r}
-    }
-    return {name:ws.name,company:sp.company,center:sp.center,kind:sp.kind,start,rows,lastRow:last,updatedAt:Date.now()};
-  }
-  function deletedNames100(saved){return new Set((saved?.deletedSheetNamesV99||[]).map(String).filter(Boolean))}
-  function bundleList100(saved){
-    const out=new Map(),deleted=deletedNames100(saved);
-    for(const b of (Array.isArray(saved?.[BUNDLE_KEY100])?saved[BUNDLE_KEY100]:[]))if(b?.name&&!deleted.has(String(b.name)))out.set(String(b.name),b);
-    // Backward compatibility: v95/v99 states know the added-tab names/meta even if v100 bundle did not exist yet.
-    const meta=saved?.userAddedSheetMetaV95&&typeof saved.userAddedSheetMetaV95==='object'?saved.userAddedSheetMetaV95:{};
-    for(const n0 of (saved?.userEditableAddedSheetsV26||[])){
-      const n=String(n0||'');if(!n||deleted.has(n)||out.has(n))continue;const m=meta[n]||{};
-      out.set(n,{name:n,company:m.company||company100(n)||'코리아원',center:m.center||stripCompany100(n),kind:m.kind||(/팔레트|밀크런/i.test(n)?'pallet':'parcel'),rows:[],updatedAt:0});
-    }
-    return [...out.values()];
-  }
-  function createMissingUserSheets100(saved){
-    if(!workbook)return 0;let made=0;
-    const deleted=deletedNames100(saved);
-    for(const b of bundleList100(saved)){
-      const name=String(b.name||'');if(!name||deleted.has(name)||workbook.getWorksheet(name))continue;
-      let ws=null;
-      try{ws=cloneTemplateSheet(workbook,b.kind==='pallet'?'pallet':'parcel',name)}catch(e){console.warn('[v100 create remote added tab]',name,e);continue}
-      ws._webUserAddedV26=true;ws._webManualCenterV95=true;ws._webCompany=b.company||company100(name)||'코리아원';ws._webCenter=b.center||stripCompany100(name);ws._webKind=b.kind==='pallet'?'pallet':'parcel';ws._webWorkType=ws._webKind==='parcel'?'parcel':(/밀크런/i.test(name)?'milkrun':'pallet');ws._webSourceManagedV92=false;
-      try{if(typeof userEditableAddedSheetsV26!=='undefined')userEditableAddedSheetsV26.add(name)}catch(_){ }
-      const start=Math.max(1,Number(b.start)||((typeof generationStartRow==='function')?generationStartRow(ws):4));
-      try{
-        // Clear template sample rows before restoring the user's rows.
-        const clearTo=Math.max(Number(ws.rowCount)||start,start+40);
-        for(let r=start;r<=clearTo;r++)for(let c=1;c<=19;c++)ws.getRow(r).getCell(c).value=null;
-        for(const rr of (Array.isArray(b.rows)?b.rows:[])){
-          const r=Math.max(start,Number(rr?.r)||start),vals=Array.isArray(rr?.v)?rr.v:[];
-          try{if(typeof v26EnsureRowStyled==='function')v26EnsureRowStyled(ws,r)}catch(_){ }
-          for(let c=1;c<=Math.min(19,vals.length);c++)if(vals[c-1]!==null&&vals[c-1]!==undefined)ws.getRow(r).getCell(c).value=restoreCell100(vals[c-1]);
-        }
-        try{if(typeof v26EnsureEntryRows==='function')v26EnsureEntryRows(ws,25)}catch(_){ }
-      }catch(e){console.warn('[v100 restore remote added rows]',name,e)}
-      made++;
-    }
-    return made;
-  }
-
-  // Keep manually-added center tabs in the lightweight state itself.  They no longer depend on the large workbook snapshot,
-  // so another PC can reconstruct them immediately and old clients cannot make them disappear after page navigation.
-  try{
-    const payloadBase100=persistentStatePayload;
-    persistentStatePayload=function(){
-      const p=payloadBase100.apply(this,arguments)||{},bundles=[];
-      try{for(const ws of (workbook?.worksheets||[]))if(isUserAdded100(ws))bundles.push(captureUserSheet100(ws))}catch(e){console.warn('[v100 capture added tabs]',e)}
-      p[BUNDLE_KEY100]=bundles;p.stateFormatV100=100;p.userAddedSheetsSavedAtV100=Date.now();return p;
-    };
-    window.persistentStatePayload=persistentStatePayload;
-  }catch(e){console.warn('[v100 payload hook]',e)}
-
-  try{
-    const applyBase100=applyRecoveredState;
-    applyRecoveredState=function(saved){
-      try{createMissingUserSheets100(saved)}catch(e){console.warn('[v100 precreate added tabs]',e)}
-      const ret=applyBase100.apply(this,arguments);
-      try{
-        for(const b of bundleList100(saved)){
-          const ws=workbook?.getWorksheet?.(b.name);if(!ws)continue;
-          ws._webUserAddedV26=true;ws._webManualCenterV95=true;ws._webCompany=b.company||ws._webCompany||'코리아원';ws._webCenter=b.center||ws._webCenter||stripCompany100(ws.name);ws._webKind=b.kind==='pallet'?'pallet':'parcel';ws._webSourceManagedV92=false;
-          if(typeof userEditableAddedSheetsV26!=='undefined')userEditableAddedSheetsV26.add(ws.name);
-        }
-      }catch(e){console.warn('[v100 mark recovered tabs]',e)}
-      setTimeout(()=>{try{renderTabs()}catch(_){ }},60);
-      return ret;
-    };
-    window.applyRecoveredState=applyRecoveredState;
-  }catch(e){console.warn('[v100 apply hook]',e)}
-
-  // Save a newly-added tab to local+server state immediately.  Workbook snapshot can follow later in idle time.
-  try{
-    const addBase100=addExtraWork;
-    addExtraWork=function(kind){
-      const ret=addBase100.apply(this,arguments);
-      if(ret?.name){
-        Promise.resolve().then(async()=>{try{await savePersistentState();await sharedDrainStateQueue()}catch(e){console.warn('[v100 immediate added-tab save]',e)}});
-      }
-      return ret;
-    };
-    window.addExtraWork=addExtraWork;
-  }catch(e){console.warn('[v100 add save hook]',e)}
-
-  // Stable/keyed tab rendering.  Frequent 4-second server syncs used to clear innerHTML then rebuild every tab,
-  // producing visible blinking and momentary missing centers.  Identical structures now only toggle the active class.
-  function desiredTabs100(){
-    const out=[];const order=workbook?.getWorksheet?.('발주서');if(order)out.push({key:'sheet:'+order.name,type:'sheet',ws:order});
-    let works=[];try{works=typeof v25SortedWorkSheets==='function'?v25SortedWorkSheets():visibleWorkSheets()}catch(_){works=visibleWorkSheets?.()||[]}
-    let palletAdded=false;
-    for(const ws of works){
-      let wt='';try{wt=typeof v25WorkTypeOfWorksheet==='function'?v25WorkTypeOfWorksheet(ws):sheetKind(ws)}catch(_){wt=sheetKind(ws)}
-      if(!palletAdded&&wt==='parcel'){out.push({key:'add:pallet',type:'add',kind:'pallet'});palletAdded=true}
-      out.push({key:'sheet:'+ws.name,type:'sheet',ws});
-    }
-    if(!palletAdded)out.push({key:'add:pallet',type:'add',kind:'pallet'});
-    out.push({key:'add:parcel',type:'add',kind:'parcel'});return out;
-  }
-  function updateActiveTabs100(host){for(const b of host.querySelectorAll('.sheet-tab'))b.classList.toggle('active',b.dataset.sheetNameV100===activeSheet)}
-  function navButton100(dir,host){const b=document.createElement('button');b.className='sheet-nav-arrow';b.textContent=dir<0?'◀':'▶';b.dataset.v100Key=dir<0?'nav:left':'nav:right';b.onclick=()=>host.scrollBy({left:dir*320,behavior:'smooth'});return b}
-
-  renderTabs=function(){
-    const host=$('sheetTabs');if(!host)return;
-    const desired=desiredTabs100(),keys=['nav:left',...desired.map(x=>x.key),'nav:right'],sig=keys.join('|');
-    const currentSheetNames=[...host.querySelectorAll('.sheet-tab')].map(x=>x.dataset.sheetNameV100||x.textContent||'');
-    const desiredSheetNames=desired.filter(x=>x.type==='sheet').map(x=>x.ws.name);
-
-    // While remote state is being applied, never publish a transient smaller tab set.
-    if((persistRestoring||sharedApplyingRemote)&&currentSheetNames.length&&desiredSheetNames.length<currentSheetNames.length){
-      updateActiveTabs100(host);clearTimeout(shrinkTimer100);shrinkTimer100=setTimeout(()=>{try{renderTabs()}catch(_){ }},180);return;
-    }
-    // Outside restore, require a smaller structure to stay stable for 220ms before removing buttons.
-    if(currentSheetNames.length&&desiredSheetNames.length<currentSheetNames.length&&sig!==tabSig100){
-      const now=Date.now();
-      if(shrinkSig100!==sig){shrinkSig100=sig;shrinkSince100=now;clearTimeout(shrinkTimer100);shrinkTimer100=setTimeout(()=>{try{renderTabs()}catch(_){ }},240);updateActiveTabs100(host);return}
-      if(now-shrinkSince100<220){updateActiveTabs100(host);return}
-    }else{shrinkSig100='';shrinkSince100=0}
-
-    if(sig===tabSig100&&host.children.length){updateActiveTabs100(host);return}
-    const oldScroll=host.scrollLeft,existing=new Map();
-    for(const el of [...host.children])if(el.dataset?.v100Key)existing.set(el.dataset.v100Key,el);
-    const frag=document.createDocumentFragment();
-    let left=existing.get('nav:left')||navButton100(-1,host);left.dataset.v100Key='nav:left';frag.appendChild(left);
-    for(const d of desired){
-      let el=existing.get(d.key);
-      if(!el){
-        if(d.type==='sheet')el=makeTabButton(d.ws);else el=makeAddTab(d.kind);
-        el.dataset.v100Key=d.key;
-      }
-      if(d.type==='sheet'){
-        el.dataset.sheetNameV100=d.ws.name;el.textContent=d.ws.name;el.classList.toggle('active',d.ws.name===activeSheet);el.onclick=()=>switchSheet(d.ws.name);
-      }
-      frag.appendChild(el);
-    }
-    let right=existing.get('nav:right')||navButton100(1,host);right.dataset.v100Key='nav:right';frag.appendChild(right);
-    host.replaceChildren(frag);tabSig100=sig;
-    requestAnimationFrame(()=>{host.scrollLeft=oldScroll;updateActiveTabs100(host)});
-  };
-  window.renderTabs=renderTabs;
-
-  // Fast restore: read local IndexedDB in parallel, ask the server only for tiny status/state first,
-  // and download exactly ONE Excel blob (snapshot OR source), never both sequentially.
-  const restoreFallback100=restorePersistentSession;
-  async function localGet100(key){try{return await localPersistGet(localProjectKeyV18(key))}catch(_){return null}}
-  function freshEnough100(localObj,remoteStatus){if(!localObj||!remoteStatus)return false;const l=Number(localObj.savedAt||0),r=Number(remoteStatus.updatedAt||0);return l&&r&&l+1500>=r}
-  async function cacheLocal100(key,value){if(!value)return;try{await localPersistPut(localProjectKeyV18(key),value)}catch(_){ }}
-
-  restorePersistentSession=async function(){
-    if(!currentProjectIdV18)return;if(fastRestoreBusy100)return;fastRestoreBusy100=true;
-    try{
-      clearWorkspaceForProjectV18('선택한 선적 작업을 빠르게 불러오는 중…');
-      persistRestoring=true;showLoading(true,'쿠팡 입고 작업을 빠르게 복구하는 중…');setStatus('선적 작업 데이터 확인 중…','busy');
-      const localPromise=Promise.all([localGet100('source'),localGet100('state'),localGet100('workbookSnapshot')]);
-      const statusPromise=(async()=>{try{return await sharedStatus()}catch(_){return null}})();
-      const [[localSource,localState,localSnap],st]=await Promise.all([localPromise,statusPromise]);
-
-      let source=localSource||null,saved=localState||null,snapshot=localSnap||null;
-      const tasks=[];
-      if(st?.ok){
-        const remoteStateAt=Number(st.state?.updatedAt||0);
-        if(remoteStateAt&&(!saved||remoteStateAt>Number(saved.savedAt||0)+1500))tasks.push(sharedRemoteGet('state').then(v=>{if(v){saved=v;return cacheLocal100('state',v)}}));
-
-        const hasRemoteSnap=!!st.workbookSnapshot;
-        const useLocalSnap=hasRemoteSnap&&freshEnough100(localSnap,st.workbookSnapshot);
-        if(hasRemoteSnap&&!useLocalSnap){
-          tasks.push(sharedRemoteGet('workbookSnapshot').then(v=>{if(v){snapshot=v;return cacheLocal100('workbookSnapshot',v)}}));
-        }else if(!hasRemoteSnap){
-          // A new source upload intentionally deletes the server snapshot. Never let an old local snapshot
-          // from the previous source win just because it is still present in IndexedDB.
-          snapshot=null;
-          const useLocalSource=!!localSource&&freshEnough100(localSource,st.source);
-          if(st.source&&!useLocalSource)tasks.push(sharedRemoteGet('source').then(v=>{if(v){source=v;return cacheLocal100('source',v)}}));
-        }
-        // Source metadata gives the real file name, but do not download the source when snapshot is enough.
-      }
-      if(tasks.length)await Promise.all(tasks);
-
-      const blobObj=snapshot?.blob?snapshot:source;
-      if(!blobObj?.blob){
-        // One safe fallback for unusual old projects whose status metadata is incomplete.
-        persistRestoring=false;showLoading(false);fastRestoreBusy100=false;return await restoreFallback100.apply(this,arguments);
-      }
-      const name=source?.name||st?.source?.name||saved?.fileName||'쿠팡입고작업.xlsx';
-      const mode=snapshot?.blob?'work':(source?.mode||'source');
-      const file=new File([blobObj.blob],name,{type:source?.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',lastModified:Date.now()});
-      await loadSourceFileV8(file,mode);
-      if(saved)applyRecoveredState(saved);
-      currentFileName=name;$('fileName').textContent=name+' · 빠른 자동복구';
-      try{if(typeof refreshOutboundV77==='function')refreshOutboundV77()}catch(_){ }
-      setStatus(`✓ 선적 작업 빠른 복구 완료${saved?.savedAt?' · '+new Date(saved.savedAt).toLocaleString():''}`,'ok');
-      return true;
-    }catch(e){
-      console.warn('[v100 fast restore fallback]',e);
-      try{persistRestoring=false;showLoading(false);fastRestoreBusy100=false;return await restoreFallback100.apply(this,arguments)}catch(e2){console.warn('[v100 fallback failed]',e2);setStatus('작업 복구에 실패했습니다. 새로고침 후 다시 시도해 주세요.','bad')}
-    }finally{persistRestoring=false;showLoading(false);fastRestoreBusy100=false}
-  };
-  window.restorePersistentSession=restorePersistentSession;
-
-  // Initial stabilization without rebuilding the whole workbook.
-  setTimeout(()=>{try{if(workbook){renderTabs();schedulePersistentState(0)}}catch(e){console.warn('[v100 initial]',e)}},300);
-})();
-</script>
-<!-- ===== /v100 ===== -->
