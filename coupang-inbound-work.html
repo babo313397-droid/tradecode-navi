@@ -6624,3 +6624,193 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v94 ===== -->
+
+<!-- ===== v95: safe user-added work tabs + dashboard registration ===== -->
+<script id="v95-safe-extra-work-tabs">
+(function(){
+  const V95_META_KEY='userAddedSheetMetaV95';
+
+  function t95(v){try{return typeof norm==='function'?norm(v):String(v??'').trim().replace(/\s+/g,' ')}catch(_){return String(v??'').trim()}}
+  function company95(v){
+    const s=t95(v);
+    if(/봄날애/.test(s))return '봄날애';
+    if(/차통익스프레스|차통/.test(s))return '차통';
+    if(/코리아원/.test(s))return '코리아원';
+    return '';
+  }
+  function stripCompany95(v){return t95(v).replace(/^\s*(?:코리아원|봄날애|차통익스프레스|차통)\s*/,'').trim()}
+  function centerKey95(v){
+    const s=stripCompany95(v);
+    try{return typeof v24CenterKey==='function'?v24CenterKey(s):s.replace(/\s+/g,'').toLowerCase()}catch(_){return s.replace(/\s+/g,'').toLowerCase()}
+  }
+  function userAdded95(ws){
+    if(!ws)return false;
+    try{return ws._webUserAddedV26===true || (typeof userEditableAddedSheetsV26!=='undefined'&&userEditableAddedSheetsV26.has(ws.name))}catch(_){return ws._webUserAddedV26===true}
+  }
+  function sourceCandidates95(center){
+    const key=centerKey95(center),out=[];
+    try{
+      const src=typeof window.v92ParseOrderSource==='function'?window.v92ParseOrderSource(workbook):null;
+      for(const g of (src?.groups||[]))if(centerKey95(g.center)===key)out.push(g);
+    }catch(e){console.warn('[v95 source candidates]',e)}
+    return out;
+  }
+  function chooseCompany95(raw){
+    const explicit=company95(raw);if(explicit)return explicit;
+    const candidates=sourceCandidates95(raw),companies=[...new Set(candidates.map(g=>company95(g.company)||'코리아원'))];
+    if(companies.length===1)return companies[0];
+    if(companies.length>1){
+      const answer=prompt(
+        `같은 센터명이 여러 업체에 있습니다.\n업체명을 입력해 주세요.\n\n${companies.join(' / ')}`,
+        companies[0]
+      );
+      if(answer===null)return null;
+      const c=company95(answer);
+      if(c)return c;
+      alert('업체명은 코리아원 / 봄날애 / 차통 중 하나로 입력해 주세요.');
+      return null;
+    }
+    return '코리아원';
+  }
+  function spec95(company,rawCenter,kind){
+    const c=company95(company)||'코리아원',center=stripCompany95(rawCenter);
+    let name='';
+    try{name=(typeof v24SheetSpec==='function'?v24SheetSpec(c,center).name:'')||''}catch(_){ }
+    if(!name){
+      name=c==='코리아원'?center:(c==='봄날애'?`봄날애 ${center}`:`차통 ${center}`);
+      try{name=safeSheetName(name)}catch(_){ }
+    }
+    return {company:c,center,name,kind:kind==='pallet'?'pallet':'parcel'};
+  }
+  function markUserSheet95(ws,spec){
+    if(!ws)return;
+    ws._webUserAddedV26=true;
+    ws._webCompany=spec.company;
+    ws._webCenter=spec.center;
+    ws._webKind=spec.kind;
+    ws._webWorkType=spec.kind==='parcel'?'parcel':'pallet';
+    ws._webSourceManagedV92=false;
+    ws._webManualCenterV95=true;
+    try{if(typeof userEditableAddedSheetsV26!=='undefined')userEditableAddedSheetsV26.add(ws.name)}catch(_){ }
+    try{ws.getCell('A1').value=ws.name}catch(_){ }
+  }
+  function sheetSpecFromName95(ws){
+    if(!ws)return null;
+    const explicit=company95(ws.name)||company95(ws._webCompany)||'코리아원';
+    const center=stripCompany95(ws._webCenter||ws.name);
+    return spec95(explicit,center,ws._webKind||sheetKind(ws));
+  }
+  function autoCenterRows95(ws){
+    if(!userAdded95(ws))return 0;
+    const sp=sheetSpecFromName95(ws);if(!sp?.center)return 0;
+    ws._webCompany=sp.company;ws._webCenter=sp.center;
+    let changed=0;
+    const start=typeof generationStartRow==='function'?generationStartRow(ws):4;
+    const end=Math.max(start,Number(ws.rowCount)||start);
+    for(let r=start;r<=end;r++){
+      const row=ws.getRow(r),a=t95(displayText(row.getCell(1))),b=t95(displayText(row.getCell(2))),c=t95(displayText(row.getCell(3))),e=t95(displayText(row.getCell(5))),d=t95(displayText(row.getCell(4)));
+      if(!(a||b||c||e)||d)continue;
+      row.getCell(4).value=sp.center;changed++;
+    }
+    return changed;
+  }
+  function refreshDashboard95(label,activateName=''){
+    try{
+      if(!workbook)return;
+      if(activateName&&workbook.getWorksheet(activateName))activeSheet=activateName;
+      if(typeof recalcDashboard==='function')recalcDashboard(workbook);
+      if(typeof renderTabs==='function')renderTabs();
+      if(activeSheet&&workbook.getWorksheet(activeSheet)&&typeof renderSheet==='function')renderSheet(true);
+      console.log('[v95 dashboard refresh]',label,activateName);
+    }catch(e){console.warn('[v95 dashboard refresh]',label,e)}
+  }
+
+  // IMPORTANT: do not call the legacy addExtraWork here. That legacy function runs recalcAll()
+  // before v26 can mark the sheet as user-added, allowing v92/v94 cleanup to delete the new tab.
+  window.addExtraWork=addExtraWork=function(kind){
+    if(!workbook)return;
+    const isPallet=kind==='pallet';
+    const defaultName=isPallet?'추가 팔레트':'추가 택배';
+    const entered=prompt(
+      isPallet
+        ?'추가할 팔레트 작업명(센터명)을 입력하세요.\n예: 안성5 / 봄날애 안성5 / 차통 인천30'
+        :'추가할 택배 작업명(센터명)을 입력하세요.\n예: 안성8 / 봄날애 안성8 / 차통 인천30',
+      defaultName
+    );
+    if(entered===null)return;
+    const raw=t95(entered);if(!raw)return;
+    const comp=chooseCompany95(raw);if(!comp)return;
+    const sp=spec95(comp,raw,kind);
+    if(!sp.center||!sp.name)return;
+
+    const existing=workbook.getWorksheet(sp.name);
+    if(existing){
+      // If the requested center already exists, use that sheet instead of creating a duplicate.
+      // When it is an existing manually-added sheet, restore its metadata as well.
+      if(userAdded95(existing))markUserSheet95(existing,sp);
+      activeSheet=existing.name;
+      refreshDashboard95('existing-sheet',existing.name);
+      setStatus(`ℹ ${existing.name} 작업 시트가 이미 있어 해당 탭으로 이동했습니다.`,'busy');
+      return existing;
+    }
+
+    let ws;
+    try{ws=cloneTemplateSheet(workbook,kind,sp.name)}catch(e){console.error(e);alert('작업 시트를 만들지 못했습니다.\n'+(e.message||e));return}
+
+    // Mark FIRST, before any dashboard/reconcile call. This is the core v95 fix.
+    markUserSheet95(ws,sp);
+    try{palletStates.delete(ws.name)}catch(_){ }
+    try{if(typeof v26EnsureEntryRows==='function')v26EnsureEntryRows(ws,30)}catch(_){ }
+    activeSheet=ws.name;
+
+    // If this company+center already exists in the order source, v93 reconcile will populate
+    // the correct products into this newly-created tab. Otherwise it remains an editable manual tab.
+    try{if(typeof window.v92ReconcileAll==='function')window.v92ReconcileAll({persist:false,cleanup:true})}catch(e){console.warn('[v95 source populate]',e)}
+    try{autoCenterRows95(ws)}catch(_){ }
+    refreshDashboard95('created-sheet',ws.name);
+    try{schedulePersistentState(30);scheduleWorkbookSnapshot(500)}catch(_){ }
+    setStatus(`✓ ${ws.name} ${isPallet?'팔레트':'택배'} 작업 시트를 추가했습니다. · 발주서 현황에도 자동 등록되었습니다.`,'ok');
+    return ws;
+  };
+
+  // When rows are pasted/typed into a user-added tab, automatically fill D(center) from the tab
+  // name before rebuilding its work state. This keeps company+center identity stable.
+  try{
+    const basePost95=v28PostCellMutation;
+    window.v28PostCellMutation=v28PostCellMutation=function(ws,message=''){
+      try{autoCenterRows95(ws)}catch(e){console.warn('[v95 auto center]',e)}
+      const ret=basePost95.apply(this,arguments);
+      try{if(userAdded95(ws))setTimeout(()=>refreshDashboard95('manual-edit',ws.name),0)}catch(_){ }
+      return ret;
+    };
+  }catch(e){console.warn('[v95 post mutation hook]',e)}
+
+  // Persist explicit company/center metadata for manually-created tabs.
+  try{
+    const basePayload95=persistentStatePayload;
+    window.persistentStatePayload=persistentStatePayload=function(){
+      const p=basePayload95.apply(this,arguments)||{};const meta={};
+      try{for(const ws of (workbook?.worksheets||[]))if(userAdded95(ws)){const sp=sheetSpecFromName95(ws);meta[ws.name]={company:sp.company,center:sp.center,kind:ws._webKind||sheetKind(ws)}}}catch(_){ }
+      p[V95_META_KEY]=meta;return p;
+    };
+  }catch(e){console.warn('[v95 payload hook]',e)}
+
+  try{
+    const baseApply95=applyRecoveredState;
+    window.applyRecoveredState=applyRecoveredState=function(saved){
+      const ret=baseApply95.apply(this,arguments);
+      try{
+        const meta=saved?.[V95_META_KEY]||{};
+        for(const ws of (workbook?.worksheets||[])){
+          if(!userAdded95(ws))continue;
+          const m=meta[ws.name]||{},sp=spec95(m.company||company95(ws.name)||'코리아원',m.center||ws.name,m.kind||ws._webKind||sheetKind(ws));
+          markUserSheet95(ws,sp);autoCenterRows95(ws);
+        }
+        setTimeout(()=>refreshDashboard95('recovered-user-tabs',activeSheet),80);
+      }catch(e){console.warn('[v95 recovered user tabs]',e)}
+      return ret;
+    };
+  }catch(e){console.warn('[v95 recovery hook]',e)}
+})();
+</script>
+<!-- ===== /v95 ===== -->
