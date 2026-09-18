@@ -6138,10 +6138,10 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 <!-- ===== /v91 ===== -->
 
-<!-- ===== v92: strict company+center isolation / repair ===== -->
-<script id="v92-strict-company-center-isolation">
+<!-- ===== v93: strict company+center isolation / repair (header + existing-tab evidence) ===== -->
+<script id="v93-strict-company-center-isolation">
 (function(){
-  const V92_VERSION=92;
+  const V92_VERSION=93;
   const KNOWN_COMPANIES=['코리아원','봄날애','차통익스프레스'];
 
   function txt(cell){
@@ -6195,35 +6195,100 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
     return `${comp}|${ck}`;
   }
 
+  // v93: build evidence from existing company-prefixed work tabs before repairing source rows.
+  // This is needed because historical versions sometimes lost the company section header while
+  // the work tabs still retained the original center fill / product membership.
+  function fillSignature92(fill){
+    try{
+      if(!fill)return '';
+      const c=x=>x?`${x.argb||''}/${x.indexed??''}/${x.theme??''}/${x.tint??''}`:'';
+      return [fill.type||'',fill.pattern||'',c(fill.fgColor),c(fill.bgColor)].join('|');
+    }catch(_){return ''}
+  }
+  function evidenceProductKeys92(it){
+    const out=[];const p=norm92(it?.productNumber),b=norm92(it?.barcode),n=norm92(it?.productName);
+    if(p)out.push('p:'+p);if(b)out.push('b:'+b);if(!p&&!b&&n)out.push('n:'+n);return out;
+  }
+  function centerEvidenceKey92(center){
+    const raw=stripCompanyFromCenter92(center);
+    try{return typeof v24CenterKey==='function'?v24CenterKey(raw):raw.replace(/\s+/g,'').toLowerCase()}catch(_){return raw.replace(/\s+/g,'').toLowerCase()}
+  }
+  function buildExistingCompanyEvidence92(wb){
+    const productMap=new Map(),fillMap=new Map();
+    const add=(company,center,it,fill)=>{
+      const comp=companyKey92(company);if(!comp||comp==='코리아원')return;
+      const ck=centerEvidenceKey92(center);if(!ck)return;
+      for(const pk of evidenceProductKeys92(it)){
+        const k=`${ck}|${pk}`;if(!productMap.has(k))productMap.set(k,new Set());productMap.get(k).add(comp);
+      }
+      const fs=fillSignature92(fill);if(fs){const k=`${ck}|${fs}`;if(!fillMap.has(k))fillMap.set(k,new Set());fillMap.get(k).add(comp)}
+    };
+    for(const ws of (wb?.worksheets||[])){
+      if(!ws||ws.name==='발주서'||/^__WEBTPL_/.test(ws.name))continue;
+      const comp=companyKey92(ws.name)||companyKey92(ws._webCompany);if(!comp||comp==='코리아원')continue;
+      const center=stripCompanyFromCenter92(ws.name);
+      try{
+        const st=typeof ensurePalletState==='function'?ensurePalletState(ws):null;
+        if(st){
+          for(const g of (st.completed||[]))for(const it of (g.items||[]))add(comp,center,it,it?.centerFill);
+          for(const it of (st.incomplete||[]))add(comp,center,it,it?.centerFill);
+        }
+      }catch(_){ }
+      try{
+        const start=typeof generationStartRow==='function'?generationStartRow(ws):4,end=Math.max(start,Number(ws.rowCount)||0);
+        for(let r=start;r<=end;r++){
+          const row=ws.getRow(r),a=txt(row.getCell(1)),b=txt(row.getCell(2)),c=txt(row.getCell(3)),q=qty92(row.getCell(5));
+          if(!(a||b||c)||!(q>0))continue;
+          add(comp,center,{productNumber:a,productName:b,barcode:c},row.getCell(4).fill);
+        }
+      }catch(_){ }
+    }
+    return {productMap,fillMap};
+  }
+  function companyFromEvidence92(evidence,center,item,fill){
+    const ck=centerEvidenceKey92(center),sets=[];
+    for(const pk of evidenceProductKeys92(item)){const s=evidence?.productMap?.get(`${ck}|${pk}`);if(s)sets.push(s)}
+    const fs=fillSignature92(fill);if(fs){const s=evidence?.fillMap?.get(`${ck}|${fs}`);if(s)sets.push(s)}
+    const companies=new Set();for(const s of sets)for(const c of s)companies.add(c);
+    return companies.size===1?[...companies][0]:'';
+  }
+  function rowHeaderCompany92(row,current){
+    const cells=[1,2,3,4,5,6].map(cc=>row.getCell(cc));
+    // Only inspect non-product/header rows for company words. Product names can legitimately contain
+    // the brand word "봄날애", so scanning product rows would create false company switches.
+    for(const cell of cells){
+      const t=txt(cell);if(!t)continue;
+      const c=companyKey92(t);if(c)return c;
+      if(/선적|입고/.test(t)){
+        const d=strictCompanyFromHeader92(t,current);if(d)return d;
+      }
+    }
+    return current;
+  }
   function parseOrderSource92(wb=workbook){
     const order=wb?.getWorksheet?.('발주서'),groups=[],byKey=new Map(),rows=[];
     if(!order)return {order:null,groups,grand:0,rows};
+    const evidence=buildExistingCompanyEvidence92(wb);
     let company='코리아원',grand=0;
     const end=Math.max(8,Number(order.rowCount)||0);
     for(let r=8;r<=end;r++){
       const row=order.getRow(r),a=txt(row.getCell(1)),b=txt(row.getCell(2)),c=txt(row.getCell(3)),d0=txt(row.getCell(4)),q=qty92(row.getCell(5));
-      const cells=[1,2,3,4,5,6].map(cc=>row.getCell(cc));
-      const masterAddr=(()=>{try{return cells[0]?.master?.address||cells[0]?.address||''}catch(_){return ''}})();
-      const mergedWithA=cx=>{try{return !!cx?.isMerged&&!!masterAddr&&cx?.master?.address===masterAddr}catch(_){return false}};
-      const repeatedMergedText=!!a&&([b,c,d0].filter(x=>x===a).length>=2);
-      const headerish=!!a&&(companyKey92(a)||/선적|입고/.test(a))&&(repeatedMergedText||cells.slice(1,6).some(mergedWithA)||(!d0&&!(q>0)));
-      if(headerish){
-        company=strictCompanyFromHeader92(a,company);
-        continue;
-      }
       const productish=!!(a||b||c)&&!!d0&&(q>0);
       if(!productish){
-        // Section headers may be "봄날애", "봄날애 9-23입고", or a conventional shipment title.
-        // Do not require a particular date/title format.
-        if(a&&(companyKey92(a)||/선적|입고/.test(a)))company=strictCompanyFromHeader92(a,company);
+        company=rowHeaderCompany92(row,company);
         continue;
       }
       let rowCompany=company;
       const centerCompany=companyKey92(d0);if(centerCompany)rowCompany=centerCompany;
       const d=stripCompanyFromCenter92(d0);if(!d)continue;
+      // Strong repair evidence from already existing prefixed tabs wins when unique.
+      // This fixes cases such as KoreaOne 안성5 and Bomnalae 안성5 sharing the same visible center text.
+      const evidenceCompany=companyFromEvidence92(evidence,d,{productNumber:a,productName:b,barcode:c},row.getCell(4).fill);
+      if(evidenceCompany)rowCompany=evidenceCompany;
+      rowCompany=companyKey92(rowCompany)||'코리아원';
       const sp=spec92(rowCompany,d),key=sourceKey92(rowCompany,d);
       let g=byKey.get(key);
-      if(!g){g={key,company:companyKey92(rowCompany)||'코리아원',center:d,name:sp.name,kind:sp.kind,sourceOrder:groups.length,total:0,items:[]};byKey.set(key,g);groups.push(g)}
+      if(!g){g={key,company:rowCompany,center:d,name:sp.name,kind:sp.kind,sourceOrder:groups.length,total:0,items:[]};byKey.set(key,g);groups.push(g)}
       const item={
         sourceRow:r,productNumber:row.getCell(1).value,productName:b,barcode:c,center:d,qty:q,
         centerFill:typeof cloneObj==='function'?cloneObj(row.getCell(4).fill):row.getCell(4).fill,
@@ -6467,4 +6532,4 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
   setTimeout(()=>repairAndRender92('initial-2700'),2700);
 })();
 </script>
-<!-- ===== /v92 ===== -->
+<!-- ===== /v93 ===== -->
