@@ -9465,102 +9465,164 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 <!-- ===== /v113 ===== -->
 
 
-<!-- ===== v115: freeze A:C only on center/work sheets; no workbook/data logic changes ===== -->
-<style id="v115-freeze-abc-style">
-#sheetHost.v115-freeze-abc td.v115-freeze-cell,
-#sheetHost.v115-freeze-abc th.v115-freeze-head{
+<!-- ===== v116: restore reported box 374 + freeze spreadsheet rows 1:3 only ===== -->
+<style id="v116-freeze-top3-style">
+/* Vertical freeze only. No columns are frozen. */
+#sheetHost.v116-freeze-top3 tbody tr.v116-freeze-row > th,
+#sheetHost.v116-freeze-top3 tbody tr.v116-freeze-row > td{
   position:sticky!important;
   background-clip:padding-box!important;
 }
-#sheetHost.v115-freeze-abc td.v115-freeze-cell{z-index:6!important}
-#sheetHost.v115-freeze-abc th.v115-freeze-head{z-index:12!important;top:0!important}
-#sheetHost.v115-freeze-abc .v115-freeze-edge{box-shadow:2px 0 0 #217346!important}
+#sheetHost.v116-freeze-top3 tbody tr.v116-freeze-row-1 > th,
+#sheetHost.v116-freeze-top3 tbody tr.v116-freeze-row-1 > td{z-index:11!important}
+#sheetHost.v116-freeze-top3 tbody tr.v116-freeze-row-2 > th,
+#sheetHost.v116-freeze-top3 tbody tr.v116-freeze-row-2 > td{z-index:10!important}
+#sheetHost.v116-freeze-top3 tbody tr.v116-freeze-row-3 > th,
+#sheetHost.v116-freeze-top3 tbody tr.v116-freeze-row-3 > td{z-index:9!important;box-shadow:0 2px 0 #217346}
 </style>
-<script id="v115-freeze-abc">
+<script id="v116-repair374-freeze-top3">
 (function(){
-  function isCenterSheet115(){
-    const ws=workbook?.getWorksheet?.(activeSheet);
-    return !!ws && ws.name!=='발주서';
-  }
-
-  // Widths come from the exact pixel widths already assigned to <col> by the existing renderer.
-  // v114 used getBoundingClientRect() on <col>, which can be 0 in Chromium and caused overlap.
-  function colPx115(table,colNo){
-    const cols=table?.querySelectorAll?.('colgroup col');
-    const col=cols?.[colNo]; // 0=row-number col, 1=A, 2=B, 3=C
-    const n=parseFloat(col?.style?.width||'');
-    if(Number.isFinite(n)&&n>0)return n;
-    const heads=table?.querySelectorAll?.('thead th.col-letter');
-    const w=heads?.[colNo-1]?.offsetWidth||0;
-    return w>0?w:0;
-  }
-
-  function clear115(host){
-    host?.classList?.remove('v115-freeze-abc');
-    host?.querySelectorAll?.('.v115-freeze-cell,.v115-freeze-head,.v115-freeze-edge').forEach(el=>{
-      el.classList.remove('v115-freeze-cell','v115-freeze-head','v115-freeze-edge');
-      el.style.removeProperty('left');
-    });
-  }
-
-  function excelColNo115(addr){
-    const m=String(addr||'').match(/^([A-Z]+)/i);if(!m)return 0;
-    let n=0;for(const ch of m[1].toUpperCase())n=n*26+(ch.charCodeAt(0)-64);return n;
-  }
-
-  function apply115(){
-    const host=document.getElementById('sheetHost');
-    if(!host)return;
-    clear115(host);
-    if(!isCenterSheet115())return;
-    const table=host.querySelector('table.sheet-table');
-    if(!table)return;
-
-    const rowHead=42; // existing .row-head/.row-number width
-    const wA=colPx115(table,1), wB=colPx115(table,2);
-    if(!(wA>0&&wB>0))return; // fail closed: no layout change if widths cannot be read
-    const left={1:rowHead,2:rowHead+wA,3:rowHead+wA+wB};
-
-    const heads=Array.from(table.querySelectorAll('thead th.col-letter'));
-    for(let c=1;c<=3;c++){
-      const th=heads[c-1];if(!th)continue;
-      th.classList.add('v115-freeze-head');
-      if(c===3)th.classList.add('v115-freeze-edge');
-      th.style.left=left[c]+'px';
-    }
-
-    table.querySelectorAll('tbody td.cell').forEach(td=>{
-      const c=Number(td.dataset.c||0)||excelColNo115(td.dataset.addr);
-      if(c<1||c>3)return;
-      const span=Math.max(1,Number(td.colSpan||1));
-      // Do not pin merged title cells crossing the A:C boundary.
-      if(c+span-1>3)return;
-      td.classList.add('v115-freeze-cell');
-      if(c+span-1===3)td.classList.add('v115-freeze-edge');
-      td.style.left=left[c]+'px';
-    });
-    host.classList.add('v115-freeze-abc');
-  }
-
-  // Final additive wrapper only. No cell values, pallet state, save/sync or edit logic changes.
-  const baseRender115=renderSheet;
-  renderSheet=function(){
-    const ret=baseRender115.apply(this,arguments);
-    requestAnimationFrame(apply115);
-    return ret;
+  // -------------------------------------------------------------------------
+  // A) Restore the exact box 374 that disappeared in the reported
+  //    경기광주5 밀크런 incident. This supersedes the old one-time marker:
+  //    if the marker says "done" but the group is actually missing, restore it.
+  // -------------------------------------------------------------------------
+  const REC116={
+    sheet:'경기광주5 밀크런',root:'box-1789795559024-h5wcc',boxNo:'374',boxCount:1,size:'60*50*45',weight:21.4,
+    items:[
+      {productNumber:67979662,productName:'모던화이트 호텔감성 바스타월 100g 화이트 2개',barcode:'R245545710001',qty:14},
+      {productNumber:55334113,productName:'원이네 대형 샤워타월 극세사 핑크 1개',barcode:'R223850540001',qty:2},
+      {productNumber:49793230,productName:'원이네 접이식 욕실용 의자 네이비(대) 34.7*29.5*3 cm',barcode:'R216735080005',qty:24},
+      {productNumber:62564279,productName:'호텔수건 부드럽고 도톰한 32수 면 타월 그레이140g 10장',barcode:'R236115740008',qty:1}
+    ]
   };
-
-  const host=document.getElementById('sheetHost');
-  if(host){
-    let queued=false;
-    new MutationObserver(()=>{
-      if(queued)return;queued=true;
-      requestAnimationFrame(()=>{queued=false;apply115();});
-    }).observe(host,{childList:true});
+  const n116=v=>Number(v)||0;
+  const clone116=v=>{try{return structuredClone(v)}catch(_){try{return JSON.parse(JSON.stringify(v))}catch(__){return v}}};
+  function root116(id){return String(id||'').split('::')[0]}
+  function expand116(no,count){
+    const s=String(no??'').trim().replace(/[～〜–—]/g,'~');
+    const m=s.match(/^(\d+)\s*~\s*(\d+)$/);if(m){let a=+m[1],b=+m[2];if(a>b)[a,b]=[b,a];return Array.from({length:b-a+1},(_,i)=>a+i)}
+    if(/^\d+$/.test(s)){const a=+s,c=Math.max(1,Math.trunc(n116(count)||1));return Array.from({length:c},(_,i)=>a+i)}
+    return [];
   }
-  window.addEventListener('resize',()=>requestAnimationFrame(apply115));
-  window.v115ApplyFreezeABC=apply115;
-  setTimeout(apply115,0);
+  function hasBox374_116(g){return expand116(g?.boxNo,g?.boxCount).includes(374)}
+  function sourceItem116(st,d,idx){
+    let x=(st.incomplete||[]).find(i=>String(i?.barcode||'').trim()===d.barcode)||null;
+    if(!x){for(const g of st.completed||[]){x=(g.items||[]).find(i=>String(i?.barcode||'').trim()===d.barcode);if(x)break}}
+    const base=x?clone116(x):{productNumber:d.productNumber,productName:d.productName,barcode:d.barcode,center:REC116.sheet,order:900000+idx};
+    base.productNumber=base.productNumber??d.productNumber;base.productName=base.productName||d.productName;base.barcode=d.barcode;base.center=base.center||REC116.sheet;
+    base.totalQty=d.qty;base.perBoxQty=d.qty;delete base.remainingQty;delete base._visualRow;return base;
+  }
+  function incidentEvidence116(ws,st){
+    if(!ws||String(ws.name)!==REC116.sheet||!st)return false;
+    // Match the exact reported shipment pattern: the bathtub barcode exists in boxes 349~368.
+    let bathtub=false;
+    for(const g of st.completed||[]){
+      if((g.items||[]).some(i=>String(i?.barcode||'').trim()==='R225293230001')){
+        if(expand116(g?.boxNo,g?.boxCount).some(x=>x>=349&&x<=368)){bathtub=true;break}
+      }
+    }
+    if(!bathtub)return false;
+    const all=[];
+    for(const i of st.incomplete||[])all.push(i);
+    for(const g of st.completed||[])for(const i of g.items||[])all.push(i);
+    try{
+      const f=window.v92ParseOrderSource||window.v90ParseOrderSource,src=typeof f==='function'?f(workbook):null;
+      const sg=src?.groups?.find(x=>String(x?.name||'')===REC116.sheet);
+      for(const i of sg?.items||[])all.push(i);
+    }catch(_){ }
+    return REC116.items.every(d=>all.some(i=>String(i?.barcode||'').trim()===d.barcode));
+  }
+  function forcePallet1_116(st,group){
+    if(!st||!group)return;
+    const key=`${root116(group.id)}@0`;
+    if(!st.manualPalletMovesV110||typeof st.manualPalletMovesV110!=='object')st.manualPalletMovesV110={};
+    const old=st.manualPalletMovesV110[key]||{};
+    st.manualPalletMovesV110[key]={...old,targetNo:1,movedAt:n116(old.movedAt)||Date.now(),boxNo:REC116.boxNo,boxCount:1,targetBoundaryId:old.targetBoundaryId||'',targetAnchorSegKey:old.targetAnchorSegKey||''};
+    st.manualPalletMovesRevV110=Math.max(Date.now(),n116(st.manualPalletMovesRevV110)+1);
+  }
+  function repair374_116(){
+    try{
+      if(!workbook)return false;
+      const ws=workbook.getWorksheet?.(REC116.sheet);if(!ws)return false;
+      const st=ensurePalletState(ws);if(!st)return false;
+      let group=(st.completed||[]).find(g=>root116(g?.id)===REC116.root)||null;
+      if(!group)group=(st.completed||[]).find(g=>hasBox374_116(g))||null;
+      const incident=incidentEvidence116(ws,st);
+      if(!group&&!incident)return false;
+      let restored=false;
+      if(!group){
+        const seq=Math.max(0,...(st.completed||[]).map(g=>n116(g?.seq)))+1;
+        group={id:REC116.root,seq,boxCount:1,size:REC116.size,weight:REC116.weight,boxNo:REC116.boxNo,items:REC116.items.map((d,i)=>sourceItem116(st,d,i)),boxCompletedAtV82:Date.now(),boxUpdatedAtV82:Date.now(),boxRevisionV82:Date.now(),recoveredV116:true};
+        st.completed=Array.isArray(st.completed)?st.completed:[];
+        st.completed.push(group);st.completed.sort((a,b)=>n116(a?.seq)-n116(b?.seq));st.nextSeq=Math.max(n116(st.nextSeq)||1,seq+1);restored=true;
+      }
+      forcePallet1_116(st,group);
+      st.recovery374V112Done=true;
+      delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;
+      try{const api=window.__TC_V108_API__;if(typeof api?.reconcileSheet108==='function')api.reconcileSheet108(ws)}catch(_){ }
+      try{assignVisualRows(ws,st)}catch(_){ }
+      try{syncPalletState(ws,st)}catch(_){ }
+      try{recalcWorkSheet(ws);recalcDashboard(workbook)}catch(_){ }
+      if(activeSheet===ws.name)try{renderSheet(true)}catch(_){ }
+      if(restored){
+        try{schedulePersistentState(0);scheduleWorkbookSnapshot(500)}catch(_){ }
+        try{setStatus('✓ 누락된 374번 박스 4품목(41개)을 복구하고 1번 팔레트에 다시 표시했습니다.','ok')}catch(_){ }
+      }
+      return restored;
+    }catch(e){console.warn('[v116 repair 374]',e);return false}
+  }
+
+  // Re-check after every recovered state, including a newer state arriving from another PC.
+  try{
+    const applyBase116=applyRecoveredState;
+    applyRecoveredState=function(){
+      const r=applyBase116.apply(this,arguments);
+      [20,250,900].forEach(ms=>setTimeout(repair374_116,ms));
+      return r;
+    };
+    window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v116 apply repair hook]',e)}
+  [50,400,1500,4000].forEach(ms=>setTimeout(repair374_116,ms));
+
+  // -------------------------------------------------------------------------
+  // B) Freeze ROWS 1, 2 and 3 vertically on every center/work sheet.
+  //    No columns are frozen and no workbook/cell values are changed.
+  // -------------------------------------------------------------------------
+  function clearFreeze116(host){
+    if(!host)return;
+    host.classList.remove('v116-freeze-top3');
+    host.querySelectorAll('tbody tr.v116-freeze-row').forEach(tr=>{
+      tr.classList.remove('v116-freeze-row','v116-freeze-row-1','v116-freeze-row-2','v116-freeze-row-3');
+      tr.querySelectorAll(':scope > th,:scope > td').forEach(el=>el.style.removeProperty('top'));
+    });
+  }
+  function isCenter116(){const ws=workbook?.getWorksheet?.(activeSheet);return !!ws&&ws.name!=='발주서'}
+  function applyFreeze116(){
+    const host=document.getElementById('sheetHost');if(!host)return;
+    clearFreeze116(host);if(!isCenter116())return;
+    const table=host.querySelector('table.sheet-table'),body=table?.tBodies?.[0];if(!table||!body)return;
+    const rows=Array.from(body.rows).filter(tr=>/^\d+$/.test(String(tr.querySelector('th.row-number')?.textContent||'').trim()));
+    const top3=[1,2,3].map(n=>rows.find(tr=>Number(tr.querySelector('th.row-number')?.textContent||0)===n)).filter(Boolean);
+    if(top3.length!==3)return;
+    const headH=Math.max(0,Math.round(table.tHead?.getBoundingClientRect?.().height||22));
+    let top=headH;
+    for(let i=0;i<3;i++){
+      const tr=top3[i];tr.classList.add('v116-freeze-row',`v116-freeze-row-${i+1}`);
+      tr.querySelectorAll(':scope > th,:scope > td').forEach(el=>el.style.setProperty('top',top+'px','important'));
+      top+=Math.max(1,Math.round(tr.getBoundingClientRect().height||tr.offsetHeight||22));
+    }
+    host.classList.add('v116-freeze-top3');
+  }
+  const renderBase116=renderSheet;
+  renderSheet=function(){const r=renderBase116.apply(this,arguments);requestAnimationFrame(()=>requestAnimationFrame(applyFreeze116));return r};
+  window.renderSheet=renderSheet;
+  const host116=document.getElementById('sheetHost');
+  if(host116){let q=false;new MutationObserver(()=>{if(q)return;q=true;requestAnimationFrame(()=>{q=false;applyFreeze116()})}).observe(host116,{childList:true})}
+  window.addEventListener('resize',()=>requestAnimationFrame(applyFreeze116));
+  setTimeout(applyFreeze116,0);
+
+  window.__TC_V116_API__={repair374_116,applyFreeze116};
 })();
 </script>
-<!-- ===== /v115 ===== -->
+<!-- ===== /v116 ===== -->
