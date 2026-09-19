@@ -9150,3 +9150,237 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v111 ===== -->
+<!-- ===== v112: completed-row safety + one-time box 374 recovery + faster multi-PC sync ===== -->
+<script id="v112-safety-recovery-fast-sync">
+(function(){
+  if(window.__TC_V112__)return;window.__TC_V112__=true;
+
+  const api108=window.__TC_V108_API__||{};
+  const api109=window.__TC_V109_API__||{};
+  const n112=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const clone112=v=>{try{return JSON.parse(JSON.stringify(v))}catch(_){return v}};
+  const root112=id=>{try{return typeof api109.rootId109==='function'?api109.rootId109(id):String(id??'').split('::')[0]}catch(_){return String(id??'').split('::')[0]}};
+  const expand112=(label,count)=>{try{return typeof api109.expandBoxNos109==='function'?api109.expandBoxNos109(label,count):[]}catch(_){return []}};
+
+  // ---------------------------------------------------------------------------
+  // 1) Completed rows are never spreadsheet-split/deleted.
+  //    The previous failure happened when a manually moved completed row was
+  //    misclassified as an unfinished row. "선택 상품 행 복제(분할)" then deleted
+  //    the pallet state and rebuilt it from a row insertion through merged cells.
+  // ---------------------------------------------------------------------------
+  function completedSegment112(ws,rowNo){
+    try{
+      if(!ws||sheetKind(ws)!=='pallet')return null;
+      const st=assignVisualRows(ws,ensurePalletState(ws));
+      return (st?._visualSegments||[]).find(s=>rowNo>=n112(s?.rows?.start)&&rowNo<=n112(s?.rows?.end))||null;
+    }catch(_){return null}
+  }
+  function completedGroup112(ws,rowNo){
+    const seg=completedSegment112(ws,rowNo);if(seg?.group)return seg.group;
+    try{return typeof findCompletedGroupByRow==='function'?findCompletedGroupByRow(ws,rowNo):null}catch(_){return null}
+  }
+
+  // Make completed-group lookup prefer the visual segment map, including manually moved boxes.
+  try{
+    const findBase112=findCompletedGroupByRow;
+    findCompletedGroupByRow=function(ws,rowNo){
+      const seg=completedSegment112(ws,rowNo);if(seg?.group)return seg.group;
+      return findBase112.apply(this,arguments);
+    };
+    window.findCompletedGroupByRow=findCompletedGroupByRow;
+  }catch(e){console.warn('[v112 completed lookup]',e)}
+
+  // Force the right-click menu to show only completed-box actions on completed rows.
+  try{
+    const showBase112=showRowMenu;
+    showRowMenu=function(e,rowNo){
+      const ret=showBase112.apply(this,arguments),ws=currentWorkSheet(),seg=completedSegment112(ws,rowNo),group=seg?.group||null;
+      if(group){
+        ['rowEditBox','rowCancelBox','rowBoxHr'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='block'});
+        ['rowDup','rowBlank','rowDelete'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none'});
+        const mv=document.getElementById('rowMovePalletV110');if(mv)mv.style.display='block';
+        const m=document.getElementById('rowMenu');if(m)m.style.top=Math.min(e.clientY,window.innerHeight-180)+'px';
+      }else{
+        const dup=document.getElementById('rowDup');if(dup)dup.textContent='미작업 상품 행 분할';
+      }
+      return ret;
+    };
+    window.showRowMenu=showRowMenu;
+  }catch(e){console.warn('[v112 row menu]',e)}
+
+  function backupCompleted112(ws){
+    try{
+      const st=ensurePalletState(ws);if(!st)return null;
+      return {
+        completed:clone112(st.completed||[]),
+        nextSeq:n112(st.nextSeq)||1,
+        manualPalletBreaks:clone112(st.manualPalletBreaks||[]),
+        manualPalletMovesV110:clone112(st.manualPalletMovesV110||{}),manualPalletMovesRevV110:n112(st.manualPalletMovesRevV110),
+        manualPalletBoxMovesV111:clone112(st.manualPalletBoxMovesV111||{}),manualPalletBoxMovesRevV111:n112(st.manualPalletBoxMovesRevV111),
+        recovery374V112Done:!!st.recovery374V112Done
+      };
+    }catch(_){return null}
+  }
+  function restoreCompletedAfterStructureEdit112(ws,bak){
+    if(!ws||!bak)return;
+    try{
+      const st=ensurePalletState(ws);if(!st)return;
+      // Row split/insert/delete below the divider is allowed to change ONLY unfinished rows.
+      // Completed boxes and all pallet-move metadata are restored byte-for-byte.
+      st.completed=clone112(bak.completed||[]);st.nextSeq=Math.max(n112(st.nextSeq),n112(bak.nextSeq)||1);
+      st.manualPalletBreaks=clone112(bak.manualPalletBreaks||[]);
+      st.manualPalletMovesV110=clone112(bak.manualPalletMovesV110||{});st.manualPalletMovesRevV110=n112(bak.manualPalletMovesRevV110);
+      st.manualPalletBoxMovesV111=clone112(bak.manualPalletBoxMovesV111||{});st.manualPalletBoxMovesRevV111=n112(bak.manualPalletBoxMovesRevV111);
+      st.recovery374V112Done=!!bak.recovery374V112Done;
+      delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;
+      try{if(typeof api108.reconcileSheet108==='function')api108.reconcileSheet108(ws)}catch(_){ }
+      try{assignVisualRows(ws,st);syncPalletState(ws,st);recalcWorkSheet(ws);if(activeSheet===ws.name)renderSheet(true)}catch(_){ }
+      try{schedulePersistentState(20);scheduleWorkbookSnapshot(700)}catch(_){ }
+    }catch(e){console.warn('[v112 structure safety restore]',e)}
+  }
+  function blockIfCompleted112(actionLabel){
+    const ws=currentWorkSheet();if(!ws||sheetKind(ws)!=='pallet')return false;
+    if(!completedSegment112(ws,selectedRow))return false;
+    hideRowMenu();alert(`완료된 박스 행에서는 “${actionLabel}”을 사용할 수 없습니다.\n\n완료 박스는 우클릭 메뉴의 “완료 박스 수정 / 완료 취소 / 팔레트 이동”을 사용해 주세요.\n완료 작업 데이터가 손상되지 않도록 보호했습니다.`);return true;
+  }
+
+  // Keep the old unfinished-row functions, but checkpoint completed work before they rebuild the sheet.
+  try{
+    const dupBase112=duplicateSelectedRow;
+    duplicateSelectedRow=function(){
+      if(blockIfCompleted112('분할'))return;
+      const ws=currentWorkSheet(),bak=ws&&sheetKind(ws)==='pallet'?backupCompleted112(ws):null;
+      if(ws&&bak)try{syncPalletState(ws,ensurePalletState(ws))}catch(_){ }
+      const r=dupBase112.apply(this,arguments);if(ws&&bak)restoreCompletedAfterStructureEdit112(ws,bak);return r;
+    };window.duplicateSelectedRow=duplicateSelectedRow;
+  }catch(e){console.warn('[v112 split guard]',e)}
+  try{
+    const blankBase112=insertBlankRow;
+    insertBlankRow=function(){
+      if(blockIfCompleted112('빈 행 추가'))return;
+      const ws=currentWorkSheet(),bak=ws&&sheetKind(ws)==='pallet'?backupCompleted112(ws):null;
+      if(ws&&bak)try{syncPalletState(ws,ensurePalletState(ws))}catch(_){ }
+      const r=blankBase112.apply(this,arguments);if(ws&&bak)restoreCompletedAfterStructureEdit112(ws,bak);return r;
+    };window.insertBlankRow=insertBlankRow;
+  }catch(e){console.warn('[v112 blank-row guard]',e)}
+  try{
+    const delBase112=deleteSelectedRow;
+    deleteSelectedRow=function(){
+      if(blockIfCompleted112('행 삭제'))return;
+      const ws=currentWorkSheet(),bak=ws&&sheetKind(ws)==='pallet'?backupCompleted112(ws):null;
+      if(ws&&bak)try{syncPalletState(ws,ensurePalletState(ws))}catch(_){ }
+      const r=delBase112.apply(this,arguments);if(ws&&bak)restoreCompletedAfterStructureEdit112(ws,bak);return r;
+    };window.deleteSelectedRow=deleteSelectedRow;
+  }catch(e){console.warn('[v112 delete-row guard]',e)}
+
+  // ---------------------------------------------------------------------------
+  // 2) One-time repair for the box that disappeared in the reported incident.
+  //    Ground truth comes from the user's exported 경기광주5 밀크런 workbook:
+  //    box 374 = 4 SKUs, 41 pcs total, 1 box, 60*50*45, 21.4kg.
+  //    It had been manually moved to pallet 1.
+  // ---------------------------------------------------------------------------
+  const REC112={
+    sheet:'경기광주5 밀크런',root:'box-1789795559024-h5wcc',boxNo:'374',boxCount:1,size:'60*50*45',weight:21.4,
+    items:[
+      {productNumber:67979662,productName:'모던화이트 호텔감성 바스타월 100g 화이트 2개',barcode:'R245545710001',qty:14},
+      {productNumber:55334113,productName:'원이네 대형 샤워타월 극세사 핑크 1개',barcode:'R223850540001',qty:2},
+      {productNumber:49793230,productName:'원이네 접이식 욕실용 의자 네이비(대) 34.7*29.5*3 cm',barcode:'R216735080005',qty:24},
+      {productNumber:62564279,productName:'호텔수건 부드럽고 도톰한 32수 면 타월 그레이140g 10장',barcode:'R236115740008',qty:1}
+    ]
+  };
+  function groupHasBox112(g,no){
+    const nums=expand112(g?.boxNo,g?.boxCount);return nums.map(Number).includes(Number(no));
+  }
+  function affectedJob112(ws,st){
+    if(!ws||String(ws.name)!==REC112.sheet||!st||st.recovery374V112Done)return false;
+    // Do not run on a future unrelated 경기광주 job: this incident's 349~368 bathtub work
+    // and all four box-374 SKUs must be present in the current job.
+    let bathtub=false;for(const g of st.completed||[]){
+      if((g.items||[]).some(i=>String(i?.barcode||'').trim()==='R225293230001')){
+        const nums=expand112(g?.boxNo,g?.boxCount).map(Number);if(nums.some(x=>x>=349&&x<=368)){bathtub=true;break}
+      }
+    }
+    if(!bathtub)return false;
+    const all=[];for(const i of st.incomplete||[])all.push(i);for(const g of st.completed||[])for(const i of g.items||[])all.push(i);
+    try{const f=window.v92ParseOrderSource||window.v90ParseOrderSource,src=typeof f==='function'?f(workbook):null,sg=src?.groups?.find(x=>String(x?.name||'')===REC112.sheet);for(const i of sg?.items||[])all.push(i)}catch(_){ }
+    return REC112.items.every(d=>all.some(i=>String(i?.barcode||'').trim()===d.barcode));
+  }
+  function sourceItem112(st,d,idx){
+    let x=(st.incomplete||[]).find(i=>String(i?.barcode||'').trim()===d.barcode)||null;
+    if(!x){for(const g of st.completed||[]){x=(g.items||[]).find(i=>String(i?.barcode||'').trim()===d.barcode);if(x)break}}
+    const base=x?clone112(x):{productNumber:d.productNumber,productName:d.productName,barcode:d.barcode,center:REC112.sheet,order:900000+idx};
+    base.productNumber=base.productNumber??d.productNumber;base.productName=base.productName||d.productName;base.barcode=d.barcode;base.center=base.center||REC112.sheet;
+    base.totalQty=d.qty;base.perBoxQty=d.qty;delete base.remainingQty;delete base._visualRow;return base;
+  }
+  function ensureMove374ToPallet1_112(st,group){
+    if(!st||!group)return;
+    const key=`${root112(group.id)}@0`;if(!st.manualPalletMovesV110||typeof st.manualPalletMovesV110!=='object')st.manualPalletMovesV110={};
+    const old=st.manualPalletMovesV110[key]||{};
+    st.manualPalletMovesV110[key]={...old,targetNo:1,movedAt:n112(old.movedAt)||Date.now(),boxNo:REC112.boxNo,boxCount:1,targetBoundaryId:old.targetBoundaryId||'',targetAnchorSegKey:old.targetAnchorSegKey||''};
+    st.manualPalletMovesRevV110=Math.max(Date.now(),n112(st.manualPalletMovesRevV110)+1);
+  }
+  function repairMissing374_112(){
+    try{
+      if(!workbook)return false;const ws=workbook.getWorksheet?.(REC112.sheet);if(!ws)return false;const st=ensurePalletState(ws);if(!st)return false;
+      const exactRoot=(st.completed||[]).find(g=>root112(g?.id)===REC112.root)||null;
+      const incident=affectedJob112(ws,st);
+      let group=exactRoot||(incident?(st.completed||[]).find(g=>groupHasBox112(g,374))||null:null);
+      if(st.recovery374V112Done){
+        if(group){ensureMove374ToPallet1_112(st,group);delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;assignVisualRows(ws,st);recalcWorkSheet(ws);if(activeSheet===ws.name)renderSheet(true)}
+        return false;
+      }
+      if(!group&&!incident)return false;
+      let restored=false;
+      if(!group){
+        const seq=Math.max(0,...(st.completed||[]).map(g=>n112(g?.seq)))+1;
+        group={id:REC112.root,seq,boxCount:1,size:REC112.size,weight:REC112.weight,boxNo:REC112.boxNo,items:REC112.items.map((d,i)=>sourceItem112(st,d,i)),boxCompletedAtV82:Date.now(),boxUpdatedAtV82:Date.now(),boxRevisionV82:Date.now(),recoveredV112:true};
+        st.completed=Array.isArray(st.completed)?st.completed:[];st.completed.push(group);st.completed.sort((a,b)=>n112(a?.seq)-n112(b?.seq));st.nextSeq=Math.max(n112(st.nextSeq)||1,seq+1);restored=true;
+      }
+      ensureMove374ToPallet1_112(st,group);st.recovery374V112Done=true;
+      delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;
+      try{if(typeof api108.reconcileSheet108==='function')api108.reconcileSheet108(ws)}catch(_){ }
+      assignVisualRows(ws,st);syncPalletState(ws,st);recalcWorkSheet(ws);try{recalcDashboard(workbook)}catch(_){ }
+      if(activeSheet===ws.name)renderSheet(true);
+      try{schedulePersistentState(0);scheduleWorkbookSnapshot(650)}catch(_){ }
+      if(restored)setStatus('✓ 누락된 374번 박스 4품목(총 41개)을 복구하고 1번 팔레트 이동 상태를 되살렸습니다.','ok');
+      return restored;
+    }catch(e){console.warn('[v112 374 recovery]',e);return false}
+  }
+
+  // Preserve the one-time recovery marker in server/local state.
+  try{
+    const cleanBase112=cleanPalletStateForSave;
+    cleanPalletStateForSave=function(state){const out=cleanBase112.apply(this,arguments);if(out&&state)out.recovery374V112Done=!!state.recovery374V112Done;return out};
+    window.cleanPalletStateForSave=cleanPalletStateForSave;
+  }catch(e){console.warn('[v112 marker save]',e)}
+  try{
+    const applyBase112=applyRecoveredState;
+    applyRecoveredState=function(saved){
+      const marks=new Map();try{for(const p of saved?.palletStates||[])if(Array.isArray(p)&&p[0]&&p[1])marks.set(String(p[0]),!!p[1].recovery374V112Done)}catch(_){ }
+      const r=applyBase112.apply(this,arguments);
+      try{for(const [name,val] of marks){const st=palletStates?.get?.(name);if(st)st.recovery374V112Done=val}setTimeout(repairMissing374_112,20)}catch(_){ }
+      return r;
+    };window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v112 marker apply]',e)}
+
+  // Existing already-open page: repair after all older delayed hooks have settled.
+  [250,1200,3600].forEach(ms=>setTimeout(()=>{try{repairMissing374_112()}catch(_){ }},ms));
+
+  // ---------------------------------------------------------------------------
+  // 3) Faster multi-PC refresh. Existing poll is 4 seconds. Add a guarded 1.2s
+  //    status poll, plus immediate refresh when the tab gains focus.
+  // ---------------------------------------------------------------------------
+  let fastPollBusy112=false,lastFastPoll112=0;
+  async function fastPoll112(){
+    if(fastPollBusy112||document.hidden||!workbook)return;
+    const now=Date.now();if(now-lastFastPoll112<850)return;lastFastPoll112=now;fastPollBusy112=true;
+    try{if(typeof sharedPollUpdates==='function')await sharedPollUpdates()}catch(e){console.warn('[v112 fast shared poll]',e)}finally{fastPollBusy112=false}
+  }
+  setInterval(fastPoll112,1200);
+  window.addEventListener('focus',()=>setTimeout(fastPoll112,20));
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(fastPoll112,20)});
+
+  window.__TC_V112_API__={repairMissing374_112,completedSegment112,fastPoll112};
+})();
+</script>
+<!-- ===== /v112 ===== -->
