@@ -8520,3 +8520,279 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v108 ===== -->
+<!-- ===== v109: stable completed-group identity + recursive duplicate repair + clean pallet grouping ===== -->
+<script id="v109-stable-box-groups">
+(function(){
+  if(window.__TC_V109__)return;window.__TC_V109__=true;
+
+  const txt109=v=>String(v??'').trim();
+  const n109=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const clone109=v=>{try{return typeof cloneObj==='function'?cloneObj(v):JSON.parse(JSON.stringify(v))}catch(_){return v}};
+  const size109=v=>txt109(v).replace(/[×xX]/g,'*').replace(/\s+/g,'');
+
+  // v10~v108 wrote visual pallet segment information onto the completed-group id.
+  // Example: box-123-abc::2::0::1::0.  That suffix is NOT a real new completed box group.
+  // Always recover the original physical group id before saving/reloading.
+  function rootId109(id){
+    const s=txt109(id);if(!s)return '';
+    const m=s.match(/^(box-\d+-[A-Za-z0-9_-]+)(?:::|$)/);return m?m[1]:s;
+  }
+  function depth109(id){
+    const s=txt109(id),r=rootId109(s);if(!s||s===r)return 0;
+    const tail=s.slice(r.length);return Math.max(1,Math.floor((tail.match(/::/g)||[]).length/2));
+  }
+  function sku109(x){
+    const b=txt109(x?.barcode).toLowerCase();if(b)return 'b:'+b;
+    const p=txt109(x?.productNumber).toLowerCase();if(p)return 'p:'+p;
+    return 'n:'+txt109(x?.productName).toLowerCase();
+  }
+  function packingKey109(g){
+    const items=(g?.items||[]).map(i=>`${sku109(i)}:${n109(i?.perBoxQty)}`).sort().join(',');
+    return `${size109(g?.size)}|${txt109(g?.weight)}|${items}`;
+  }
+  function expandBoxNos109(label,count){
+    const s=txt109(label).replace(/[～〜–—−]/g,'~').replace(/\s+/g,'');
+    const m=s.match(/^(\d+)(?:[~\-](\d+))?$/);if(!m)return [];
+    let a=Number(m[1]),b=m[2]?Number(m[2]):(a+Math.max(1,Math.floor(n109(count)||1))-1);if(b<a)[a,b]=[b,a];
+    if(b-a>5000)return [];
+    const out=[];for(let x=a;x<=b;x++)out.push(x);return out;
+  }
+  function contiguous109(nums){
+    const a=[...new Set(nums.map(Number).filter(Number.isFinite))].sort((x,y)=>x-y);if(!a.length)return {ok:false,nums:[]};
+    for(let i=1;i<a.length;i++)if(a[i]!==a[i-1]+1)return {ok:false,nums:a};return {ok:true,nums:a};
+  }
+  function label109(nums){
+    const x=contiguous109(nums);if(!x.ok||!x.nums.length)return '';
+    const a=x.nums[0],b=x.nums[x.nums.length-1];return a===b?String(a):`${a}~${b}`;
+  }
+  function rowMeta109(ws,g){
+    try{
+      const r=Number(g?.rows?.start)||0;if(!ws||!r)return null;
+      const mark=txt109(ws.getRow(r).getCell(25).value||ws.getRow(r).getCell(25).text);
+      if(mark!=='WEBBOX109')return null;
+      const boxNo=txt109(ws.getRow(r).getCell(23).value||ws.getRow(r).getCell(23).text);
+      const boxCount=Math.max(1,Math.floor(n109(ws.getRow(r).getCell(24).value||ws.getRow(r).getCell(24).text)||1));
+      return {boxNo,boxCount};
+    }catch(_){return null}
+  }
+  function mergedGroup109(root,bucket,ws){
+    const all=bucket.slice().sort((a,b)=>(n109(a?.seq)-n109(b?.seq)));
+    const first=all[0];if(!first)return null;
+
+    // New v109 workbooks carry original group metadata in hidden W:X:Y.
+    let meta=null;for(const g of all){meta=rowMeta109(ws,g);if(meta)break}
+
+    // Old corrupted workbooks have recursive ::pallet::offset suffixes.
+    // Keep only the shallowest generation; deeper generations are the same physical boxes
+    // re-imported and split again, which is exactly what caused 349~368 to repeat 4~5 times.
+    let selected=all;
+    if(!meta){const min=Math.min(...all.map(g=>depth109(g?.id)));selected=all.filter(g=>depth109(g?.id)===min)}
+
+    const nums=[];for(const g of selected)nums.push(...expandBoxNos109(g?.boxNo,g?.boxCount));
+    const cn=contiguous109(nums);
+    let boxCount=meta?.boxCount||0,boxNo=meta?.boxNo||'';
+    if(!boxCount){
+      if(cn.ok&&cn.nums.length){boxCount=cn.nums.length;boxNo=label109(cn.nums)}
+      else boxCount=selected.reduce((a,g)=>a+Math.max(1,Math.floor(n109(g?.boxCount)||1)),0);
+    }
+    if(!boxNo)boxNo=txt109(selected[0]?.boxNo||first?.boxNo);
+
+    // A physical group has one fixed per-box item composition.  Visual pallet splits only
+    // change totalQty, never perBoxQty.  Rebuild totalQty from that fixed composition.
+    const itemBase=(selected.find(g=>(g?.items||[]).length)?.items||first.items||[]);
+    const items=itemBase.map(i=>({...clone109(i),totalQty:n109(i?.perBoxQty)*boxCount}));
+    const seqs=all.map(g=>n109(g?.seq)).filter(x=>x>0);
+    const out={...clone109(first),id:root,seq:seqs.length?Math.min(...seqs):1,boxCount,size:first.size,weight:first.weight,boxNo,items};
+    delete out.rows;delete out._visualRanges;delete out._outLabel;
+    const created=all.map(g=>n109(g?.boxCompletedAtV82)).filter(x=>x>0);if(created.length)out.boxCompletedAtV82=Math.min(...created);
+    const updated=all.map(g=>n109(g?.boxUpdatedAtV82)).filter(x=>x>0);if(updated.length)out.boxUpdatedAtV82=Math.max(...updated);
+    const revs=all.map(g=>n109(g?.boxRevisionV82));if(revs.length)out.boxRevisionV82=Math.max(...revs);
+    out.repairedRecursiveSplitV109=true;
+    return out;
+  }
+
+  function repairState109(ws,state){
+    if(!state||!Array.isArray(state.completed))return false;
+    const before=state.completed;
+    const buckets=new Map(),free=[];
+    for(const g of before){
+      const rid=rootId109(g?.id);
+      if(!rid||!/^box-\d+-/.test(rid)){free.push(g);continue}
+      const key=rid+'||'+packingKey109(g);if(!buckets.has(key))buckets.set(key,{root:rid,rows:[]});buckets.get(key).rows.push(g);
+    }
+    const rebuilt=[];let changed=false;
+    for(const {root,rows} of buckets.values()){
+      const dirty=rows.length>1||rows.some(g=>txt109(g?.id)!==root);
+      if(!dirty){rebuilt.push(rows[0]);continue}
+      const mg=mergedGroup109(root,rows,ws);if(mg)rebuilt.push(mg);changed=true;
+    }
+    rebuilt.push(...free);
+    rebuilt.sort((a,b)=>(n109(a?.seq)-n109(b?.seq)));
+    if(changed){
+      state.completed=rebuilt;state.nextSeq=Math.max(1,...rebuilt.map(g=>Math.floor(n109(g?.seq))+1));
+      if(Array.isArray(state.manualPalletBreaks))state.manualPalletBreaks=[...new Set(state.manualPalletBreaks.map(rootId109).filter(Boolean))];
+      delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets;
+      state.stateFormatV109=109;state.repairedRecursiveSplitAtV109=Date.now();
+    }
+    return changed;
+  }
+
+  function repairRaw109(raw){
+    if(!raw||typeof raw!=='object'||!Array.isArray(raw.completed))return {raw,changed:false};
+    const st=clone109(raw)||{};const changed=repairState109(null,st);if(changed)st.stateFormatV109=109;return {raw:st,changed};
+  }
+  function repairSaved109(saved){
+    if(!saved||typeof saved!=='object'||!Array.isArray(saved.palletStates))return {saved,changed:false};
+    const out=clone109(saved)||{},rows=[];let changed=false;
+    for(const pair of out.palletStates){
+      if(!Array.isArray(pair)||pair.length<2){rows.push(pair);continue}
+      const x=repairRaw109(pair[1]);rows.push([pair[0],x.raw]);changed=changed||x.changed;
+    }
+    out.palletStates=rows;if(changed){out.stateFormatV109=109;out.recursiveCompletedRepairV109={at:Date.now()}}return {saved:out,changed};
+  }
+
+  // ---------- clean automatic pallet mapping ----------
+  // Rule change: a completed work group is no longer chopped up merely to fill a small leftover
+  // space on the previous pallet.  If the WHOLE group fits in the remainder it can be mixed;
+  // otherwise a fresh pallet starts.  Thus 60 qty / 5 per box / 12 boxes stays 60 | 5 | 12.
+  const api108=window.__TC_V108_API__||{};
+  function spec109(size){return typeof api108.mappingSpec108==='function'?api108.mappingSpec108(size):null}
+  function newPal109(no,spec){
+    const p={no,mode:spec?.mode||'custom',key:spec?.key||('custom:'+size109(spec?.label)),segments:[],totalBoxes:0,totalQty:0,totalWeight:0,firstRow:0,lastRow:0};
+    if(p.mode==='standard'){p.mixUsed=0;p.mixCapacity=24}else{const prof=spec?.profile||{};p.profile=prof;p.stacks=Array(Math.max(1,Number(prof.slots)||1)).fill(0)}return p;
+  }
+  function compatible109(p,spec){return !!p&&!!spec&&p.mode===spec.mode&&(spec.mode==='standard'||p.key===spec.key)}
+  function place109(p,spec){
+    if(!compatible109(p,spec))return false;
+    if(spec.mode==='standard'){
+      const cost=n109(spec.cost)||1;if((n109(p.mixUsed)+cost)>24)return false;p.mixUsed=n109(p.mixUsed)+cost;return true;
+    }
+    const prof=spec.profile||{};let pick=-1,best=-1;
+    for(let i=0;i<(p.stacks||[]).length;i++){
+      const cur=n109(p.stacks[i]);if(cur+n109(prof.h)<=AUTO_PALLET_USABLE_HEIGHT_CM+.0001&&cur>best){best=cur;pick=i}
+    }
+    if(pick<0)return false;p.stacks[pick]+=n109(prof.h);return true;
+  }
+  function fit109(p,spec,limit=9999){
+    if(!compatible109(p,spec))return 0;
+    const q={...p,stacks:Array.isArray(p.stacks)?p.stacks.slice():p.stacks};let n=0;
+    while(n<limit&&place109(q,spec))n++;return n;
+  }
+  function sorted109(state){return (state?.completed||[]).slice().sort((a,b)=>n109(a?.seq)-n109(b?.seq))}
+  function breaks109(state){const valid=new Set(sorted109(state).map(g=>rootId109(g?.id)));return new Set((state?.manualPalletBreaks||[]).map(rootId109).filter(x=>valid.has(x)))}
+
+  buildAutoPalletPlan=function(ws,state){
+    const groups=sorted109(state);
+    if(sheetKind(ws)!=='pallet')return {sig:'parcel-v109',pallets:[],segments:groups.map(g=>({group:g,palletNo:null,boxCount:Math.max(1,Math.floor(n109(g.boxCount)||1)),boxOffset:0,size:g.size,boxNo:g.boxNo,items:(g.items||[]).map(i=>({...i,totalQty:n109(i.totalQty)})),totalPerBox:(g.items||[]).reduce((a,i)=>a+n109(i.perBoxQty),0)}))};
+    const baseSig=typeof palletPlanSignature==='function'?palletPlanSignature(state):JSON.stringify(groups.map(g=>[g.id,g.seq,g.boxCount,g.size,g.boxNo]));
+    const sig='v109|'+baseSig;if(state._autoPalletPlan?.sig===sig)return state._autoPalletPlan;
+    const pallets=[],segments=[],br=breaks109(state);let current=null;
+    for(const group of groups){
+      let spec=spec109(group.size);if(!spec){spec={mode:'custom',key:'custom:'+size109(group.size),label:size109(group.size),profile:{ok:true,h:AUTO_PALLET_USABLE_HEIGHT_CM,slots:1}}}
+      const totalBoxes=Math.max(1,Math.floor(n109(group.boxCount)||1)),perQty=(group.items||[]).reduce((a,i)=>a+n109(i.perBoxQty),0);let remain=totalBoxes,offset=0;
+      if(current&&compatible109(current,spec)&&current.totalBoxes>0){const can=fit109(current,spec,remain);if(can<remain)current=null}
+      while(remain>0){
+        if(!compatible109(current,spec)){current=newPal109(pallets.length+1,spec);pallets.push(current)}
+        let can=fit109(current,spec,remain);if(can<=0){current=newPal109(pallets.length+1,spec);pallets.push(current);can=fit109(current,spec,remain)}
+        const take=Math.max(1,Math.min(remain,can||1));for(let i=0;i<take;i++)place109(current,spec);
+        const segItems=(group.items||[]).map(i=>({...i,totalQty:n109(i.perBoxQty)*take}));
+        const seg={group,pallet:current,palletNo:current.no,boxCount:take,boxOffset:offset,size:group.size,boxNo:typeof splitMappedBoxNo==='function'?splitMappedBoxNo(group.boxNo,totalBoxes,offset,take):group.boxNo,items:segItems,totalPerBox:perQty};
+        segments.push(seg);current.segments.push(seg);current.totalBoxes+=take;current.totalQty+=perQty*take;const w=Number(group.weight);if(Number.isFinite(w))current.totalWeight+=w*take;
+        remain-=take;offset+=take;if(remain>0)current=null;
+      }
+      if(br.has(rootId109(group.id))&&current){current.manualClosed=true;current.manualClosedAfterGroupId=rootId109(group.id);current=null}
+    }
+    const plan={sig,pallets,segments};state._autoPalletPlan=plan;return plan;
+  };
+  window.buildAutoPalletPlan=buildAutoPalletPlan;
+
+  // ---------- future-proof workbook metadata ----------
+  // Keep the original completed-group identity in U/V and its original box range/count in W/X.
+  // The visual pallet segment is only a display decision and must never become a new work record.
+  try{
+    const inferBase109=inferPalletState;
+    inferPalletState=function(ws){const st=inferBase109.apply(this,arguments);try{repairState109(ws,st)}catch(e){console.warn('[v109 infer repair]',e)}return st};
+    window.inferPalletState=inferPalletState;
+  }catch(e){console.warn('[v109 infer hook]',e)}
+
+  try{
+    const syncBase109=syncPalletState;
+    syncPalletState=function(ws,state){
+      try{repairState109(ws,state)}catch(_){ }
+      const ret=syncBase109.apply(this,arguments);
+      try{
+        if(ws&&state&&sheetKind(ws)==='pallet'){
+          assignVisualRows(ws,state);
+          for(const seg of (state._visualSegments||[])){
+            const r=Number(seg?.rows?.start)||0,g=seg?.group;if(!r||!g)continue;
+            ws.getRow(r).getCell(20).value='WEBBOX';
+            ws.getRow(r).getCell(21).value=rootId109(g.id)||g.id;
+            ws.getRow(r).getCell(22).value=n109(g.seq)||1;
+            ws.getRow(r).getCell(23).value=txt109(g.boxNo);
+            ws.getRow(r).getCell(24).value=Math.max(1,Math.floor(n109(g.boxCount)||1));
+            ws.getRow(r).getCell(25).value='WEBBOX109';
+            ws.getRow(r).getCell(26).value=`${seg.palletNo||''}::${seg.boxOffset||0}`;
+          }
+          for(let c=20;c<=26;c++)ws.getColumn(c).hidden=true;
+        }
+      }catch(e){console.warn('[v109 sync metadata]',e)}
+      return ret;
+    };
+    window.syncPalletState=syncPalletState;
+  }catch(e){console.warn('[v109 sync hook]',e)}
+
+  function reconcile109(ws){
+    try{if(api108&&typeof api108.reconcileSheet108==='function')api108.reconcileSheet108(ws)}catch(e){console.warn('[v109 incomplete reconcile]',ws?.name,e)}
+  }
+  function repairAll109({write=false,persist=false}={}){
+    if(!workbook||typeof palletStates==='undefined')return 0;let changed=0;
+    for(const [name,st] of palletStates.entries()){
+      const ws=workbook.getWorksheet?.(name);if(!ws)continue;
+      const c=repairState109(ws,st);if(c)changed++;
+      reconcile109(ws);delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;
+      try{assignVisualRows(ws,st);recalcWorkSheet(ws);if(write&&c)syncPalletState(ws,st)}catch(e){console.warn('[v109 rebuild]',name,e)}
+    }
+    if(changed){
+      try{recalcDashboard(workbook)}catch(_){ }
+      if(activeSheet&&workbook.getWorksheet?.(activeSheet))try{renderSheet(true)}catch(_){ }
+      if(persist){try{schedulePersistentState?.(20);scheduleWorkbookSnapshot?.(800)}catch(_){ }}
+      console.warn(`[v109] 재분할되어 중복된 완료 작업 ${changed}개 센터를 복구했습니다.`);
+    }
+    return changed;
+  }
+
+  // Sanitize server/local state BEFORE older recovery wrappers can render it.
+  try{
+    const applyBase109=applyRecoveredState;
+    applyRecoveredState=function(saved){
+      const fixed=repairSaved109(saved);const ret=applyBase109.call(this,fixed.saved);
+      setTimeout(()=>repairAll109({write:true,persist:fixed.changed}),40);return ret;
+    };
+    window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v109 apply hook]',e)}
+
+  // Never send recursive visual fragments back to the server again.
+  try{
+    const payloadBase109=persistentStatePayload;
+    persistentStatePayload=function(){
+      try{repairAll109({write:false,persist:false})}catch(_){ }
+      const p=payloadBase109.apply(this,arguments);const x=repairSaved109(p);if(x.saved)x.saved.stateFormatV109=109;return x.saved;
+    };
+    window.persistentStatePayload=persistentStatePayload;
+  }catch(e){console.warn('[v109 payload hook]',e)}
+
+  // Work-file imports are inferred from rendered rows, so run one final repair after load.
+  try{
+    const loadBase109=loadSourceFile;
+    loadSourceFile=async function(file,mode='source'){const r=await loadBase109.apply(this,arguments);setTimeout(()=>repairAll109({write:true,persist:true}),80);return r};
+    window.loadSourceFile=loadSourceFile;
+  }catch(e){console.warn('[v109 load hook]',e)}
+
+  // Existing open jobs: repair once after the older recovery timers have settled.
+  setTimeout(()=>repairAll109({write:true,persist:true}),900);
+  setTimeout(()=>repairAll109({write:true,persist:true}),3300);
+
+  window.__TC_V109_API__={rootId109,repairState109,repairSaved109,repairAll109,expandBoxNos109};
+})();
+</script>
+<!-- ===== /v109 ===== -->
