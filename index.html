@@ -714,7 +714,7 @@ TradeCode Navi는 품명과 재질을 기준으로 HS코드와 HSK 10자리,
 
           <div class="rm-divider"></div>
           <div class="rm-row rm-output"><label>관세 (신고금액 × 관세율)</label><div class="rm-io"><span class="rm-value" id="lgDuty">-</span><span class="rm-unit">원</span></div></div>
-          <div class="rm-row rm-output"><label>부가세 ((신고금액+해상운임+관세) × 10%)</label><div class="rm-io"><span class="rm-value" id="lgVat">-</span><span class="rm-unit">원</span></div></div>
+          <div class="rm-row rm-output"><label>부가세 ((신고금액+관세) × 10%)</label><div class="rm-io"><span class="rm-value" id="lgVat">-</span><span class="rm-unit">원</span></div></div>
           <div class="rm-row rm-output rm-final"><label>합계</label><div class="rm-io"><span class="rm-value" id="lgTotal">-</span><span class="rm-unit">원</span></div></div>
           <div class="hint" style="color:var(--danger);margin-top:6px;">한국 내륙운송비 (트럭 혹은 택비)는 포함되지 않은 단가입니다.</div>
         </section>
@@ -2925,8 +2925,7 @@ function updateRmMarginRate(idx, val){
      옮긴 것 - 순수 클라이언트 계산이라 백엔드 호출 없이 페이지 로드 시 바로 계산한다.
    - 총CBM = (박스 가로×세로×높이, cm³→m³) × 박스 개수(총구매수량÷1박스포장수량)
    - 관세 = 신고금액(구매금액) × 관세율%
-   - 부가세 = (신고금액 + 해상운임LCL + 관세) × 10%  (엑셀 원본 수식 그대로: 관세의 과세표준에
-     운임까지 포함해 부가세를 매기는 방식)
+   - 부가세 = (신고금액 + 관세) × 10%  (해상운임은 부가세 과세표준에서 제외)
    - 해상운임 LCL은 직접 입력하지 않고 총CBM 구간에 따라 자동으로 계산된다(calcFreightLcl 참고).
    - 합계 = 해상운임LCL + 통관수수료 + CO비용 + DO비용 + 관세 + 부가세 (엑셀의 SUM(C11:D16)과 동일)
 ========================================================= */
@@ -2965,7 +2964,7 @@ function computeLogistics(){
 
   const freightLcl = calcFreightLcl(totalCbm);
   const duty = declaredValue * (tariffRate / 100);
-  const vat = (declaredValue + freightLcl + duty) * 0.1;
+  const vat = (declaredValue + duty) * 0.1;
   const total = freightLcl + customsFee + coFee + doFee + duty + vat;
 
   return { totalCbm, freightLcl, duty, vat, total };
