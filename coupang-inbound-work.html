@@ -8796,3 +8796,162 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v109 ===== -->
+
+
+<!-- ===== v110: row-number right-click manual pallet move (additive only) ===== -->
+<script id="v110-manual-pallet-move">
+(function(){
+  if(window.__TC_V110__)return;window.__TC_V110__=true;
+
+  const api109=window.__TC_V109_API__||{};
+  const api108=window.__TC_V108_API__||{};
+  const root110=id=>{try{return typeof api109.rootId109==='function'?api109.rootId109(id):String(id??'').split('::')[0]}catch(_){return String(id??'').split('::')[0]}};
+  const n110=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const clone110=v=>{try{return JSON.parse(JSON.stringify(v))}catch(_){return v}};
+  const spec110=size=>{try{return typeof api108.mappingSpec108==='function'?api108.mappingSpec108(size):null}catch(_){return null}};
+
+  function segKey110(seg){return `${root110(seg?.group?.id)}@${Math.max(0,Math.floor(n110(seg?.boxOffset)))}`}
+  function moveMap110(state){
+    if(!state.manualPalletMovesV110||typeof state.manualPalletMovesV110!=='object'||Array.isArray(state.manualPalletMovesV110))state.manualPalletMovesV110={};
+    return state.manualPalletMovesV110;
+  }
+  function moveSig110(state){
+    const m=moveMap110(state);return JSON.stringify(Object.keys(m).sort().map(k=>[k,m[k]?.targetBoundaryId||'',m[k]?.targetAnchorSegKey||'',n110(m[k]?.targetNo),n110(m[k]?.movedAt)]));
+  }
+  function compareSeg110(a,b){return (n110(a?.group?.seq)-n110(b?.group?.seq))||(n110(a?.boxOffset)-n110(b?.boxOffset))}
+  function initOcc110(p,spec){
+    p.mode=spec?.mode||'custom';p.key=spec?.key||'';
+    if(p.mode==='standard'){p.mixUsed=0;p.mixCapacity=24;delete p.stacks;delete p.profile}
+    else{p.profile=spec?.profile||{};p.stacks=Array(Math.max(1,Math.floor(n110(p.profile?.slots)||1))).fill(0);delete p.mixUsed}
+  }
+  function placeBox110(p,spec){
+    if(!p||!spec||p.mode!==spec.mode||(spec.mode!=='standard'&&p.key!==spec.key))return false;
+    if(spec.mode==='standard'){
+      const cost=n110(spec.cost)||1;if(n110(p.mixUsed)+cost>24)return false;p.mixUsed=n110(p.mixUsed)+cost;return true;
+    }
+    const prof=spec.profile||{};let pick=-1,best=-1;
+    for(let i=0;i<(p.stacks||[]).length;i++){
+      const cur=n110(p.stacks[i]);if(cur+n110(prof.h)<=AUTO_PALLET_USABLE_HEIGHT_CM+.0001&&cur>best){best=cur;pick=i}
+    }
+    if(pick<0)return false;p.stacks[pick]+=n110(prof.h);return true;
+  }
+  function rebuildPallet110(p){
+    if(!p)return true;const segs=(p.segments||[]).slice().sort(compareSeg110);p.segments=segs;p.totalBoxes=0;p.totalQty=0;p.totalWeight=0;
+    if(!segs.length){p.mixUsed=0;p.stacks=[];return true}
+    const firstSpec=spec110(segs[0].size);if(!firstSpec)return false;initOcc110(p,firstSpec);
+    for(const seg of segs){
+      const sp=spec110(seg.size);if(!sp||p.mode!==sp.mode||(sp.mode!=='standard'&&p.key!==sp.key))return false;
+      const count=Math.max(1,Math.floor(n110(seg.boxCount)||1));for(let i=0;i<count;i++)if(!placeBox110(p,sp))return false;
+      seg.pallet=p;seg.palletNo=p.no;p.totalBoxes+=count;p.totalQty+=n110(seg.totalPerBox)*count;const w=Number(seg?.group?.weight);if(Number.isFinite(w))p.totalWeight+=w*count;
+    }
+    return true;
+  }
+  function canFit110(p,seg){
+    if(!p||!seg)return false;const tmp={no:p.no,segments:(p.segments||[]).slice()};
+    if(!rebuildPallet110(tmp))return false;const sp=spec110(seg.size);if(!sp)return false;
+    if(tmp.segments.length&&(tmp.mode!==sp.mode||(sp.mode!=='standard'&&tmp.key!==sp.key)))return false;
+    if(!tmp.segments.length)initOcc110(tmp,sp);
+    const count=Math.max(1,Math.floor(n110(seg.boxCount)||1));for(let i=0;i<count;i++)if(!placeBox110(tmp,sp))return false;return true;
+  }
+  function palletByRecord110(plan,rec){
+    let p=null;
+    if(rec?.targetBoundaryId){const b=root110(rec.targetBoundaryId);p=(plan.pallets||[]).find(x=>root110(x?.manualClosedAfterGroupId)===b)||null}
+    if(!p&&rec?.targetAnchorSegKey)p=(plan.pallets||[]).find(x=>(x.segments||[]).some(s=>segKey110(s)===rec.targetAnchorSegKey))||null;
+    if(!p&&n110(rec?.targetNo)>0)p=(plan.pallets||[]).find(x=>n110(x.no)===n110(rec.targetNo))||null;
+    return p;
+  }
+  function applyMoves110(plan,state){
+    if(!plan||!state||sheetKind?.(workbook?.getWorksheet?.(activeSheet))==='parcel')return plan;
+    const sig=moveSig110(state);if(plan._v110MoveSig===sig)return plan;
+    const moves=moveMap110(state),entries=Object.entries(moves).sort((a,b)=>n110(a[1]?.movedAt)-n110(b[1]?.movedAt));
+    const warnings=[];
+    for(const [key,rec] of entries){
+      const seg=(plan.segments||[]).find(s=>segKey110(s)===key);if(!seg)continue;
+      const src=seg.pallet||null,target=palletByRecord110(plan,rec);if(!target||target===src)continue;
+      if(!canFit110(target,seg)){warnings.push(`${seg.boxNo||key} → ${rec.targetNo||'?'}번 팔레트(공간 부족)`);continue}
+      if(src)src.segments=(src.segments||[]).filter(s=>s!==seg);target.segments=target.segments||[];target.segments.push(seg);seg.pallet=target;
+      if(src)rebuildPallet110(src);rebuildPallet110(target);
+    }
+    let pallets=(plan.pallets||[]).filter(p=>(p.segments||[]).length);
+    pallets.forEach((p,i)=>{p.no=i+1;rebuildPallet110(p)});
+    plan.pallets=pallets;plan.segments=pallets.flatMap(p=>(p.segments||[]).slice().sort(compareSeg110));
+    for(const p of pallets)for(const s of p.segments||[]){s.pallet=p;s.palletNo=p.no}
+    plan._v110MoveSig=sig;state._manualPalletMoveWarningsV110=warnings;return plan;
+  }
+
+  // Only wrap the mapper. Existing automatic mapping, manual close, scanner, box completion and all other behavior stay intact.
+  const buildBase110=buildAutoPalletPlan;
+  buildAutoPalletPlan=function(ws,state){const plan=buildBase110.apply(this,arguments);if(!ws||sheetKind(ws)!=='pallet')return plan;return applyMoves110(plan,state)};
+  window.buildAutoPalletPlan=buildAutoPalletPlan;
+
+  function segmentForRow110(ws,rowNo){
+    if(!ws||sheetKind(ws)!=='pallet')return null;const state=assignVisualRows(ws,ensurePalletState(ws));return (state._visualSegments||[]).find(s=>rowNo>=n110(s?.rows?.start)&&rowNo<=n110(s?.rows?.end))||null;
+  }
+  function boxCaption110(seg){
+    const label=String(seg?.boxNo||seg?.group?.boxNo||'선택 박스').trim(),cnt=Math.max(1,Math.floor(n110(seg?.boxCount)||1));
+    return cnt===1?`${label}번 박스`:`${label} 박스 묶음(${cnt}박스)`;
+  }
+  function ensureMoveBtn110(){
+    const menu=document.getElementById('rowMenu');if(!menu)return null;let b=document.getElementById('rowMovePalletV110');if(b)return b;
+    b=document.createElement('button');b.id='rowMovePalletV110';b.type='button';b.textContent='팔레트 이동';b.style.display='none';b.onclick=()=>window.moveSelectedPalletV110?.();
+    const edit=document.getElementById('rowEditBox');if(edit)menu.insertBefore(b,edit);else menu.prepend(b);return b;
+  }
+  const showRowMenuBase110=showRowMenu;
+  showRowMenu=function(e,rowNo){
+    const ret=showRowMenuBase110.apply(this,arguments),ws=currentWorkSheet(),seg=segmentForRow110(ws,rowNo),btn=ensureMoveBtn110();
+    if(btn)btn.style.display=seg?'block':'none';const m=document.getElementById('rowMenu');if(seg&&m)m.style.top=Math.min(e.clientY,window.innerHeight-205)+'px';return ret;
+  };
+  window.showRowMenu=showRowMenu;
+
+  window.moveSelectedPalletV110=function(){
+    const ws=currentWorkSheet();if(!ws||sheetKind(ws)!=='pallet'){hideRowMenu();return}
+    const state=assignVisualRows(ws,ensurePalletState(ws)),seg=segmentForRow110(ws,selectedRow);if(!seg){hideRowMenu();return}
+    const plan=state._autoPalletPlan||buildAutoPalletPlan(ws,state),sourceNo=n110(seg.palletNo),caption=boxCaption110(seg);
+    if(!confirm(`${caption}를 다른 팔레트로 이동하시겠습니까?\n\n현재 위치: ${sourceNo}번 팔레트\n기존 팔레트 마감 정보는 그대로 유지되고, 이동 후 양쪽 팔레트의 박스수·제품수량·중량은 자동으로 다시 계산됩니다.`)){hideRowMenu();return}
+    const raw=prompt(`${caption}를 몇 번 팔레트로 이동할까요?\n\n1 ~ ${(plan.pallets||[]).length} 사이의 숫자만 입력하세요.`,'');if(raw===null){hideRowMenu();return}
+    const val=String(raw).trim();if(!/^\d+$/.test(val)){alert('팔레트 번호는 숫자만 입력해 주세요.');return}
+    const targetNo=Number(val),target=(plan.pallets||[]).find(p=>n110(p.no)===targetNo);if(!target){alert(`현재 존재하는 팔레트 번호(1~${(plan.pallets||[]).length})를 입력해 주세요.`);return}
+    if(targetNo===sourceNo){alert(`${caption}는 이미 ${sourceNo}번 팔레트에 있습니다.`);hideRowMenu();return}
+    if(!canFit110(target,seg)){alert(`${targetNo}번 팔레트에는 ${caption}를 추가할 적재 공간이 없습니다.\n현재 박스 규격과 팔레트 적재 기준을 넘지 않는 다른 팔레트를 선택해 주세요.`);return}
+    const anchor=(target.segments||[])[0]||null,rec={targetNo,movedAt:Date.now(),boxNo:String(seg.boxNo||''),boxCount:Math.max(1,Math.floor(n110(seg.boxCount)||1)),targetBoundaryId:target.manualClosedAfterGroupId?root110(target.manualClosedAfterGroupId):'',targetAnchorSegKey:anchor?segKey110(anchor):''};
+    moveMap110(state)[segKey110(seg)]=rec;state.manualPalletMovesRevV110=Math.max(Date.now(),n110(state.manualPalletMovesRevV110)+1);
+    delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets;
+    try{dirtyPalletSheets?.add?.(ws.name)}catch(_){ }
+    try{assignVisualRows(ws,state);recalcWorkSheet(ws);if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13();renderSheet(true);if(typeof renderInlineDraft==='function')renderInlineDraft();if(typeof refreshManualPalletButtonsV73==='function')refreshManualPalletButtonsV73()}catch(e){console.warn('[v110 pallet move render]',e)}
+    try{schedulePersistentState(30);scheduleWorkbookSnapshot(600)}catch(_){ }
+    hideRowMenu();setStatus(`✓ ${caption} → ${targetNo}번 팔레트 이동 완료 · 팔레트 정보 자동 재계산`,'ok');
+  };
+
+  // Lightweight autosave/server persistence: add only the manual-move registry.
+  const cleanBase110=cleanPalletStateForSave;
+  cleanPalletStateForSave=function(state){const out=cleanBase110.apply(this,arguments);if(!out||!state)return out;out.manualPalletMovesV110=clone110(moveMap110(state));out.manualPalletMovesRevV110=n110(state.manualPalletMovesRevV110);return out};
+  window.cleanPalletStateForSave=cleanPalletStateForSave;
+
+  // Restore the move registry after the legacy recovery code reconstructs its compact pallet state.
+  const applyBase110=applyRecoveredState;
+  applyRecoveredState=function(saved){
+    const reg=new Map();try{for(const pair of saved?.palletStates||[]){if(Array.isArray(pair)&&pair[0]&&pair[1])reg.set(String(pair[0]),{moves:clone110(pair[1].manualPalletMovesV110||{}),rev:n110(pair[1].manualPalletMovesRevV110)})}}catch(_){ }
+    const ret=applyBase110.apply(this,arguments);
+    try{for(const [name,x] of reg){const st=palletStates?.get?.(name),ws=workbook?.getWorksheet?.(name);if(!st||!ws)continue;st.manualPalletMovesV110=x.moves||{};st.manualPalletMovesRevV110=x.rev||0;delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;assignVisualRows(ws,st);recalcWorkSheet(ws)}const ws=workbook?.getWorksheet?.(activeSheet);if(ws&&sheetKind(ws)==='pallet')renderSheet(true)}catch(e){console.warn('[v110 recovered pallet moves]',e)}
+    return ret;
+  };
+  window.applyRecoveredState=applyRecoveredState;
+
+  // Current-work Excel persistence: AA1/AA2 are hidden metadata only; visible workbook layout is unchanged.
+  const syncBase110=syncPalletState;
+  syncPalletState=function(ws,state){
+    const ret=syncBase110.apply(this,arguments);try{if(ws&&state&&sheetKind(ws)==='pallet'){ws.getCell('AA1').value='WEBPALMOVE110';ws.getCell('AA2').value=JSON.stringify({moves:moveMap110(state),rev:n110(state.manualPalletMovesRevV110)});ws.getColumn(27).hidden=true}}catch(e){console.warn('[v110 move metadata save]',e)}return ret;
+  };
+  window.syncPalletState=syncPalletState;
+
+  const inferBase110=inferPalletState;
+  inferPalletState=function(ws){
+    const st=inferBase110.apply(this,arguments);try{if(ws&&st&&String(ws.getCell('AA1').value||'')==='WEBPALMOVE110'){const x=JSON.parse(String(ws.getCell('AA2').value||'{}'));st.manualPalletMovesV110=clone110(x.moves||{});st.manualPalletMovesRevV110=n110(x.rev);delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets}}catch(e){console.warn('[v110 move metadata load]',e)}return st;
+  };
+  window.inferPalletState=inferPalletState;
+
+  ensureMoveBtn110();
+  window.__TC_V110_API__={segmentForRow110,applyMoves110,moveMap110};
+})();
+</script>
+<!-- ===== /v110 ===== -->
