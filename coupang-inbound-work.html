@@ -9627,108 +9627,178 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 <!-- ===== /v116 ===== -->
 
-<!-- ===== v117: selected box capture + stronger frozen-row boundary only ===== -->
-<style id="v117-freeze-row3-boundary">
-/* Keep v116's row 1~3 freeze exactly as-is; only make the bottom edge of row 3 easier to see. */
+<!-- ===== v118: safe selected P/Q capture + durable reported-box restore + row-3 boundary ===== -->
+<style id="v118-freeze-row3-boundary">
+/* v116 row 1~3 freeze stays untouched; only strengthen the visible boundary under row 3. */
 #sheetHost.v116-freeze-top3 tbody tr.v116-freeze-row-3 > th,
 #sheetHost.v116-freeze-top3 tbody tr.v116-freeze-row-3 > td{
-  border-bottom:3px solid #0b6b3a!important;
-  box-shadow:inset 0 -3px 0 #0b6b3a!important;
+  border-bottom:4px solid #0b6b3a!important;
+  box-shadow:inset 0 -2px 0 #0b6b3a!important;
 }
 </style>
-<script id="v117-selected-manual-box-capture">
+<script id="v118-safe-capture-repair374">
 (function(){
-  if(window.__TC_V117__)return;window.__TC_V117__=true;
+  if(window.__TC_V118__)return;window.__TC_V118__=true;
 
-  function selectedRow117(){
-    try{
-      const td=document.querySelector('#sheetHost td.cell.selected');
-      const r=Number(td?.dataset?.r||0);if(r>0)return r;
-    }catch(_){ }
-    try{
-      const m=String(selectedCell||'').match(/(\d+)$/);if(m&&Number(m[1])>0)return Number(m[1]);
-    }catch(_){ }
-    return Number(selectedRow||0);
-  }
-
-  function cloneCaptureTarget117(src,rows,boxNo,size,boxCount,items){
-    const g=src||{};
-    return {
-      ...g,
-      rows:{start:Number(rows?.start||0),end:Number(rows?.end||0)},
-      boxNo:String(boxNo??g.boxNo??''),
-      size:String(size??g.size??''),
-      boxCount:Math.max(1,Number(boxCount??g.boxCount)||1),
-      weight:g.weight,
-      items:Array.isArray(items)?items:(g.items||[]),
-      _manualCaptureTargetV117:true
-    };
-  }
-
-  function selectedCaptureTarget117(ws){
-    if(!ws||typeof isPackWorkSheet!=='function'||!isPackWorkSheet(ws))return null;
-    const state=assignVisualRows(ws,ensurePalletState(ws));
-    const row=selectedRow117();if(!(row>0))return null;
-
-    // Pallet / milk-run: capture the exact visual segment that contains the selected
-    // 박스번호(P) or 출고 박스번호(Q) cell. This also works after pallet moves/splits.
-    if(typeof sheetKind==='function'&&sheetKind(ws)==='pallet'){
-      const seg=(state?._visualSegments||[]).find(s=>row>=Number(s?.rows?.start||0)&&row<=Number(s?.rows?.end||0));
-      if(seg){
-        return cloneCaptureTarget117(
-          seg.group,
-          seg.rows,
-          seg.boxNo||seg.group?.boxNo,
-          seg.size||seg.group?.size,
-          seg.boxCount,
-          seg.items
-        );
-      }
-    }
-
-    // Parcel / legacy completed rows.
-    const group=(state?.completed||[]).find(g=>{
-      const ranges=(Array.isArray(g?._visualRanges)&&g._visualRanges.length)?g._visualRanges:[g?.rows];
-      return ranges.some(x=>row>=Number(x?.start||0)&&row<=Number(x?.end||0));
-    })||null;
-    return group;
-  }
-  window.selectedCaptureTarget117=selectedCaptureTarget117;
-
-  // Keep the old "no selection -> latest completed box" behavior, but when the user
-  // actually selected a completed box row, always use that exact box/segment.
-  const captureBase117=(typeof captureTargetGroupV20==='function')?captureTargetGroupV20:null;
-  captureTargetGroupV20=function(ws){
-    const target=selectedCaptureTarget117(ws);if(target)return target;
-    return captureBase117?captureBase117(ws):null;
+  // -----------------------------------------------------------------------
+  // 1) Keep the previously restored 경기광주5 밀크런 box 374 durable.
+  //    This repair is intentionally narrow: exact sheet + exact SKU set +
+  //    the same 300-range completed-box incident. It does not touch other jobs.
+  // -----------------------------------------------------------------------
+  const REC118={
+    sheet:'경기광주5 밀크런',root:'box-1789795559024-h5wcc',boxNo:'374',boxCount:1,size:'60*50*45',weight:21.4,
+    items:[
+      {productNumber:67979662,productName:'모던화이트 호텔감성 바스타월 100g 화이트 2개',barcode:'R245545710001',qty:14},
+      {productNumber:55334113,productName:'원이네 대형 샤워타월 극세사 핑크 1개',barcode:'R223850540001',qty:2},
+      {productNumber:49793230,productName:'원이네 접이식 욕실용 의자 네이비(대) 34.7*29.5*3 cm',barcode:'R216735080005',qty:24},
+      {productNumber:62564279,productName:'호텔수건 부드럽고 도톰한 32수 면 타월 그레이140g 10장',barcode:'R236115740008',qty:1}
+    ]
   };
-  window.captureTargetGroupV20=captureTargetGroupV20;
+  const n118=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const clone118=v=>{try{return structuredClone(v)}catch(_){try{return JSON.parse(JSON.stringify(v))}catch(__){return v}}};
+  const root118=id=>String(id||'').split('::')[0];
+  function nums118(label,count){
+    const s=String(label??'').trim().replace(/[～〜–—−]/g,'~');
+    let m=s.match(/^(\d+)\s*~\s*(\d+)$/);if(m){let a=+m[1],b=+m[2];if(a>b)[a,b]=[b,a];return Array.from({length:b-a+1},(_,i)=>a+i)}
+    if(/^\d+$/.test(s)){const a=+s,c=Math.max(1,Math.trunc(n118(count)||1));return Array.from({length:c},(_,i)=>a+i)}
+    return [];
+  }
+  function exactEvidence118(ws,st){
+    if(!ws||String(ws.name)!==REC118.sheet||!st)return false;
+    const all=[];for(const i of st.incomplete||[])all.push(i);for(const g of st.completed||[])for(const i of g.items||[])all.push(i);
+    try{
+      const f=window.v92ParseOrderSource||window.v90ParseOrderSource,src=typeof f==='function'?f(workbook):null;
+      const sg=src?.groups?.find(x=>String(x?.name||'')===REC118.sheet);for(const i of sg?.items||[])all.push(i);
+    }catch(_){ }
+    if(!REC118.items.every(d=>all.some(i=>String(i?.barcode||'').trim()===d.barcode)))return false;
+    // Same incident must already contain 300-range physical box work on this sheet.
+    return (st.completed||[]).some(g=>nums118(g?.boxNo,g?.boxCount).some(x=>x>=300&&x<=400));
+  }
+  function sourceItem118(st,d,idx){
+    let x=(st.incomplete||[]).find(i=>String(i?.barcode||'').trim()===d.barcode)||null;
+    if(!x){for(const g of st.completed||[]){x=(g.items||[]).find(i=>String(i?.barcode||'').trim()===d.barcode);if(x)break}}
+    const b=x?clone118(x):{productNumber:d.productNumber,productName:d.productName,barcode:d.barcode,center:REC118.sheet,order:900000+idx};
+    b.productNumber=b.productNumber??d.productNumber;b.productName=b.productName||d.productName;b.barcode=d.barcode;b.center=b.center||REC118.sheet;
+    b.totalQty=d.qty;b.perBoxQty=d.qty;delete b.remainingQty;delete b._visualRow;return b;
+  }
+  function forcePallet1_118(st,g){
+    if(!st||!g)return false;const key=`${root118(g.id)}@0`;
+    if(!st.manualPalletMovesV110||typeof st.manualPalletMovesV110!=='object'||Array.isArray(st.manualPalletMovesV110))st.manualPalletMovesV110={};
+    const old=st.manualPalletMovesV110[key]||{},same=n118(old.targetNo)===1&&String(old.boxNo||'')===REC118.boxNo;
+    st.manualPalletMovesV110[key]={...old,targetNo:1,movedAt:n118(old.movedAt)||Date.now(),boxNo:REC118.boxNo,boxCount:1,targetBoundaryId:old.targetBoundaryId||'',targetAnchorSegKey:old.targetAnchorSegKey||''};
+    if(!same)st.manualPalletMovesRevV110=Math.max(Date.now(),n118(st.manualPalletMovesRevV110)+1);return !same;
+  }
+  function bumpPersist118(ws,st){
+    try{if(typeof markPalletDirty==='function')markPalletDirty(ws,st)}catch(_){
+      try{const s=window.__TC_V78_SYNC__;if(s){const now=Date.now();s.rev=Math.max(now,n118(s.rev)+1);s.dirty=true;s.lastMutationAt=now;sharedApplyingRemote=true}}catch(__){ }
+    }
+    try{schedulePersistentState(0);scheduleWorkbookSnapshot(350)}catch(_){ }
+  }
+  function repair374_118(){
+    try{
+      if(!workbook)return false;const ws=workbook.getWorksheet?.(REC118.sheet);if(!ws)return false;const st=ensurePalletState(ws);if(!st||!exactEvidence118(ws,st))return false;
+      let g=(st.completed||[]).find(x=>root118(x?.id)===REC118.root)||null;
+      if(!g)g=(st.completed||[]).find(x=>nums118(x?.boxNo,x?.boxCount).includes(374))||null;
+      let changed=false;
+      if(!g){
+        const seq=Math.max(0,...(st.completed||[]).map(x=>n118(x?.seq)))+1;
+        g={id:REC118.root,seq,boxCount:1,size:REC118.size,weight:REC118.weight,boxNo:REC118.boxNo,items:REC118.items.map((d,i)=>sourceItem118(st,d,i)),boxCompletedAtV82:Date.now(),boxUpdatedAtV82:Date.now(),boxRevisionV82:Date.now(),recoveredV118:true};
+        st.completed=Array.isArray(st.completed)?st.completed:[];st.completed.push(g);st.completed.sort((a,b)=>n118(a?.seq)-n118(b?.seq));st.nextSeq=Math.max(n118(st.nextSeq)||1,seq+1);changed=true;
+      }
+      changed=forcePallet1_118(st,g)||changed;st.recovery374V112Done=true;
+      if(!changed)return false;
+      delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;
+      try{const api=window.__TC_V108_API__;if(typeof api?.reconcileSheet108==='function')api.reconcileSheet108(ws)}catch(_){ }
+      try{assignVisualRows(ws,st);syncPalletState(ws,st);recalcWorkSheet(ws);recalcDashboard(workbook)}catch(_){ }
+      if(activeSheet===ws.name)try{renderSheet(true)}catch(_){ }
+      bumpPersist118(ws,st);
+      try{setStatus('✓ 경기광주5 밀크런 374번 박스(41개)를 복구하고 서버 저장 보호를 적용했습니다.','ok')}catch(_){ }
+      return true;
+    }catch(e){console.warn('[v118 repair 374]',e);return false}
+  }
+  try{
+    const applyBase118=applyRecoveredState;
+    applyRecoveredState=function(){const r=applyBase118.apply(this,arguments);[20,180,650].forEach(ms=>setTimeout(repair374_118,ms));return r};
+    window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v118 apply recovery hook]',e)}
+  [60,350,1200,3500].forEach(ms=>setTimeout(repair374_118,ms));
 
+  // -----------------------------------------------------------------------
+  // 2) Manual box capture: use the ACTUAL selected P/Q DOM cell directly.
+  //    No pallet-state recalculation is performed just to choose the capture.
+  // -----------------------------------------------------------------------
+  let pick118=null;
+  function rememberBoxCell118(td){
+    if(!td||!td.matches?.('td.cell'))return;const col=n118(td.dataset?.c);if(col!==16&&col!==17)return;
+    const row=n118(td.dataset?.r);if(!(row>0))return;
+    pick118={sheet:String(activeSheet||''),col,row,text:String(td.textContent||'').trim()};
+  }
+  const host118=document.getElementById('sheetHost');
+  if(host118)host118.addEventListener('pointerdown',e=>rememberBoxCell118(e.target.closest('td.cell')),true);
+
+  function currentSelectedBoxCell118(){
+    const host=document.getElementById('sheetHost');if(!host)return null;
+    const selected=host.querySelector('td.cell.selected');
+    if(selected&&[16,17].includes(n118(selected.dataset?.c)))return selected;
+    if(pick118&&pick118.sheet===String(activeSheet||'')){
+      const esc=(window.CSS&&CSS.escape)?CSS.escape(pick118.text):null;
+      const cells=[...host.querySelectorAll(`td.cell[data-c="${pick118.col}"]`)];
+      const same=cells.find(td=>String(td.textContent||'').trim()===pick118.text);if(same)return same;
+      const rowCell=host.querySelector(`td.cell[data-r="${pick118.row}"][data-c="${pick118.col}"]`);if(rowCell)return rowCell;
+    }
+    return null;
+  }
+  function cellAtOrSpan118(row,col){
+    const host=document.getElementById('sheetHost');if(!host)return null;
+    const direct=host.querySelector(`td.cell[data-r="${row}"][data-c="${col}"]`);if(direct)return direct;
+    for(const td of host.querySelectorAll(`td.cell[data-c="${col}"][rowspan]`)){
+      const s=n118(td.dataset?.r),e=s+Math.max(1,n118(td.getAttribute('rowspan')))-1;if(row>=s&&row<=e)return td;
+    }
+    return null;
+  }
+  function directCaptureTable118(start,end){
+    const live=document.querySelector('#sheetHost .sheet-table');if(!live||!start||!end)return null;
+    const mini=document.createElement('table');mini.className='sheet-table';mini.style.cssText='margin:0;background:#fff;border-collapse:collapse;width:max-content;table-layout:fixed';
+    const liveCg=live.querySelector('colgroup');if(liveCg){const cg=liveCg.cloneNode(true);cg.querySelector('col.row-head')?.remove();mini.appendChild(cg)}
+    const body=document.createElement('tbody');
+    for(const tr of live.tBodies?.[0]?.rows||[]){
+      if(tr.classList.contains('work-divider-row')||tr.classList.contains('pallet-separator-row'))continue;
+      const rn=n118(tr.querySelector('th.row-number')?.textContent);if(!rn||rn<start||rn>end)continue;
+      const c=tr.cloneNode(true);c.classList.remove('row-completed-mark','v116-freeze-row','v116-freeze-row-1','v116-freeze-row-2','v116-freeze-row-3');c.style.boxShadow='none';
+      c.querySelectorAll('.selected,.editing,.row-active').forEach(el=>el.classList.remove('selected','editing','row-active'));c.querySelector('th.row-number')?.remove();
+      c.querySelectorAll('[style]').forEach(el=>{el.style.removeProperty('position');el.style.removeProperty('top');el.style.removeProperty('z-index')});body.appendChild(c);
+    }
+    if(!body.rows.length)return null;mini.appendChild(body);return mini;
+  }
+  function openDirectCapture118(ws,cell){
+    const start=n118(cell?.dataset?.r),span=Math.max(1,n118(cell?.getAttribute?.('rowspan'))||1),end=start+span-1;if(!start)return false;
+    const p=cellAtOrSpan118(start,16),q=cellAtOrSpan118(start,17),size=cellAtOrSpan118(start,8),weight=cellAtOrSpan118(start,12);
+    const boxNo=String(p?.textContent||'').trim(),outNo=String(q?.textContent||'').trim();const mini=directCaptureTable118(start,end);if(!mini)return false;
+    const modal=inlineEl('shareCaptureModal'),preview=inlineEl('shareCapturePreview'),img=inlineEl('shareCaptureImage'),msg=inlineEl('shareCaptureMsg'),title=inlineEl('shareCaptureTitle');if(!modal||!preview)return false;
+    try{if(shareCaptureObjectUrl){URL.revokeObjectURL(shareCaptureObjectUrl);shareCaptureObjectUrl=''}}catch(_){ }shareCaptureBlob=null;shareCaptureTable=mini;if(img){img.style.display='none';img.removeAttribute('src')}
+    preview.innerHTML='';preview.style.width='';preview.style.height='';preview.style.overflow='visible';
+    // Keep the existing high-resolution preview convention without altering the live sheet.
+    const scale=2;mini.style.transform=`scale(${scale})`;mini.style.transformOrigin='top left';preview.appendChild(mini);
+    requestAnimationFrame(()=>{preview.style.width=Math.ceil(mini.scrollWidth*scale)+'px';preview.style.height=Math.ceil(mini.scrollHeight*scale)+'px'});
+    if(title)title.textContent=`${ws.name} · 박스 ${boxNo||'-'}${outNo?` · 출고 ${outNo}`:''}${size?.textContent?` · ${String(size.textContent).trim()}`:''}${weight?.textContent?` · ${String(weight.textContent).trim()}kg`:''}`;
+    if(msg)msg.textContent=`✓ 선택한 ${boxNo?`박스 ${boxNo}`:`출고 박스 ${outNo}`} 행만 표시했습니다. 이미지 복사를 누르면 PNG로 복사합니다.`;
+    modal.classList.add('show');modal.setAttribute('aria-hidden','false');return true;
+  }
+
+  const manualBase118=(typeof manualBoxCaptureV20==='function')?manualBoxCaptureV20:null;
   manualBoxCaptureV20=function(){
-    const ws=workbook?.getWorksheet?.(activeSheet);
-    if(!ws||!isPackWorkSheet(ws)){
-      alert('팔레트/밀크런/택배 작업 시트에서 사용할 수 있습니다.');
-      return;
+    const ws=workbook?.getWorksheet?.(activeSheet);if(!ws||!isPackWorkSheet(ws)){alert('팔레트/밀크런/택배 작업 시트에서 사용할 수 있습니다.');return}
+    const cell=currentSelectedBoxCell118();
+    if(cell){
+      if(openDirectCapture118(ws,cell)){setStatus('✓ 선택한 박스번호/출고 박스번호의 작업 캡처를 열었습니다.','ok');return}
+      alert('선택한 박스의 캡처 행을 찾지 못했습니다. 화면을 한 번 클릭한 뒤 다시 시도해 주세요.');return;
     }
-    const row=selectedRow117(),target=selectedCaptureTarget117(ws);
-    if(target){
-      showCompletionCapture(ws,target);
-      setStatus(`✓ 선택한 ${target.boxNo||'완료 박스'} 작업 캡처를 열었습니다.`,'ok');
-      return;
-    }
-    // If the user has explicitly selected a work-list row, never silently jump to the latest box.
-    if(row>=Number(generationStartRow?.(ws)||4)){
-      alert('선택한 행은 완료된 박스 작업이 아닙니다.\n박스번호 또는 출고 박스번호 셀을 선택한 뒤 다시 눌러 주세요.');
-      return;
-    }
-    const fallback=captureBase117?captureBase117(ws):null;
-    if(!fallback){alert('아직 완료된 박스가 없습니다.');return}
-    showCompletionCapture(ws,fallback);
-    setStatus(`✓ ${fallback.boxNo||'완료 박스'} 작업 캡처를 다시 열었습니다.`,'ok');
+    // Do not silently capture the latest box. Require an explicit P/Q selection.
+    alert('캡처할 박스의 “박스번호(P열)” 또는 “출고 박스번호(Q열)” 셀을 먼저 클릭한 뒤 박스 작업 캡쳐를 눌러 주세요.');
   };
   window.manualBoxCaptureV20=manualBoxCaptureV20;
 
-  window.__TC_V117_API__={selectedCaptureTarget117};
+  window.__TC_V118_API__={repair374_118,currentSelectedBoxCell118,openDirectCapture118};
 })();
 </script>
-<!-- ===== /v117 ===== -->
+<!-- ===== /v118 ===== -->
