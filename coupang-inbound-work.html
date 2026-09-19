@@ -8955,3 +8955,198 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v110 ===== -->
+
+<!-- ===== v111: partial bundled-box pallet move (additive only) ===== -->
+<script id="v111-partial-bundle-pallet-move">
+(function(){
+  if(window.__TC_V111__)return;window.__TC_V111__=true;
+
+  const api110=window.__TC_V110_API__||{};
+  const api109=window.__TC_V109_API__||{};
+  const api108=window.__TC_V108_API__||{};
+  const n111=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const clone111=v=>{try{return JSON.parse(JSON.stringify(v))}catch(_){return v}};
+  const root111=id=>{try{return typeof api109.rootId109==='function'?api109.rootId109(id):String(id??'').split('::')[0]}catch(_){return String(id??'').split('::')[0]}};
+  const spec111=size=>{try{return typeof api108.mappingSpec108==='function'?api108.mappingSpec108(size):null}catch(_){return null}};
+  const expand111=(label,count)=>{try{return typeof api109.expandBoxNos109==='function'?api109.expandBoxNos109(label,count):[]}catch(_){return []}};
+  const key111=(root,offset)=>`${root}@${Math.max(0,Math.floor(n111(offset)))}`;
+
+  function moveMap111(state){
+    if(!state.manualPalletBoxMovesV111||typeof state.manualPalletBoxMovesV111!=='object'||Array.isArray(state.manualPalletBoxMovesV111))state.manualPalletBoxMovesV111={};
+    return state.manualPalletBoxMovesV111;
+  }
+  function moveSig111(state){
+    const m=moveMap111(state);return JSON.stringify(Object.keys(m).sort().map(k=>[k,m[k]?.actionId||'',m[k]?.targetBoundaryId||'',m[k]?.targetAnchorBoxKey||'',n111(m[k]?.targetNo),n111(m[k]?.movedAt)]));
+  }
+  function compareUnit111(a,b){return (n111(a?.group?.seq)-n111(b?.group?.seq))||(n111(a?.offset)-n111(b?.offset))}
+  function segmentContainsBoxKey111(seg,boxKey){
+    const m=String(boxKey||'').match(/^(.*)@(\d+)$/);if(!m)return false;
+    const rid=m[1],off=Number(m[2]);if(root111(seg?.group?.id)!==rid)return false;
+    const a=Math.max(0,Math.floor(n111(seg?.boxOffset))),b=a+Math.max(1,Math.floor(n111(seg?.boxCount)||1));return off>=a&&off<b;
+  }
+  function targetPallet111(plan,rec,unitMap){
+    let p=null;
+    if(rec?.targetBoundaryId){const b=root111(rec.targetBoundaryId);p=(plan.pallets||[]).find(x=>root111(x?.manualClosedAfterGroupId)===b)||null}
+    // Follow the physical anchor box after earlier partial moves in this same rebuild.
+    if(!p&&rec?.targetAnchorBoxKey&&unitMap?.has?.(rec.targetAnchorBoxKey))p=unitMap.get(rec.targetAnchorBoxKey)?.pallet||null;
+    if(!p&&rec?.targetAnchorBoxKey)p=(plan.pallets||[]).find(x=>(x.segments||[]).some(s=>segmentContainsBoxKey111(s,rec.targetAnchorBoxKey)))||null;
+    if(!p&&n111(rec?.targetNo)>0)p=(plan.pallets||[]).find(x=>n111(x.no)===n111(rec.targetNo))||null;
+    return p;
+  }
+  function unitsFromPlan111(plan){
+    const out=[];
+    for(const p of plan?.pallets||[])for(const seg of p.segments||[]){
+      const count=Math.max(1,Math.floor(n111(seg?.boxCount)||1)),base=Math.max(0,Math.floor(n111(seg?.boxOffset)));
+      for(let i=0;i<count;i++)out.push({group:seg.group,root:root111(seg?.group?.id),offset:base+i,size:seg.size||seg?.group?.size||'',pallet:p});
+    }
+    return out;
+  }
+  function initOcc111(spec){
+    if(!spec)return null;
+    if(spec.mode==='standard')return {mode:'standard',key:spec.key||'standard',mixUsed:0};
+    const prof=spec.profile||{};return {mode:'custom',key:spec.key||'',profile:prof,stacks:Array(Math.max(1,Math.floor(n111(prof.slots)||1))).fill(0)};
+  }
+  function place111(occ,spec){
+    if(!occ||!spec||occ.mode!==spec.mode||(spec.mode!=='standard'&&occ.key!==spec.key))return false;
+    if(spec.mode==='standard'){
+      const cost=n111(spec.cost)||1;if(n111(occ.mixUsed)+cost>24)return false;occ.mixUsed=n111(occ.mixUsed)+cost;return true;
+    }
+    const prof=spec.profile||{};let pick=-1,best=-1;
+    for(let i=0;i<(occ.stacks||[]).length;i++){const cur=n111(occ.stacks[i]);if(cur+n111(prof.h)<=AUTO_PALLET_USABLE_HEIGHT_CM+.0001&&cur>best){best=cur;pick=i}}
+    if(pick<0)return false;occ.stacks[pick]+=n111(prof.h);return true;
+  }
+  function canHoldUnits111(units){
+    if(!units?.length)return true;let occ=null;
+    for(const u of units){const sp=spec111(u.size);if(!sp)return false;if(!occ)occ=initOcc111(sp);if(!place111(occ,sp))return false}
+    return true;
+  }
+  function segment111(group,pallet,start,count){
+    const totalBoxes=Math.max(1,Math.floor(n111(group?.boxCount)||1)),per=(group?.items||[]).reduce((a,i)=>a+n111(i?.perBoxQty),0);
+    return {group,pallet,palletNo:pallet?.no||null,boxCount:count,boxOffset:start,size:group?.size||'',boxNo:typeof splitMappedBoxNo==='function'?splitMappedBoxNo(group?.boxNo,totalBoxes,start,count):(group?.boxNo||''),items:(group?.items||[]).map(i=>({...i,totalQty:n111(i?.perBoxQty)*count})),totalPerBox:per};
+  }
+  function rebuildPlanFromUnits111(plan,units){
+    for(const p of plan?.pallets||[])p.segments=[];
+    const byP=new Map();for(const u of units){if(!u.pallet)continue;if(!byP.has(u.pallet))byP.set(u.pallet,[]);byP.get(u.pallet).push(u)}
+    for(const p of plan?.pallets||[]){
+      const arr=(byP.get(p)||[]).slice().sort(compareUnit111);let run=null;
+      for(const u of arr){
+        if(run&&run.group===u.group&&run.start+run.count===u.offset)run.count++;
+        else{if(run)p.segments.push(segment111(run.group,p,run.start,run.count));run={group:u.group,start:u.offset,count:1}}
+      }
+      if(run)p.segments.push(segment111(run.group,p,run.start,run.count));
+    }
+    let pallets=(plan?.pallets||[]).filter(p=>(p.segments||[]).length);
+    pallets.forEach((p,idx)=>{
+      p.no=idx+1;p.totalBoxes=0;p.totalQty=0;p.totalWeight=0;
+      for(const s of p.segments||[]){s.pallet=p;s.palletNo=p.no;p.totalBoxes+=Math.max(1,Math.floor(n111(s.boxCount)||1));p.totalQty+=n111(s.totalPerBox)*Math.max(1,Math.floor(n111(s.boxCount)||1));const w=Number(s?.group?.weight);if(Number.isFinite(w))p.totalWeight+=w*Math.max(1,Math.floor(n111(s.boxCount)||1))}
+    });
+    plan.pallets=pallets;plan.segments=pallets.flatMap(p=>(p.segments||[]).slice().sort((a,b)=>(n111(a?.group?.seq)-n111(b?.group?.seq))||(n111(a?.boxOffset)-n111(b?.boxOffset))));
+    return plan;
+  }
+  function applyBoxMoves111(plan,state){
+    if(!plan||!state)return plan;const sig=moveSig111(state);if(plan._v111MoveSig===sig)return plan;
+    const map=moveMap111(state),entries=Object.entries(map);if(!entries.length){plan._v111MoveSig=sig;return plan}
+    const units=unitsFromPlan111(plan),unitMap=new Map(units.map(u=>[key111(u.root,u.offset),u]));
+    const actions=new Map();
+    for(const [k,rec] of entries){const id=String(rec?.actionId||k);if(!actions.has(id))actions.set(id,{rec,keys:[]});actions.get(id).keys.push(k)}
+    const warnings=[];const ordered=[...actions.values()].sort((a,b)=>n111(a.rec?.movedAt)-n111(b.rec?.movedAt));
+    for(const action of ordered){
+      const rec=action.rec,target=targetPallet111(plan,rec,unitMap);if(!target){warnings.push(`이동 대상 ${rec?.targetNo||'?'}번 팔레트를 찾지 못함`);continue}
+      const selected=action.keys.map(k=>unitMap.get(k)).filter(Boolean);if(!selected.length)continue;
+      const selSet=new Set(selected),targetUnits=units.filter(u=>u.pallet===target||selSet.has(u));
+      if(!canHoldUnits111(targetUnits)){warnings.push(`${rec?.boxLabel||'선택 박스'} → ${rec?.targetNo||'?'}번 팔레트(공간 부족)`);continue}
+      for(const u of selected)u.pallet=target;
+    }
+    rebuildPlanFromUnits111(plan,units);plan._v111MoveSig=sig;state._manualPalletMoveWarningsV111=warnings;return plan;
+  }
+
+  // Add the partial-box overrides after the existing v110 whole-segment move layer.
+  const buildBase111=buildAutoPalletPlan;
+  buildAutoPalletPlan=function(ws,state){const plan=buildBase111.apply(this,arguments);if(!ws||sheetKind(ws)!=='pallet')return plan;return applyBoxMoves111(plan,state)};
+  window.buildAutoPalletPlan=buildAutoPalletPlan;
+
+  function strictRange111(raw){
+    const s=String(raw??'').trim().replace(/[～〜–—−]/g,'~').replace(/\s+/g,'');
+    let m=s.match(/^(\d+)$/);if(m)return [Number(m[1])];
+    m=s.match(/^(\d+)[~\-](\d+)$/);if(!m)return [];
+    let a=Number(m[1]),b=Number(m[2]);if(b<a)[a,b]=[b,a];if(b-a>5000)return [];
+    const out=[];for(let x=a;x<=b;x++)out.push(x);return out;
+  }
+  function boxLabel111(nums){if(!nums?.length)return '';return nums.length===1?String(nums[0]):`${nums[0]}~${nums[nums.length-1]}`}
+  function currentTargetCapacity111(plan,root,start,count,target){
+    const units=unitsFromPlan111(plan),selected=units.filter(u=>u.root===root&&u.offset>=start&&u.offset<start+count);if(selected.length!==count)return {ok:false,reason:'선택 박스를 현재 팔레트 맵에서 찾지 못했습니다.'};
+    if(selected.every(u=>u.pallet===target))return {ok:false,reason:'선택한 박스가 이미 해당 팔레트에 있습니다.'};
+    const sel=new Set(selected),test=units.filter(u=>u.pallet===target||sel.has(u));return canHoldUnits111(test)?{ok:true}:{ok:false,reason:'선택한 팔레트의 남은 적재 공간이 부족합니다.'};
+  }
+
+  // Replace only the v110 move dialog behavior. All other existing row-menu actions remain untouched.
+  window.moveSelectedPalletV110=function(){
+    const ws=currentWorkSheet();if(!ws||sheetKind(ws)!=='pallet'){hideRowMenu();return}
+    const state=assignVisualRows(ws,ensurePalletState(ws)),seg=typeof api110.segmentForRow110==='function'?api110.segmentForRow110(ws,selectedRow):null;if(!seg){hideRowMenu();return}
+    const plan=state._autoPalletPlan||buildAutoPalletPlan(ws,state),sourceNo=n111(seg.palletNo),segCount=Math.max(1,Math.floor(n111(seg.boxCount)||1)),segLabel=String(seg.boxNo||seg?.group?.boxNo||'선택 박스').trim();
+    const caption=segCount===1?`${segLabel}번 박스`:`${segLabel} 박스 묶음(${segCount}박스)`;
+    if(!confirm(`${caption}를 다른 팔레트로 이동하시겠습니까?\n\n현재 위치: ${sourceNo}번 팔레트\n이동 후 기존 팔레트와 이동 대상 팔레트의 박스수·제품수량·중량은 자동으로 다시 계산됩니다.`)){hideRowMenu();return}
+
+    let moveCount=segCount,startOffset=Math.max(0,Math.floor(n111(seg.boxOffset))),chosenNums=expand111(segLabel,segCount),chosenLabel=segLabel;
+    if(segCount>1){
+      const rawCount=prompt(`현재 묶음: ${segLabel} · 총 ${segCount}박스\n\n이 중 몇 박스를 이동할까요?\n1 ~ ${segCount} 사이의 숫자만 입력하세요.`,String(segCount));
+      if(rawCount===null){hideRowMenu();return}
+      const cv=String(rawCount).trim();if(!/^\d+$/.test(cv)||Number(cv)<1||Number(cv)>segCount){alert(`이동 박스수는 1 ~ ${segCount} 사이의 숫자로 입력해 주세요.`);return}
+      moveCount=Number(cv);
+      const allNums=expand111(segLabel,segCount);if(allNums.length!==segCount){alert(`현재 묶음 박스번호 “${segLabel}”의 범위를 읽을 수 없습니다.\n박스번호가 361~368처럼 연속 숫자 범위인지 확인해 주세요.`);return}
+      const defaultNums=allNums.slice(0,moveCount),defaultRange=boxLabel111(defaultNums);
+      const rawRange=prompt(`이동할 박스번호 범위를 입력해 주세요.\n\n현재 묶음: ${segLabel}\n이동 박스수: ${moveCount}박스\n예: ${defaultRange}`,defaultRange);
+      if(rawRange===null){hideRowMenu();return}
+      const nums=strictRange111(rawRange);if(nums.length!==moveCount){alert(`입력한 박스번호 범위는 ${nums.length||0}박스입니다.\n앞에서 입력한 이동 박스수 ${moveCount}박스와 동일하게 입력해 주세요.`);return}
+      const first=allNums.indexOf(nums[0]);if(first<0||first+nums.length>allNums.length||nums.some((x,i)=>allNums[first+i]!==x)){alert(`이동할 박스번호는 현재 묶음 ${segLabel} 안의 연속된 범위로 입력해 주세요.`);return}
+      startOffset+=first;chosenNums=nums;chosenLabel=boxLabel111(nums);
+    }else if(!chosenNums.length){chosenNums=[Number(String(segLabel).replace(/\D/g,''))].filter(Number.isFinite)}
+
+    const maxPal=(plan.pallets||[]).length,raw=prompt(`${chosenLabel||caption} (${moveCount}박스)를 몇 번 팔레트로 이동할까요?\n\n1 ~ ${maxPal} 사이의 숫자만 입력하세요.`,'');
+    if(raw===null){hideRowMenu();return}const val=String(raw).trim();if(!/^\d+$/.test(val)){alert('팔레트 번호는 숫자만 입력해 주세요.');return}
+    const targetNo=Number(val),target=(plan.pallets||[]).find(p=>n111(p.no)===targetNo);if(!target){alert(`현재 존재하는 팔레트 번호(1~${maxPal})를 입력해 주세요.`);return}
+    if(targetNo===sourceNo&&moveCount===segCount){alert(`${caption}는 이미 ${sourceNo}번 팔레트에 있습니다.`);hideRowMenu();return}
+    const rid=root111(seg?.group?.id),cap=currentTargetCapacity111(plan,rid,startOffset,moveCount,target);if(!cap.ok){alert(cap.reason||'해당 팔레트로 이동할 수 없습니다.');return}
+
+    const anchorSeg=(target.segments||[])[0]||null,anchorKey=anchorSeg?key111(root111(anchorSeg?.group?.id),Math.max(0,Math.floor(n111(anchorSeg?.boxOffset)))):'';
+    const actionId=`mv111-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,movedAt=Date.now();
+    for(let i=0;i<moveCount;i++)moveMap111(state)[key111(rid,startOffset+i)]={actionId,targetNo,movedAt,boxLabel:chosenLabel,boxCount:moveCount,targetBoundaryId:target.manualClosedAfterGroupId?root111(target.manualClosedAfterGroupId):'',targetAnchorBoxKey:anchorKey};
+    state.manualPalletBoxMovesRevV111=Math.max(Date.now(),n111(state.manualPalletBoxMovesRevV111)+1);
+    delete state._autoPalletPlan;delete state._visualSegments;delete state._mappedPallets;
+    try{dirtyPalletSheets?.add?.(ws.name)}catch(_){ }
+    try{assignVisualRows(ws,state);recalcWorkSheet(ws);if(typeof refreshGlobalOutboundBoxNumbersV13==='function')refreshGlobalOutboundBoxNumbersV13();renderSheet(true);if(typeof renderInlineDraft==='function')renderInlineDraft();if(typeof refreshManualPalletButtonsV73==='function')refreshManualPalletButtonsV73()}catch(e){console.warn('[v111 partial pallet move render]',e)}
+    try{schedulePersistentState(30);scheduleWorkbookSnapshot(600)}catch(_){ }
+    hideRowMenu();setStatus(`✓ ${chosenLabel||caption} · ${moveCount}박스 → ${targetNo}번 팔레트 이동 완료 · 양쪽 팔레트 정보 자동 재계산`,'ok');
+  };
+
+  // Local/server autosave persistence for per-box move overrides.
+  const cleanBase111=cleanPalletStateForSave;
+  cleanPalletStateForSave=function(state){const out=cleanBase111.apply(this,arguments);if(!out||!state)return out;out.manualPalletBoxMovesV111=clone111(moveMap111(state));out.manualPalletBoxMovesRevV111=n111(state.manualPalletBoxMovesRevV111);return out};
+  window.cleanPalletStateForSave=cleanPalletStateForSave;
+
+  const applyBase111=applyRecoveredState;
+  applyRecoveredState=function(saved){
+    const reg=new Map();try{for(const pair of saved?.palletStates||[]){if(Array.isArray(pair)&&pair[0]&&pair[1])reg.set(String(pair[0]),{moves:clone111(pair[1].manualPalletBoxMovesV111||{}),rev:n111(pair[1].manualPalletBoxMovesRevV111)})}}catch(_){ }
+    const ret=applyBase111.apply(this,arguments);
+    try{for(const [name,x] of reg){const st=palletStates?.get?.(name),ws=workbook?.getWorksheet?.(name);if(!st||!ws)continue;st.manualPalletBoxMovesV111=x.moves||{};st.manualPalletBoxMovesRevV111=x.rev||0;delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;assignVisualRows(ws,st);recalcWorkSheet(ws)}const ws=workbook?.getWorksheet?.(activeSheet);if(ws&&sheetKind(ws)==='pallet')renderSheet(true)}catch(e){console.warn('[v111 recovered partial pallet moves]',e)}
+    return ret;
+  };
+  window.applyRecoveredState=applyRecoveredState;
+
+  // Workbook persistence uses separate hidden AB metadata, leaving v110 AA metadata untouched.
+  const syncBase111=syncPalletState;
+  syncPalletState=function(ws,state){
+    const ret=syncBase111.apply(this,arguments);try{if(ws&&state&&sheetKind(ws)==='pallet'){ws.getCell('AB1').value='WEBPALMOVE111';ws.getCell('AB2').value=JSON.stringify({moves:moveMap111(state),rev:n111(state.manualPalletBoxMovesRevV111)});ws.getColumn(28).hidden=true}}catch(e){console.warn('[v111 partial move metadata save]',e)}return ret;
+  };
+  window.syncPalletState=syncPalletState;
+
+  const inferBase111=inferPalletState;
+  inferPalletState=function(ws){
+    const st=inferBase111.apply(this,arguments);try{if(ws&&st&&String(ws.getCell('AB1').value||'')==='WEBPALMOVE111'){const x=JSON.parse(String(ws.getCell('AB2').value||'{}'));st.manualPalletBoxMovesV111=clone111(x.moves||{});st.manualPalletBoxMovesRevV111=n111(x.rev);delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets}}catch(e){console.warn('[v111 partial move metadata load]',e)}return st;
+  };
+  window.inferPalletState=inferPalletState;
+
+  window.__TC_V111_API__={moveMap111,applyBoxMoves111};
+})();
+</script>
+<!-- ===== /v111 ===== -->
