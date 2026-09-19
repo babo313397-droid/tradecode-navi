@@ -9384,3 +9384,82 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v112 ===== -->
+
+<!-- ===== v113: instant local-first project restore; remote sync continues in background ===== -->
+<script id="v113-instant-local-restore">
+(function(){
+  // Only accelerates opening/switching a saved shipment project.
+  // Existing workbook logic, pallet logic, autosave and server sync remain unchanged.
+  const restoreBase113=restorePersistentSession;
+  let fastRestoreBusy113=false;
+
+  async function readLocalBundle113(){
+    if(!currentProjectIdV18||typeof localPersistGet!=='function'||typeof localProjectKeyV18!=='function')return null;
+    const get=key=>localPersistGet(localProjectKeyV18(key)).catch(e=>{console.warn('[v113 local read]',key,e);return null});
+    const [source,saved,snapshot]=await Promise.all([get('source'),get('state'),get('workbookSnapshot')]);
+    return {source,saved,snapshot};
+  }
+
+  async function restoreLocalFirst113(){
+    if(!currentProjectIdV18||fastRestoreBusy113)return false;
+    fastRestoreBusy113=true;
+    try{
+      const bundle=await readLocalBundle113();
+      const source=bundle?.source,saved=bundle?.saved,snapshot=bundle?.snapshot;
+      if(!source?.blob&&!snapshot?.blob)return false;
+
+      // When switching from another project, do not leave the previous workbook visible.
+      if(workbook){
+        try{clearWorkspaceForProjectV18('저장된 선적 작업을 빠르게 불러오는 중…')}catch(_){ }
+      }
+      persistRestoring=true;
+      showLoading(true,'이 PC에 저장된 쿠팡 입고 작업을 바로 여는 중…');
+      setStatus('로컬 작업을 우선 불러오는 중…','busy');
+
+      const blob=snapshot?.blob||source.blob;
+      const name=source?.name||saved?.fileName||'쿠팡입고작업.xlsx';
+      const mode=snapshot?.blob?'work':(source?.mode||'source');
+      const file=new File([blob],name,{type:source?.type||blob?.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',lastModified:Date.now()});
+
+      // Use the existing loader exactly as-is, but skip all server GET waits on first paint.
+      await loadSourceFileV8(file,mode);
+      if(saved)applyRecoveredState(saved);
+      currentFileName=name;
+      if($('fileName'))$('fileName').textContent=name+' · 빠른 복구';
+      setStatus('✓ 저장된 작업을 즉시 열었습니다. 서버 최신 내용은 뒤에서 자동 확인합니다.','ok');
+
+      // Seed timestamps only from local data. The existing multi-PC poll remains authoritative
+      // and will fetch/apply a truly newer server state after the screen is already usable.
+      const srcLocalAt=Math.max(Number(source?.savedAt||0),Number(snapshot?.savedAt||0));
+      const stateLocalAt=Number(saved?.savedAt||0);
+      if(srcLocalAt)sharedLastSourceAt=Math.max(Number(sharedLastSourceAt||0),srcLocalAt);
+      if(snapshot?.savedAt)sharedLastSnapshotAt=Math.max(Number(sharedLastSnapshotAt||0),Number(snapshot.savedAt));
+      if(stateLocalAt)sharedLastStateAt=Math.max(Number(sharedLastStateAt||0),stateLocalAt);
+
+      // Do not block opening on the network. Reconcile shortly afterwards.
+      setTimeout(()=>{try{if(typeof sharedPollUpdates==='function')sharedPollUpdates()}catch(_){ }},250);
+      return true;
+    }catch(e){
+      console.warn('[v113 fast local restore]',e);
+      return false;
+    }finally{
+      persistRestoring=false;
+      showLoading(false);
+      fastRestoreBusy113=false;
+    }
+  }
+
+  restorePersistentSession=async function(){
+    if(!currentProjectIdV18)return;
+    // A remote-source change detected by the existing sync must still use the original
+    // server-aware restore path; only ordinary page opening/project switching is local-first.
+    if(sharedApplyingRemote)return restoreBase113.apply(this,arguments);
+    const ok=await restoreLocalFirst113();
+    if(ok)return;
+    return restoreBase113.apply(this,arguments);
+  };
+  window.restorePersistentSession=restorePersistentSession;
+  window.__TC_V113_API__={restoreLocalFirst113};
+})();
+</script>
+<!-- ===== /v113 ===== -->
