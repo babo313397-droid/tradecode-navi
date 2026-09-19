@@ -155,7 +155,7 @@ button,input,select{font:inherit}button{cursor:pointer}
       <div class="pallet-inline-top">
         <div class="inline-mode"><b id="inlineModeTitle">새 박스 작업</b><span id="inlineSheetLabel"></span></div>
         <div class="inline-scan"><input id="inlineScanInput" autocomplete="off" inputmode="none" placeholder="바코드 스캔 후 Enter · 같은 박스에 여러 상품은 계속 스캔"><button type="button" onclick="addInlineBarcodeFromInput()">추가</button></div>
-        <label>박스사이즈<select id="inlineBoxSize"><option value="60*50*45">60*50*45</option><option value="60*50*25">60*50*25</option><option value="__custom__">기타(직접입력)</option></select><input id="inlineCustomBoxSize" class="inline-custom-size" placeholder="예: 55*40*30"></label>
+        <label>박스사이즈<select id="inlineBoxSize"><option value="60*50*45">60*50*45</option><option value="60*50*25">60*50*25</option><option value="70*42*37">70*42*37</option><option value="__custom__">기타(직접입력)</option></select><input id="inlineCustomBoxSize" class="inline-custom-size" placeholder="예: 55*40*30"></label>
         <label>박스수<input id="inlineBoxCount" type="number" min="1" step="1" value="1"></label>
         <label>중량<input id="inlineBoxWeight" type="number" min="0.1" step="0.1" placeholder="23.9"></label>
         <label>박스번호<input id="inlineBoxNo" placeholder="비우면 자동"></label>
@@ -181,7 +181,7 @@ button,input,select{font:inherit}button{cursor:pointer}
       <div class="scan-line"><input id="boxScanInput" autocomplete="off" placeholder="바코드를 스캔하고 Enter · 한 박스에 여러 상품은 계속 스캔"><button onclick="addDraftBarcodeFromInput()">추가</button></div>
       <div id="boxItems" class="box-items"></div>
       <div class="box-fields">
-        <div class="box-field"><label>박스 사이즈</label><select id="boxSize"><option value="60*50*45">60*50*45</option><option value="60*50*25">60*50*25</option><option value="__custom__">기타(직접입력)</option></select><input id="boxCustomSize" style="display:none;margin-top:4px" placeholder="예: 55*40*30"></div>
+        <div class="box-field"><label>박스 사이즈</label><select id="boxSize"><option value="60*50*45">60*50*45</option><option value="60*50*25">60*50*25</option><option value="70*42*37">70*42*37</option><option value="__custom__">기타(직접입력)</option></select><input id="boxCustomSize" style="display:none;margin-top:4px" placeholder="예: 55*40*30"></div>
         <div class="box-field"><label>동일 박스 수량</label><input id="boxCount" type="number" min="1" step="1" value="1"></div>
         <div class="box-field"><label>박스별 중량(선택)</label><input id="boxWeight" type="number" min="0" step="0.1" placeholder="예: 23.9"></div>
         <div class="box-field"><label>박스번호(비우면 자동)</label><input id="boxNo" placeholder="예: 56 또는 309~315"></div>
@@ -289,7 +289,7 @@ function findPalletSheetForBarcode(barcode){barcode=norm(barcode);if(!barcode)re
 function newDraft(ws){const state=ensurePalletState(ws);return {mode:'new',sheetName:ws.name,groupId:null,items:[],size:'60*50*45',boxCount:1,weight:'',boxNo:'',autoStart:nextAutoBoxNo(state)}}
 function openBoxModal(barcode=''){let ws=currentWorkSheet();if(barcode){const found=findPalletSheetForBarcode(barcode);if(found&&found.name!==activeSheet){activeSheet=found.name;renderTabs();ws=found}}if(!isPackWorkSheet(ws)){setStatus('팔레트/밀크런/택배 작업 탭에서 바코드를 스캔해 주세요.','bad');return}if(!boxDraft||boxDraft.sheetName!==ws.name||boxDraft.mode!=='new')boxDraft=newDraft(ws);$('boxModal').classList.add('show');$('boxModal').setAttribute('aria-hidden','false');$('boxSheetLabel').textContent=`· ${ws.name}`;$('boxModalTitle').textContent=boxDraft.mode==='edit'?'완료 박스 수정':'팔레트 박스 작업';$('boxCancelWorkBtn').style.display=boxDraft.mode==='edit'?'inline-block':'none';renderBoxDraft();if(barcode)addDraftBarcode(barcode);setTimeout(()=>$('boxScanInput').focus(),30)}
 function closeBoxModal(){const m=$('boxModal');m.classList.remove('show');m.setAttribute('aria-hidden','true');boxDraft=null}
-function renderBoxDraft(){if(!boxDraft)return;const state=ensurePalletState(workbook.getWorksheet(boxDraft.sheetName));const host=$('boxItems');host.innerHTML='';if(!boxDraft.items.length){host.innerHTML='<div class="box-empty">바코드를 스캔하면 해당 품목이 여기에 추가됩니다.</div>'}else{for(const [idx,it] of boxDraft.items.entries()){const d=document.createElement('div');d.className='box-item';d.innerHTML=`<div class="bc"></div><div class="nm"></div><div class="remain"></div><div><input type="number" min="1" step="1" data-idx="${idx}" value="${Number(it.perBoxQty||1)}" title="박스당 수량"></div><div><button data-rm="${idx}" title="제거">×</button></div>`;d.children[0].textContent=it.barcode;d.children[1].textContent=it.productName;d.children[2].textContent=`남음 ${Number(it.availableQty||0).toLocaleString()}`;host.appendChild(d)}}host.querySelectorAll('input[data-idx]').forEach(inp=>inp.addEventListener('input',e=>{const i=Number(e.target.dataset.idx);boxDraft.items[i].perBoxQty=Math.max(0,num(e.target.value));updateBoxSummary()}));host.querySelectorAll('button[data-rm]').forEach(b=>b.onclick=()=>{boxDraft.items.splice(Number(b.dataset.rm),1);renderBoxDraft()});{const k=['60*50*45','60*50*25'],v=norm(boxDraft.size||'60*50*45').replace(/[×xX]/g,'*').replace(/\s+/g,''),sel=$('boxSize'),ci=$('boxCustomSize');if(sel){sel.value=k.includes(v)?v:'__custom__'}if(ci){ci.value=k.includes(v)?'':v;ci.style.display=k.includes(v)?'none':'block'}}$('boxCount').value=boxDraft.boxCount||1;$('boxWeight').value=boxDraft.weight??'';$('boxNo').value=boxDraft.boxNo||'';$('boxSize').oninput=e=>{const ci=$('boxCustomSize');if(e.target.value==='__custom__'){if(ci){ci.style.display='block';ci.focus()}boxDraft.size=norm(ci?.value)}else{if(ci)ci.style.display='none';boxDraft.size=e.target.value}};if($('boxCustomSize'))$('boxCustomSize').oninput=e=>{if($('boxSize').value==='__custom__')boxDraft.size=e.target.value};$('boxCount').oninput=e=>{boxDraft.boxCount=Math.max(1,Math.floor(num(e.target.value)||1));updateBoxSummary()};$('boxWeight').oninput=e=>{boxDraft.weight=e.target.value};$('boxNo').oninput=e=>{boxDraft.boxNo=e.target.value};updateBoxSummary()}
+function renderBoxDraft(){if(!boxDraft)return;const state=ensurePalletState(workbook.getWorksheet(boxDraft.sheetName));const host=$('boxItems');host.innerHTML='';if(!boxDraft.items.length){host.innerHTML='<div class="box-empty">바코드를 스캔하면 해당 품목이 여기에 추가됩니다.</div>'}else{for(const [idx,it] of boxDraft.items.entries()){const d=document.createElement('div');d.className='box-item';d.innerHTML=`<div class="bc"></div><div class="nm"></div><div class="remain"></div><div><input type="number" min="1" step="1" data-idx="${idx}" value="${Number(it.perBoxQty||1)}" title="박스당 수량"></div><div><button data-rm="${idx}" title="제거">×</button></div>`;d.children[0].textContent=it.barcode;d.children[1].textContent=it.productName;d.children[2].textContent=`남음 ${Number(it.availableQty||0).toLocaleString()}`;host.appendChild(d)}}host.querySelectorAll('input[data-idx]').forEach(inp=>inp.addEventListener('input',e=>{const i=Number(e.target.dataset.idx);boxDraft.items[i].perBoxQty=Math.max(0,num(e.target.value));updateBoxSummary()}));host.querySelectorAll('button[data-rm]').forEach(b=>b.onclick=()=>{boxDraft.items.splice(Number(b.dataset.rm),1);renderBoxDraft()});{const k=['60*50*45','60*50*25','70*42*37'],v=norm(boxDraft.size||'60*50*45').replace(/[×xX]/g,'*').replace(/\s+/g,''),sel=$('boxSize'),ci=$('boxCustomSize');if(sel){sel.value=k.includes(v)?v:'__custom__'}if(ci){ci.value=k.includes(v)?'':v;ci.style.display=k.includes(v)?'none':'block'}}$('boxCount').value=boxDraft.boxCount||1;$('boxWeight').value=boxDraft.weight??'';$('boxNo').value=boxDraft.boxNo||'';$('boxSize').oninput=e=>{const ci=$('boxCustomSize');if(e.target.value==='__custom__'){if(ci){ci.style.display='block';ci.focus()}boxDraft.size=norm(ci?.value)}else{if(ci)ci.style.display='none';boxDraft.size=e.target.value}};if($('boxCustomSize'))$('boxCustomSize').oninput=e=>{if($('boxSize').value==='__custom__')boxDraft.size=e.target.value};$('boxCount').oninput=e=>{boxDraft.boxCount=Math.max(1,Math.floor(num(e.target.value)||1));updateBoxSummary()};$('boxWeight').oninput=e=>{boxDraft.weight=e.target.value};$('boxNo').oninput=e=>{boxDraft.boxNo=e.target.value};updateBoxSummary()}
 function updateBoxSummary(){if(!boxDraft)return;const cnt=Math.max(1,Number(boxDraft.boxCount)||1),per=boxDraft.items.reduce((a,i)=>a+Number(i.perBoxQty||0),0),total=per*cnt;$('boxSummary').textContent=boxDraft.items.length?`${boxDraft.items.length}개 품목 · 박스당 ${per.toLocaleString()}개 · ${cnt}박스 = 총 ${total.toLocaleString()}개`:'상품을 스캔해 주세요.'}
 function addDraftBarcodeFromInput(){const input=$('boxScanInput'),v=norm(input.value);input.value='';if(v)addDraftBarcode(v);input.focus()}
 function addDraftBarcode(barcode){if(!boxDraft)return;barcode=norm(barcode);const ws=workbook.getWorksheet(boxDraft.sheetName),state=ensurePalletState(ws);let src=null;if(boxDraft.mode==='edit'){const group=state.completed.find(g=>g.id===boxDraft.groupId);src=group?.items.find(i=>norm(i.barcode)===barcode);if(src)src={...src,remainingQty:Number(src.totalQty||0)}}if(!src)src=state.incomplete.find(i=>norm(i.barcode)===barcode&&i.remainingQty>0);if(!src){setStatus(`바코드 ${barcode} : 이 팔레트 탭의 미완료 품목에서 찾지 못했습니다.`,'bad');return}if(boxDraft.items.some(i=>i.sourceId===src.id||norm(i.barcode)===barcode)){setStatus('이미 이 박스에 추가된 바코드입니다. 수량을 수정하세요.','busy');return}const oldItem=boxDraft.mode==='edit'?state.completed.find(g=>g.id===boxDraft.groupId)?.items.find(i=>norm(i.barcode)===barcode):null;boxDraft.items.push({sourceId:src.id,productNumber:cloneObj(src.productNumber),productName:src.productName,barcode:src.barcode,center:src.center,centerFill:cloneObj(src.centerFill),centerFont:cloneObj(src.centerFont),order:src.order,availableQty:Number(src.remainingQty||src.totalQty||0)+(oldItem?0:0),perBoxQty:Number(oldItem?.perBoxQty ?? src.remainingQty ?? src.totalQty ?? 1)});renderBoxDraft();setStatus(`✓ ${barcode} 추가 · 한 박스에 다른 상품도 계속 스캔할 수 있습니다.`,'ok')}
@@ -344,7 +344,7 @@ function renderInlineDraft(){
   inlineEl('inlineSheetLabel').textContent='· '+ws.name;
   inlineEl('inlineCancelCompletedBtn').style.display=boxDraft.mode==='edit'?'inline-block':'none';
   inlineEl('inlineCommitBtn').textContent=boxDraft.mode==='edit'?'수정 완료':'박스 작업 완료';
-  const knownSizes=['60*50*45','60*50*25'],currentSize=norm(boxDraft.size||'60*50*45').replace(/[×xX]/g,'*').replace(/\s+/g,'');
+  const knownSizes=['60*50*45','60*50*25','70*42*37'],currentSize=norm(boxDraft.size||'60*50*45').replace(/[×xX]/g,'*').replace(/\s+/g,'');
   const sizeSel=inlineEl('inlineBoxSize'),customSize=inlineEl('inlineCustomBoxSize'),isCustom=!knownSizes.includes(currentSize);
   sizeSel.value=isCustom?'__custom__':currentSize;customSize.value=isCustom?currentSize:'';customSize.classList.toggle('show',isCustom);
   inlineEl('inlineBoxCount').value=Math.max(1,Number(boxDraft.boxCount)||1);
@@ -5446,6 +5446,151 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 <!-- ===== /v104 ===== -->
 
+
+
+<!-- ===== v107: exact order-row style normalization + true live center totals ===== -->
+<script id="v107-live-list-total-style-fix">
+(function(){
+  if(window.__TC_V107__)return;window.__TC_V107__=true;
+  const clone107=v=>{try{return typeof cloneObj==='function'?cloneObj(v):JSON.parse(JSON.stringify(v))}catch(_){return v}};
+  const str107=v=>String(v??'').trim().replace(/\s+/g,' ');
+  const text107=cell=>{try{return str107(typeof displayText==='function'?displayText(cell):(cell?.text??cell?.value??''))}catch(_){return str107(cell?.value)}};
+  const num107=cell=>{try{if(typeof cellNum==='function'){const n=Number(cellNum(cell));if(Number.isFinite(n))return n}}catch(_){ }const m=text107(cell).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0])||0:0};
+  const norm107=v=>str107(v).toLowerCase().replace(/\s+/g,' ');
+  function productish107(row){return !!row&&!!text107(row.getCell(4))&&!!(text107(row.getCell(1))||text107(row.getCell(2))||text107(row.getCell(3)))}
+  function fillScore107(cell){try{const f=cell?.fill||{};if(f.type==='pattern'&&f.pattern&&f.pattern!=='none'&&(f.fgColor||f.bgColor))return 12}catch(_){ }return 0}
+  function fontScore107(cell){try{const f=cell?.font||{};return (f.bold?4:0)+(Number(f.size)||0)/20+(f.name?0.2:0)}catch(_){return 0}}
+  function styleScore107(row){if(!productish107(row))return -999;let s=fillScore107(row.getCell(4));for(const c of [1,2,3,4,5])s+=fontScore107(row.getCell(c));return s}
+  function center107(row){return norm107(text107(row.getCell(4)).replace(/^\s*(?:코리아원|봄날애|차통익스프레스|차통)\s*/i,''))}
+  function orderRows107(order){const a=[];if(!order)return a;const end=Math.max(8,Number(order.rowCount)||8);for(let r=8;r<=end;r++){const row=order.getRow(r);if(productish107(row))a.push(r)}return a}
+  function donorFor107(order,target,rows){
+    const tr=order.getRow(target),tc=center107(tr);let best=0,bestRank=-1e9;
+    for(const r of rows){if(r===target)continue;const row=order.getRow(r);if(!productish107(row))continue;const same=center107(row)===tc;const rank=(same?1000:0)+styleScore107(row)*10-Math.abs(r-target)*0.01;if(rank>bestRank){bestRank=rank;best=r}}
+    return best;
+  }
+  function copyOrderStyle107(order,from,to){
+    if(!order||!from||!to||from===to)return;const src=order.getRow(from),dst=order.getRow(to);try{dst.height=src.height}catch(_){ }
+    for(let c=1;c<=6;c++){try{const s=src.getCell(c),d=dst.getCell(c);d.style=clone107(s.style||{});if(s.numFmt)d.numFmt=s.numFmt}catch(_){ }}
+  }
+  function normalizeOrderStyles107(order=workbook?.getWorksheet?.('발주서')){
+    if(!order)return false;const rows=orderRows107(order);if(rows.length<2)return false;let changed=false;
+    for(const r of rows){const donor=donorFor107(order,r,rows);if(!donor)continue;const target=order.getRow(r),src=order.getRow(donor);
+      // Always normalize A:F to a real existing product row. Values/formulas are untouched.
+      for(let c=1;c<=6;c++){
+        try{const before=JSON.stringify(target.getCell(c).style||{}),after=JSON.stringify(src.getCell(c).style||{});if(before!==after)changed=true}catch(_){ }
+      }
+      copyOrderStyle107(order,donor,r);
+    }
+    return changed;
+  }
+  window.v107NormalizeOrderStyles=normalizeOrderStyles107;
+
+  function rawListTotal107(ws){
+    if(!ws||ws.name==='발주서')return 0;const start=Math.max(1,typeof generationStartRow==='function'?generationStartRow(ws):4);let end=Math.max(start,Number(ws.rowCount)||start);
+    try{const st=palletStates?.get?.(ws.name);if(st){if(typeof assignVisualRows==='function')assignVisualRows(ws,st);end=Math.max(start,Number(st._visualEnd)||start)}}catch(_){ }
+    let total=0;for(let r=start;r<=end;r++){const row=ws.getRow(r);if(!productish107(row))continue;total+=num107(row.getCell(5))}return total;
+  }
+  function stateListTotal107(ws){
+    try{const st=palletStates?.get?.(ws.name);if(!st)return null;let total=0;for(const g of (st.completed||[]))for(const it of (g.items||[]))total+=Number(it.totalQty||0);for(const it of (st.incomplete||[]))total+=Number(it.remainingQty??it.qty??0);return total}catch(_){return null}
+  }
+  function liveListTotal107(ws){const st=stateListTotal107(ws);return st===null?rawListTotal107(ws):st}
+  window.v107LiveListTotal=liveListTotal107;
+
+  function sourceRowValid107(order,rowNo,item){
+    if(!order||!(rowNo>=8))return false;const row=order.getRow(rowNo);if(!productish107(row))return false;
+    const p=norm107(text107(row.getCell(1))),b=norm107(text107(row.getCell(3))),n=norm107(text107(row.getCell(2)));
+    const ip=norm107(item?.productNumber),ib=norm107(item?.barcode),inn=norm107(item?.productName);
+    return (!!p&&!!ip&&p===ip)||(!p&&!!b&&!!ib&&b===ib)||(!p&&!b&&!!n&&!!inn&&n===inn);
+  }
+  function visualSourceMap107(ws){
+    const out=[];if(!ws||ws._webSourceManagedV92!==true)return out;let st=null;try{st=palletStates?.get?.(ws.name)}catch(_){ }if(!st)return out;
+    try{if(typeof assignVisualRows==='function')assignVisualRows(ws,st)}catch(_){ }
+    let r=Math.max(1,typeof generationStartRow==='function'?generationStartRow(ws):4);
+    for(const g of (st.completed||[])){for(const it of (g.items||[])){out.push({visualRow:r,sourceRow:Number(it.order)||0,item:it});r++}}
+    for(const it of (st.incomplete||[])){const vr=Number(it._visualRow)||r;out.push({visualRow:vr,sourceRow:Number(it.order)||0,item:it});r=Math.max(r,vr+1)}
+    return out;
+  }
+  function syncVisualQtyToOrder107(ws,mapOverride=null,deletedRow=0){
+    if(!ws||ws.name==='발주서'||ws._webSourceManagedV92!==true)return false;const order=workbook?.getWorksheet?.('발주서');if(!order)return false;
+    const map=Array.isArray(mapOverride)?mapOverride:visualSourceMap107(ws);if(!map.length)return false;const sums=new Map(),seen=new Set();
+    for(const x of map){const sr=Number(x.sourceRow)||0;if(!sourceRowValid107(order,sr,x.item))continue;seen.add(sr);let vr=Number(x.visualRow)||0;if(deletedRow){if(vr===deletedRow)continue;if(vr>deletedRow)vr--}const q=vr>0?Math.max(0,num107(ws.getRow(vr).getCell(5))):0;sums.set(sr,(sums.get(sr)||0)+q)}
+    let changed=false;for(const sr of seen){const row=order.getRow(sr),want=Math.max(0,Number(sums.get(sr)||0)),have=Math.max(0,num107(row.getCell(5)));if(Math.abs(have-want)>1e-9){row.getCell(5).value=want;changed=true}}
+    return changed;
+  }
+  window.v107SyncVisualQtyToOrder=syncVisualQtyToOrder107;
+
+  // Quantity edits/deletions on a center tab are pushed to the exact originating Order row
+  // before any legacy source-reconciliation code gets a chance to restore the old number.
+  try{
+    const basePost107=window.v28PostCellMutation||v28PostCellMutation;
+    window.v28PostCellMutation=v28PostCellMutation=function(ws,message=''){
+      let sourceChanged=false;
+      try{if(ws&&ws.name!=='발주서')sourceChanged=syncVisualQtyToOrder107(ws)}catch(e){console.warn('[v107 qty writeback]',e)}
+      const ret=basePost107.apply(this,arguments);
+      try{
+        if(ws?.name==='발주서'){
+          normalizeOrderStyles107(ws);
+          setTimeout(()=>{try{if(normalizeOrderStyles107(ws)&&activeSheet==='발주서')renderSheet(true)}catch(_){ }},90);
+        }else if(ws){
+          const total=liveListTotal107(ws);ws.getCell('E3').value=total;
+        }
+        if(sourceChanged){schedulePersistentState?.(40);scheduleWorkbookSnapshot?.(550)}
+      }catch(e){console.warn('[v107 post mutation]',e)}
+      return ret;
+    };
+  }catch(e){console.warn('[v107 mutation hook]',e)}
+
+  // Row deletion in a center tab must also reduce the source quantity and therefore the total.
+  try{
+    const baseDelete107=deleteSelectedRow;
+    deleteSelectedRow=function(){
+      const ws=typeof currentWorkSheet==='function'?currentWorkSheet():workbook?.getWorksheet?.(activeSheet),rowNo=Number(selectedRow)||0;
+      const map=(ws&&rowNo>=4)?visualSourceMap107(ws):[];
+      const ret=baseDelete107.apply(this,arguments);
+      if(ws&&map.length)setTimeout(()=>{try{const ch=syncVisualQtyToOrder107(ws,map,rowNo);ws.getCell('E3').value=liveListTotal107(ws);recalcDashboard(workbook);if(ch){schedulePersistentState?.(50);scheduleWorkbookSnapshot?.(650)}}catch(e){console.warn('[v107 row delete]',e)}},0);
+      return ret;
+    };window.deleteSelectedRow=deleteSelectedRow;
+  }catch(e){console.warn('[v107 delete hook]',e)}
+
+  // The worksheet total is the SUM OF THE QUANTITIES ACTUALLY PRESENT IN THAT CENTER LIST.
+  // Completed + remaining rows are both included, so packing a box does not change the outbound total.
+  try{
+    const baseWork107=recalcWorkSheet;
+    recalcWorkSheet=function(ws){let s;try{s=baseWork107.apply(this,arguments)}catch(e){console.warn('[v107 base work]',e);s={total:0,boxes:0,packed:0}}if(!ws||ws.name==='발주서')return s;const total=liveListTotal107(ws);try{ws.getCell('E3').value=total}catch(_){ }return {...(s||{}),total}};window.recalcWorkSheet=recalcWorkSheet;
+  }catch(e){console.warn('[v107 work total]',e)}
+
+  // Do not use the historical Order-source total for the dashboard. Read every center tab's live list.
+  // This also makes Delete / direct typing / paste immediately change E3 and the dashboard total.
+  recalcDashboard=function(wb=workbook){
+    if(!wb)return;const old=workbook;if(wb!==workbook)workbook=wb;try{
+      const order=wb.getWorksheet?.('발주서');if(!order)return;const sheets=typeof visibleWorkSheets==='function'?visibleWorkSheets():[];let grand=0,totalBoxes=0,totalPacked=0;
+      const donorCol=10;
+      for(let i=0;i<sheets.length;i++){
+        const ws=sheets[i],col=10+i;let s={total:0,boxes:0,packed:0};try{s=recalcWorkSheet(ws)||s}catch(e){console.warn('[v107 dash sheet]',ws?.name,e)}
+        grand+=Number(s.total)||0;totalBoxes+=Number(s.boxes)||0;totalPacked+=Number(s.packed)||0;
+        try{if(col!==donorCol){const dc=order.getColumn(donorCol),tc=order.getColumn(col);if(dc?.width)tc.width=dc.width;for(let r=2;r<=7;r++){const a=order.getRow(r).getCell(donorCol),b=order.getRow(r).getCell(col);b.style=clone107(a.style||{});if(a.numFmt)b.numFmt=a.numFmt}}}catch(_){ }
+        const c2=order.getRow(2).getCell(col),c3=order.getRow(3).getCell(col),c4=order.getRow(4).getCell(col),c5=order.getRow(5).getCell(col),c6=order.getRow(6).getCell(col),c7=order.getRow(7).getCell(col);
+        c2.value=ws.name;try{if(typeof setInternalMove==='function')setInternalMove(c3,ws.name);else c3.value='이동'}catch(_){c3.value='이동'}c4.value=Number(s.total)||0;c5.value=Number(s.boxes)||0;c6.value=Number(s.packed)||0;c7.value=(Number(s.total)||0)>0&&(Number(s.packed)||0)>0?Math.min((Number(s.packed)||0)/(Number(s.total)||1),1):'작업전';
+      }
+      const prev=Math.max(20,Number(window.__v107LastCenterCount||0),Number(window.__v91LastCenterCount||0),Number(window.__v90LastCenterCount||0));for(let i=sheets.length;i<prev;i++)for(let r=2;r<=7;r++)order.getRow(r).getCell(10+i).value=null;window.__v107LastCenterCount=sheets.length;
+      order.getCell('E4').value=grand;order.getCell('G4').value=grand;order.getCell('F4').value='맞음';order.getCell('I2').value=totalBoxes;order.getCell('G7').value=totalPacked;
+      return {total:grand,boxes:totalBoxes,packed:totalPacked};
+    }finally{if(wb!==old)workbook=old}
+  };window.recalcDashboard=recalcDashboard;
+
+  // Paste/style repair: fix both future pasted rows and any already-malformed product row now.
+  try{
+    const basePaste107=v26PasteMatrix;
+    v26PasteMatrix=async function(text){const ret=await basePaste107.apply(this,arguments);const ws=workbook?.getWorksheet?.(activeSheet);if(ret&&ws?.name==='발주서'){normalizeOrderStyles107(ws);try{renderSheet(true)}catch(_){ }schedulePersistentState?.(40);scheduleWorkbookSnapshot?.(550)}return ret};window.v26PasteMatrix=v26PasteMatrix;
+  }catch(e){console.warn('[v107 paste style]',e)}
+
+  // Order-sheet edits still explicitly reconcile additions/new centers, then the live dashboard takes over.
+  function repair107(){try{const order=workbook?.getWorksheet?.('발주서');if(order)normalizeOrderStyles107(order);if(workbook)recalcDashboard(workbook);if(activeSheet==='발주서'||workbook?.getWorksheet?.(activeSheet))renderSheet(true)}catch(e){console.warn('[v107 repair]',e)}}
+  setTimeout(repair107,180);setTimeout(repair107,900);setTimeout(repair107,3100);
+})();
+</script>
+<!-- ===== /v107 ===== -->
+
 </body>
 </html>
 
@@ -8160,3 +8305,218 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v106 ===== -->
+
+
+<!-- ===== v108: 70*42*37 fixed pallet capacity + mixed standard mapping + completed/incomplete reconcile ===== -->
+<script id="v108-pallet-standard-mix-and-reconcile">
+(function(){
+  if(window.__TC_V108__)return;window.__TC_V108__=true;
+
+  const norm108=v=>String(v??'').trim().replace(/[×xX]/g,'*').replace(/\s+/g,'');
+  const text108=v=>String(v??'').trim().replace(/\s+/g,' ');
+  const n108=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const clone108=v=>{try{return typeof cloneObj==='function'?cloneObj(v):JSON.parse(JSON.stringify(v))}catch(_){return v}};
+
+  // Standard cartons are mapped with a shared 24-unit pallet model.
+  // 60*50*45 = 12/pallet -> 2 units each
+  // 70*42*37 = 12/pallet -> 2 units each
+  // 60*50*25 = 24/pallet -> 1 unit each
+  // Because they share the same 24-unit pool, all three sizes can be mixed on one pallet.
+  const STD_UNIT108=24;
+  const STD_COST108={
+    '60*50*45':2,
+    '70*42*37':2,
+    '60*50*25':1
+  };
+
+  function standardSpec108(size){
+    const key=norm108(size);const cost=STD_COST108[key];
+    return cost?{mode:'standard',key:'standard-mixed-v108',label:key,cost,capacity:STD_UNIT108/cost}:null;
+  }
+  function customSpec108(size){
+    let p=null;try{p=typeof palletBoxProfile==='function'?palletBoxProfile(size):null}catch(_){p=null}
+    if(!p?.ok)return {mode:'custom',key:'custom:'+norm108(size),label:norm108(size),profile:{ok:true,h:AUTO_PALLET_USABLE_HEIGHT_CM,slots:1,key:'custom:'+norm108(size)}};
+    return {mode:'custom',key:'custom:'+p.key,label:p.label||norm108(size),profile:p};
+  }
+  function mappingSpec108(size){return standardSpec108(size)||customSpec108(size)}
+  function newPallet108(no,spec){
+    const p={no,mode:spec.mode,key:spec.key,segments:[],totalBoxes:0,totalQty:0,totalWeight:0,firstRow:0,lastRow:0};
+    if(spec.mode==='standard'){p.mixUsed=0;p.mixCapacity=STD_UNIT108}
+    else{const prof=spec.profile||{};p.profile=prof;p.stacks=Array(Math.max(1,Number(prof.slots)||1)).fill(0)}
+    return p;
+  }
+  function compatible108(p,spec){return !!p&&p.mode===spec.mode&&(spec.mode==='standard'||p.key===spec.key)}
+  function placeOne108(p,spec){
+    if(!compatible108(p,spec))return false;
+    if(spec.mode==='standard'){
+      if((Number(p.mixUsed)||0)+spec.cost>STD_UNIT108)return false;
+      p.mixUsed=(Number(p.mixUsed)||0)+spec.cost;return true;
+    }
+    const prof=spec.profile||{};let pick=-1,best=-1;
+    for(let i=0;i<(p.stacks||[]).length;i++){
+      const cur=Number(p.stacks[i])||0;
+      if(cur+Number(prof.h||0)<=AUTO_PALLET_USABLE_HEIGHT_CM+.0001&&cur>best){best=cur;pick=i}
+    }
+    if(pick<0)return false;p.stacks[pick]+=Number(prof.h||0);return true;
+  }
+  function sortedGroups108(state){return (state?.completed||[]).slice().sort((a,b)=>(Number(a?.seq)||0)-(Number(b?.seq)||0))}
+  function breakIds108(state){
+    const valid=new Set(sortedGroups108(state).map(g=>String(g?.id||'')).filter(Boolean));
+    return new Set((state?.manualPalletBreaks||[]).map(String).filter(x=>valid.has(x)));
+  }
+
+  // Replace the old geometry-only mapper. The old mapper calculated 70*42*37 as 8 boxes/pallet.
+  // This mapper makes it an explicit 12 boxes/pallet and lets it share remaining capacity with
+  // both existing standard carton sizes.
+  buildAutoPalletPlan=function(ws,state){
+    const isPalletSheet=sheetKind(ws)==='pallet';
+    if(!isPalletSheet){
+      return {sig:'parcel-v108',pallets:[],segments:sortedGroups108(state).map(g=>({group:g,palletNo:null,boxCount:Math.max(1,Number(g.boxCount)||1),boxOffset:0,size:g.size,boxNo:g.boxNo,items:(g.items||[]).map(i=>({...i,totalQty:Number(i.totalQty||0)})),totalPerBox:(g.items||[]).reduce((a,i)=>a+Number(i.perBoxQty||0),0)}))};
+    }
+    const baseSig=typeof palletPlanSignature==='function'?palletPlanSignature(state):JSON.stringify(sortedGroups108(state).map(g=>[g.id,g.seq,g.boxCount,g.size,g.boxNo]));
+    const sig='v108|'+baseSig;
+    if(state._autoPalletPlan?.sig===sig)return state._autoPalletPlan;
+    const breaks=breakIds108(state),pallets=[],segments=[];let current=null;
+    for(const group of sortedGroups108(state)){
+      const spec=mappingSpec108(group.size),totalBoxes=Math.max(1,Number(group.boxCount)||1);let remain=totalBoxes,offset=0;
+      const perQty=(group.items||[]).reduce((a,i)=>a+Number(i.perBoxQty||0),0);
+      while(remain>0){
+        if(!compatible108(current,spec)){current=newPallet108(pallets.length+1,spec);pallets.push(current)}
+        let take=0;
+        while(remain>0&&placeOne108(current,spec)){take++;remain--}
+        if(take===0){
+          current=newPallet108(pallets.length+1,spec);pallets.push(current);
+          if(!placeOne108(current,spec)){take=1;remain--}else{take=1;remain--}
+        }
+        const segItems=(group.items||[]).map(i=>({...i,totalQty:Number(i.perBoxQty||0)*take}));
+        const seg={group,pallet:current,palletNo:current.no,boxCount:take,boxOffset:offset,size:group.size,boxNo:splitMappedBoxNo(group.boxNo,totalBoxes,offset,take),items:segItems,totalPerBox:perQty};
+        segments.push(seg);current.segments.push(seg);current.totalBoxes+=take;current.totalQty+=perQty*take;
+        const w=Number(group.weight);if(Number.isFinite(w))current.totalWeight+=w*take;offset+=take;
+      }
+      if(breaks.has(String(group.id||''))&&current){current.manualClosed=true;current.manualClosedAfterGroupId=String(group.id||'');current=null}
+    }
+    const plan={sig,pallets,segments};state._autoPalletPlan=plan;return plan;
+  };
+  window.buildAutoPalletPlan=buildAutoPalletPlan;
+
+  // ---------- completed / incomplete source reconciliation ----------
+  // Use barcode first as the stable SKU key. This prevents a fully completed SKU from being
+  // recreated below the divider by an autosave/server refresh when product text formatting differs.
+  function skuKey108(x){
+    const b=text108(x?.barcode).toLowerCase();if(b)return 'b:'+b;
+    const p=text108(x?.productNumber).toLowerCase();if(p)return 'p:'+p;
+    const n=text108(x?.productName).toLowerCase();return n?'n:'+n:'';
+  }
+  function source108(){
+    try{const f=window.v92ParseOrderSource||window.v90ParseOrderSource;return typeof f==='function'&&workbook?f(workbook):null}catch(_){return null}
+  }
+  function center108(g,it){
+    try{if(typeof centerDisplay==='function')return centerDisplay(g.company,it.center)}catch(_){ }
+    return it?.center||g?.center||'';
+  }
+  function rebuildIncomplete108(ws,state,src){
+    if(!ws||!state||!src?.groups?.length)return false;
+    const g=src.groups.find(x=>String(x?.name||'')===String(ws.name||''));if(!g?.items?.length)return false;
+    const done=new Map();
+    for(const cg of (state.completed||[]))for(const ci of (cg?.items||[])){
+      const k=skuKey108(ci),q=n108(ci?.totalQty);if(k&&q>0)done.set(k,(done.get(k)||0)+q);
+    }
+    const old=Array.isArray(state.incomplete)?state.incomplete:[],rebuilt=[];let idx=0;
+    for(const it of g.items){
+      const k=skuKey108(it);let qty=n108(it?.qty);if(!(qty>0)||!k)continue;
+      const used=Math.min(qty,done.get(k)||0);qty-=used;done.set(k,Math.max(0,(done.get(k)||0)-used));
+      if(qty<=0)continue;
+      const oldHit=old.find(x=>skuKey108(x)===k&&Number(x?.order||0)===Number(it?.sourceRow||0));
+      rebuilt.push({
+        id:oldHit?.id||`v108:${ws.name}:${it.sourceRow||idx}:${idx}`,
+        productNumber:clone108(it.productNumber),productName:it.productName||'',barcode:it.barcode||'',
+        center:center108(g,it),qty,remainingQty:qty,centerFill:clone108(it.centerFill),centerFont:clone108(it.centerFont),
+        order:Number(it.sourceRow)||idx
+      });idx++;
+    }
+    const sig=a=>(a||[]).map(x=>`${skuKey108(x)}:${n108(x.remainingQty??x.qty)}`).join('|');
+    const changed=sig(old)!==sig(rebuilt);state.incomplete=rebuilt;
+    state.canonicalSourceV108=true;state.stateFormatV108=108;
+    try{assignVisualRows(ws,state)}catch(_){ }
+    try{if(changed&&typeof dirtyPalletSheets!=='undefined')dirtyPalletSheets.add(ws.name)}catch(_){ }
+    return changed;
+  }
+  function reconcileSheet108(ws){
+    if(!ws||ws.name==='발주서'||typeof isPackWorkSheet!=='function'||!isPackWorkSheet(ws))return false;
+    let st=null;try{st=ensurePalletState(ws)}catch(_){return false}if(!st)return false;
+    return rebuildIncomplete108(ws,st,source108());
+  }
+  function reconcileAll108(){
+    const src=source108();if(!src?.groups?.length||!workbook)return 0;let count=0;
+    for(const g of src.groups){const ws=workbook.getWorksheet?.(g.name);if(!ws)continue;let st=null;try{st=ensurePalletState(ws)}catch(_){continue}if(st&&rebuildIncomplete108(ws,st,src))count++}
+    return count;
+  }
+  function refreshAfterReconcile108(sheet){
+    try{
+      const ws=sheet&&workbook?.getWorksheet?.(sheet);if(!ws)return;
+      reconcileSheet108(ws);delete ensurePalletState(ws)._autoPalletPlan;assignVisualRows(ws,ensurePalletState(ws));recalcWorkSheet(ws);
+      if(activeSheet===sheet)renderSheet(true);
+      if(typeof recalcDashboard==='function')recalcDashboard(workbook);
+    }catch(e){console.warn('[v108 reconcile refresh]',e)}
+  }
+
+  // Reconcile immediately after a box is completed/edited/cancelled.
+  try{
+    const baseCommit108=commitInlineBoxDraft;
+    commitInlineBoxDraft=function(){const sheet=boxDraft?.sheetName;const ret=baseCommit108.apply(this,arguments);if(sheet)setTimeout(()=>{refreshAfterReconcile108(sheet);try{schedulePersistentState?.(30)}catch(_){ }},25);return ret};
+    window.commitInlineBoxDraft=commitInlineBoxDraft;
+  }catch(e){console.warn('[v108 commit hook]',e)}
+  try{
+    const baseModal108=commitBoxDraft;
+    commitBoxDraft=function(){const sheet=boxDraft?.sheetName;const ret=baseModal108.apply(this,arguments);if(sheet)setTimeout(()=>{refreshAfterReconcile108(sheet);try{schedulePersistentState?.(30)}catch(_){ }},25);return ret};
+    window.commitBoxDraft=commitBoxDraft;
+  }catch(e){console.warn('[v108 modal hook]',e)}
+  try{
+    const baseCancelInline108=cancelInlineEditedBox;
+    cancelInlineEditedBox=function(){const sheet=boxDraft?.sheetName;const ret=baseCancelInline108.apply(this,arguments);if(sheet)setTimeout(()=>refreshAfterReconcile108(sheet),10);return ret};
+    window.cancelInlineEditedBox=cancelInlineEditedBox;
+  }catch(e){console.warn('[v108 cancel hook]',e)}
+
+  // A recovered/server state is corrected before it is left on screen.
+  try{
+    const baseApply108=applyRecoveredState;
+    applyRecoveredState=function(saved){const ret=baseApply108.apply(this,arguments);try{reconcileAll108();const ws=workbook?.getWorksheet?.(activeSheet);if(ws&&isPackWorkSheet(ws)){delete ensurePalletState(ws)._autoPalletPlan;assignVisualRows(ws,ensurePalletState(ws));recalcWorkSheet(ws);renderSheet(true)}}catch(e){console.warn('[v108 recovered reconcile]',e)}return ret};
+    window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v108 apply hook]',e)}
+
+  // v103 can rebuild unfinished quantities while creating an autosave payload. Reconcile once
+  // before and once after that older wrapper, then overwrite only the payload's unfinished arrays
+  // with the corrected live state.
+  try{
+    const basePayload108=persistentStatePayload;
+    persistentStatePayload=function(){
+      try{reconcileAll108()}catch(_){ }
+      const p=basePayload108.apply(this,arguments);
+      try{
+        reconcileAll108();
+        if(p&&Array.isArray(p.palletStates)){
+          const live=new Map();for(const [name,st] of palletStates.entries())live.set(String(name),st);
+          p.palletStates=p.palletStates.map(pair=>{
+            if(!Array.isArray(pair)||pair.length<2)return pair;const st=live.get(String(pair[0]||''));if(!st)return pair;
+            const raw=pair[1]&&typeof pair[1]==='object'?pair[1]:{};
+            raw.incomplete=(st.incomplete||[]).map(i=>{const x={...i};delete x._visualRow;return x});raw.canonicalSourceV108=true;raw.stateFormatV108=108;return [pair[0],raw];
+          });p.stateFormatV108=108;
+        }
+      }catch(e){console.warn('[v108 payload reconcile]',e)}
+      return p;
+    };
+    window.persistentStatePayload=persistentStatePayload;
+  }catch(e){console.warn('[v108 payload hook]',e)}
+
+  // Clear stale mapper caches once so an already-open job immediately remaps 70*42*37 at 12/pallet.
+  setTimeout(()=>{
+    try{
+      for(const [name,st] of palletStates.entries()){delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;const ws=workbook?.getWorksheet?.(name);if(ws&&sheetKind(ws)==='pallet'){rebuildIncomplete108(ws,st,source108());assignVisualRows(ws,st);recalcWorkSheet(ws)}}
+      const ws=workbook?.getWorksheet?.(activeSheet);if(ws&&isPackWorkSheet(ws))renderSheet(true);
+    }catch(e){console.warn('[v108 initial remap]',e)}
+  },180);
+
+  window.__TC_V108_API__={STD_COST108,reconcileAll108,reconcileSheet108,mappingSpec108};
+})();
+</script>
+<!-- ===== /v108 ===== -->
