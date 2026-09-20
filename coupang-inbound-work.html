@@ -10015,3 +10015,244 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v120 ===== -->
+
+<!-- ===== v122: preserve additional Order rows + aggregate into center tabs + progress percent ===== -->
+<script id="v122-order-additions-stable">
+(function(){
+  if(window.__TC_V122__)return;window.__TC_V122__=true;
+
+  const n122=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const t122=v=>String(v??'').trim();
+  const clone122=v=>{try{return typeof cloneObj==='function'?cloneObj(v):structuredClone(v)}catch(_){try{return JSON.parse(JSON.stringify(v))}catch(__){return v}}};
+  const norm122=v=>t122(v).replace(/\s+/g,' ').toLowerCase();
+
+  function cellText122(cell){
+    try{return t122(typeof displayText==='function'?displayText(cell):(cell?.text??cell?.value??''))}catch(_){return t122(cell?.value)}
+  }
+  function qtyCell122(cell){
+    try{if(typeof cellNum==='function'){const n=Number(cellNum(cell));if(Number.isFinite(n))return n}}catch(_){ }
+    const m=cellText122(cell).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0])||0:0;
+  }
+  function itemKey122(it){
+    const p=norm122(it?.productNumber),b=norm122(it?.barcode),nm=norm122(it?.productName);
+    return p?'P:'+p:(b?'B:'+b:(nm?'N:'+nm:''));
+  }
+  function sameItem122(a,b){
+    const ap=norm122(a?.productNumber),bp=norm122(b?.productNumber);if(ap&&bp)return ap===bp;
+    const ab=norm122(a?.barcode),bb=norm122(b?.barcode);if(ab&&bb)return ab===bb;
+    const an=norm122(a?.productName),bn=norm122(b?.productName);return !!an&&an===bn;
+  }
+
+  // 발주서의 행 번호가 중간에 사라지지 않게 한다. 기존 파일에서 숨겨졌던 699행 같은 행도 다시 보인다.
+  function unhideOrderRows122(order=workbook?.getWorksheet?.('발주서')){
+    if(!order)return false;let changed=false;
+    const end=Math.max(8,Number(order.rowCount)||8),donor=order.getRow(9),donorHeight=Number(donor?.height)||22;
+    for(let r=8;r<=end;r++){
+      const row=order.getRow(r);
+      if(row.hidden){row.hidden=false;changed=true}
+      if(Number(row.height)>0&&Number(row.height)<5){row.height=donorHeight;changed=true}
+    }
+    return changed;
+  }
+
+  function aggregateGroup122(g){
+    const map=new Map(),out=[];
+    for(const src of (g?.items||[])){
+      const key=itemKey122(src);if(!key)continue;
+      let x=map.get(key);
+      if(!x){
+        x={...clone122(src),qty:0,_sourceRowsV122:[]};map.set(key,x);out.push(x);
+      }
+      x.qty+=Math.max(0,n122(src.qty));
+      x._sourceRowsV122.push(Number(src.sourceRow)||0);
+      if((Number(src.sourceRow)||999999)<(Number(x.sourceRow)||999999))x.sourceRow=Number(src.sourceRow)||x.sourceRow;
+    }
+    return out;
+  }
+
+  function makeIncomplete122(g,it,left,idx){
+    let centerText=it.center;
+    try{if(typeof centerDisplay==='function')centerText=centerDisplay(g.company,it.center)}catch(_){ }
+    return {
+      id:`v122:${g.key||g.name}:${it.sourceRow||idx}:${idx}`,
+      productNumber:clone122(it.productNumber),productName:it.productName||'',barcode:it.barcode||'',center:centerText||g.center||'',
+      qty:left,remainingQty:left,centerFill:clone122(it.centerFill),centerFont:clone122(it.centerFont),
+      // Keep the first real Order row as the legacy link target. The complete list itself stays untouched on the Order tab.
+      order:Number(it.sourceRow)||0,_sourceRowsV122:(it._sourceRowsV122||[]).slice(),_aggregateSourceV122:true
+    };
+  }
+
+  function ensureCenterSheet122(g){
+    let ws=workbook?.getWorksheet?.(g.name);if(ws)return {ws,created:false};
+    try{
+      ws=cloneTemplateSheet(workbook,g.kind==='pallet'?'pallet':'parcel',g.name);
+      ws._webKind=g.kind;ws._webCompany=g.company;ws._webSourceOrder=Number(g.sourceOrder)||0;ws._webSourceManagedV92=true;
+      ws._webWorkType=g.kind==='parcel'?'parcel':(/밀크런/i.test(String(g.center||''))?'milkrun':'pallet');
+      ws.getCell('A1').value=g.name;
+      const start=typeof generationStartRow==='function'?generationStartRow(ws):4;
+      const st=assignVisualRows(ws,{completed:[],incomplete:[],nextSeq:1,templateRow:start,nextItemId:1});
+      palletStates.set(ws.name,st);
+      return {ws,created:true};
+    }catch(e){console.warn('[v122 create center]',g?.name,e);return {ws:null,created:false}}
+  }
+
+  function incompleteSig122(arr){
+    return (arr||[]).map(x=>`${itemKey122(x)}:${n122(x.remainingQty??x.qty)}:${(x._sourceRowsV122||[]).join(',')}`).join('||');
+  }
+
+  // IMPORTANT: completed work is never rebuilt/deleted here. Only the remaining (unfinished) list is recalculated.
+  function reconcileCenter122(g,ws){
+    if(!ws||!g)return false;
+    let st;try{st=ensurePalletState(ws)}catch(_){return false}if(!st)return false;
+    const agg=aggregateGroup122(g),rebuilt=[];
+    for(let i=0;i<agg.length;i++){
+      const src=agg[i];let done=0;
+      for(const cg of (st.completed||[]))for(const ci of (cg.items||[]))if(sameItem122(src,ci))done+=Math.max(0,n122(ci.totalQty));
+      const left=Math.max(0,n122(src.qty)-done);
+      if(left>0)rebuilt.push(makeIncomplete122(g,src,left,i));
+    }
+    const before=incompleteSig122(st.incomplete),after=incompleteSig122(rebuilt),changed=before!==after;
+    if(changed)st.incomplete=rebuilt;
+    ws._webKind=g.kind;ws._webCompany=g.company;ws._webSourceOrder=Number(g.sourceOrder)||0;ws._webSourceManagedV92=true;
+    ws._webWorkType=g.kind==='parcel'?'parcel':(/밀크런/i.test(String(g.center||''))?'milkrun':'pallet');ws.getCell('A1').value=g.name;ws.getCell('E3').value=n122(g.total);
+    try{assignVisualRows(ws,st)}catch(_){ }
+    if(changed){
+      try{markPalletDirty(ws,st)}catch(_){ }
+      try{syncPalletState(ws,st)}catch(e){console.warn('[v122 sync center]',ws.name,e)}
+    }else try{recalcWorkSheet(ws)}catch(_){ }
+    return changed;
+  }
+
+  function reconcileOrderToCenters122(){
+    if(!workbook)return {created:0,changed:0,source:null};
+    let src=null;try{src=typeof window.v92ParseOrderSource==='function'?window.v92ParseOrderSource(workbook):null}catch(e){console.warn('[v122 parse order]',e)}
+    if(!src)return {created:0,changed:0,source:null};
+    let created=0,changed=0;
+    for(const g of (src.groups||[])){
+      const made=ensureCenterSheet122(g);if(!made.ws)continue;if(made.created)created++;
+      if(reconcileCenter122(g,made.ws))changed++;
+    }
+    return {created,changed,source:src};
+  }
+  window.v122ReconcileOrderToCenters=reconcileOrderToCenters122;
+
+  function percentText122(v){
+    const pct=Math.max(0,Math.min(1,n122(v)))*100;
+    let s=pct.toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');return s+'%';
+  }
+  function applyProgressPercent122(){
+    const order=workbook?.getWorksheet?.('발주서');if(!order)return;
+    const max=Math.max(10,Number(order.columnCount)||10);
+    for(let c=10;c<=max;c++){
+      const name=cellText122(order.getRow(2).getCell(c)),cell=order.getRow(7).getCell(c);if(!name&&!cellText122(cell))continue;
+      const v=cell.value;
+      if(typeof v==='number'&&Number.isFinite(v)){
+        cell.numFmt='0.00%';
+        if(activeSheet==='발주서'){
+          const td=document.querySelector(`#sheetHost td.cell[data-r="7"][data-c="${c}"]`);if(td)td.textContent=percentText122(v);
+        }
+      }
+    }
+  }
+  window.v122ApplyProgressPercent=applyProgressPercent122;
+
+  // Any dashboard refresh may temporarily rebuild duplicate source rows separately. Let the existing
+  // dashboard do its normal work, then collapse only the CENTER TAB unfinished list back to one product row.
+  try{
+    const baseDash122=recalcDashboard;
+    recalcDashboard=function(){
+      let ret;try{ret=baseDash122.apply(this,arguments)}catch(e){console.warn('[v122 base dashboard]',e)}
+      try{reconcileOrderToCenters122()}catch(e){console.warn('[v122 aggregate centers]',e)}
+      try{applyProgressPercent122()}catch(_){ }
+      return ret;
+    };
+    window.recalcDashboard=recalcDashboard;
+  }catch(e){console.warn('[v122 dashboard hook]',e)}
+
+  function refreshOrderAfterEdit122(message=''){
+    const order=workbook?.getWorksheet?.('발주서');if(!order)return;
+    unhideOrderRows122(order);
+    try{if(typeof window.v107NormalizeOrderStyles==='function')window.v107NormalizeOrderStyles(order)}catch(e){console.warn('[v122 order style]',e)}
+    try{recalcDashboard(workbook)}catch(e){console.warn('[v122 dashboard refresh]',e)}
+    // v101 keeps a 30-second source cache for the tab bar. This call forces that cache to refresh now.
+    try{if(typeof window.restoreCanonicalStyles101==='function')window.restoreCanonicalStyles101()}catch(_){ }
+    try{renderTabs()}catch(_){ }
+    try{if(typeof v28EnsureTrailingRows==='function')v28EnsureTrailingRows(order,40)}catch(_){ }
+    try{if(activeSheet==='발주서')renderSheet(true)}catch(_){ }
+    try{applyProgressPercent122()}catch(_){ }
+
+    // Save both lightweight work state and the edited workbook itself promptly. This is what prevents
+    // pasted Order rows from disappearing after page/update/reopen.
+    try{schedulePersistentState?.(20);scheduleWorkbookSnapshot?.(90)}catch(_){ }
+    setTimeout(()=>{try{Promise.resolve(savePersistentState?.(true)).catch(()=>{})}catch(_){ }},80);
+    setTimeout(()=>{try{saveWorkbookSnapshotNow?.()}catch(_){ }},320);
+    if(message)try{setStatus(message,'ok')}catch(_){ }
+  }
+  window.v122RefreshOrder=refreshOrderAfterEdit122;
+
+  // Bypass v104's old "duplicate rows are erased and summed into the first Order row" behavior.
+  // On the Order tab, pasted/typed rows are the user's source record and must remain exactly visible.
+  try{
+    const basePost122=window.v28PostCellMutation||v28PostCellMutation;
+    window.v28PostCellMutation=v28PostCellMutation=function(ws,message=''){
+      if(ws?.name==='발주서'){
+        refreshOrderAfterEdit122(message||'✓ 발주서 수정 내용을 보존하고 센터 목록에 반영했습니다.');
+        return;
+      }
+      return basePost122.apply(this,arguments);
+    };
+  }catch(e){console.warn('[v122 mutation hook]',e)}
+
+  // Replace only Order-sheet paste. Other sheet paste behavior is left exactly as before.
+  try{
+    const basePaste122=v26PasteMatrix;
+    v26PasteMatrix=async function(text){
+      const ws=workbook?.getWorksheet?.(activeSheet);if(ws?.name!=='발주서')return await basePaste122.apply(this,arguments);
+      const pos=v26ParseAddr(selectedCell);if(!pos)return false;
+      const matrix=v26ClipboardMatrix(text);if(!matrix.length)return false;
+      const maxC=35,limitR=6000,changes=[];
+      try{if(typeof v28EnsureTrailingRows==='function')v28EnsureTrailingRows(ws,Math.max(40,matrix.length+10))}catch(_){ }
+      for(let i=0;i<matrix.length;i++){
+        const r=pos.r+i;if(r>limitR)break;const row=ws.getRow(r);row.hidden=false;
+        for(let j=0;j<matrix[i].length;j++){
+          const c=pos.c+j;if(c>maxC)break;const cell=row.getCell(c),before=typeof v28CloneValue==='function'?v28CloneValue(cell.value):clone122(cell.value),raw=matrix[i][j];
+          cell.value=raw===''?null:coerceValue(raw,cell,c);
+          const after=typeof v28CloneValue==='function'?v28CloneValue(cell.value):clone122(cell.value);
+          if(JSON.stringify(before)!==JSON.stringify(after))changes.push({r,c,before,after});
+        }
+      }
+      if(!changes.length)return false;
+      try{if(typeof v28PushUndo==='function')v28PushUndo({sheetName:'발주서',label:`${matrix.length}줄 붙여넣기`,changes})}catch(_){ }
+      refreshOrderAfterEdit122(`✓ 추가 발주 ${matrix.length}줄을 그대로 보존하고 센터별 목록에 반영했습니다. · Ctrl+Z로 되돌릴 수 있습니다.`);
+      return true;
+    };
+    window.v26PasteMatrix=v26PasteMatrix;
+  }catch(e){console.warn('[v122 paste hook]',e)}
+
+  // Ensure hidden Order rows and percentage display are repaired whenever the Order sheet is rendered.
+  try{
+    const baseRender122=renderSheet;
+    renderSheet=function(){
+      try{const ws=workbook?.getWorksheet?.(activeSheet);if(ws?.name==='발주서')unhideOrderRows122(ws)}catch(_){ }
+      const ret=baseRender122.apply(this,arguments);
+      if(activeSheet==='발주서')requestAnimationFrame(applyProgressPercent122);
+      return ret;
+    };window.renderSheet=renderSheet;
+  }catch(e){console.warn('[v122 render hook]',e)}
+
+  // Recovery/update must not hide Order rows or split added quantities into duplicate center-list rows.
+  try{
+    const baseApply122=applyRecoveredState;
+    applyRecoveredState=function(saved){
+      const ret=baseApply122.apply(this,arguments);
+      setTimeout(()=>{try{const order=workbook?.getWorksheet?.('발주서');if(order)unhideOrderRows122(order);recalcDashboard(workbook);if(activeSheet==='발주서')renderSheet(true)}catch(e){console.warn('[v122 recovered order]',e)}},120);
+      return ret;
+    };window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v122 recovery hook]',e)}
+
+  [80,650,2200].forEach(ms=>setTimeout(()=>{try{const order=workbook?.getWorksheet?.('발주서');if(!order)return;unhideOrderRows122(order);recalcDashboard(workbook);if(activeSheet==='발주서')renderSheet(true)}catch(e){console.warn('[v122 init]',e)}},ms));
+
+  window.__TC_V122_API__={unhideOrderRows122,reconcileOrderToCenters122,applyProgressPercent122,refreshOrderAfterEdit122};
+})();
+</script>
+<!-- ===== /v122 ===== -->
