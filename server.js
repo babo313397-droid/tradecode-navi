@@ -2256,9 +2256,26 @@ async function supabaseV32(pathname,opts={}){
   if(!r.ok) throw new Error(`Supabase ${r.status}: ${typeof data==='string'?data:(data?.message||JSON.stringify(data))}`);
   return {data,status:r.status};
 }
+// v122-label-all: fetch every saved label, not only the first 1000 rows.
 async function listSupabaseLabelsV32(){
-  const {data}=await supabaseV32('shared_labels?select=*&order=updated_at.desc&limit=20000',{method:'GET'});
-  return (Array.isArray(data)?data:[]).map(fromDbLabelV32);
+  // Supabase/PostgREST 프로젝트의 API 최대행 설정이 기본 1000이면 limit=20000을 줘도
+  // 한 번의 요청에는 1000개만 돌아옵니다. 1000개씩 페이지를 끝까지 순회해 실제 저장 라벨 전체를 읽습니다.
+  const pageSize=1000,maxRows=100000,rows=[];
+  for(let offset=0;offset<maxRows;offset+=pageSize){
+    const {data}=await supabaseV32(`shared_labels?select=*&order=updated_at.desc&limit=${pageSize}&offset=${offset}`,{method:'GET'});
+    const page=Array.isArray(data)?data:[];
+    rows.push(...page);
+    if(page.length<pageSize)break;
+  }
+  // 혹시 페이지 경계에서 갱신이 겹쳐 같은 id가 다시 들어온 경우 한 번만 유지합니다.
+  const seen=new Set(),dedup=[];
+  for(const row of rows){
+    const key=String(row?.id||'')||`${String(row?.barcode||'')}|${String(row?.product_number||'')}`;
+    if(key&&seen.has(key))continue;
+    if(key)seen.add(key);
+    dedup.push(row);
+  }
+  return dedup.map(fromDbLabelV32);
 }
 async function findSupabaseLabelV32(item){
   if(item.id && /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(item.id)){
