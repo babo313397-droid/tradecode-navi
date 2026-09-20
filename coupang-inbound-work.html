@@ -4847,7 +4847,7 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
   function dedupeRaw(raw){
     if(!raw||typeof raw!=='object'||!Array.isArray(raw.completed))return {raw,changed:false,removed:0};
     const by=new Map(),free=[];let removed=0;
-    for(const g0 of raw.completed){const g=clone(g0);if(!g)continue;const b=nbox(g.boxNo);if(!b){free.push(g);continue}const k='BOX:'+b,cur=by.get(k);if(!cur){by.set(k,g);continue}removed++;const cr=rev(cur),nr=rev(g),cu=Number(cur.boxUpdatedAtV82||cur.boxCompletedAtV82||0),nu=Number(g.boxUpdatedAtV82||g.boxCompletedAtV82||0);let keep=(nr>cr||(nr===cr&&nu>cu))?g:cur;const seqs=[Number(cur.seq)||0,Number(g.seq)||0].filter(x=>x>0);if(seqs.length)keep.seq=Math.min(...seqs);const ats=[Number(cur.boxCompletedAtV82)||0,Number(g.boxCompletedAtV82)||0].filter(x=>x>0);if(ats.length)keep.boxCompletedAtV82=Math.min(...ats);by.set(k,keep)}
+    for(const g0 of raw.completed){const g=clone(g0);if(!g)continue;const b=nbox(g.boxNo);if(!b){free.push(g);continue}const rid=String(g.id||'').trim().split('::')[0];const isig=(g.items||[]).map(i=>String(i?.barcode||i?.productNumber||i?.productName||'').trim()+':'+Number(i?.perBoxQty||0)).sort().join(',');const k='BOX:'+b+'|WORK:'+(rid||isig),cur=by.get(k);if(!cur){by.set(k,g);continue}removed++;const cr=rev(cur),nr=rev(g),cu=Number(cur.boxUpdatedAtV82||cur.boxCompletedAtV82||0),nu=Number(g.boxUpdatedAtV82||g.boxCompletedAtV82||0);let keep=(nr>cr||(nr===cr&&nu>cu))?g:cur;const seqs=[Number(cur.seq)||0,Number(g.seq)||0].filter(x=>x>0);if(seqs.length)keep.seq=Math.min(...seqs);const ats=[Number(cur.boxCompletedAtV82)||0,Number(g.boxCompletedAtV82)||0].filter(x=>x>0);if(ats.length)keep.boxCompletedAtV82=Math.min(...ats);by.set(k,keep)}
     if(!removed)return {raw,changed:false,removed:0};const out=clone(raw);out.completed=[...by.values(),...free].sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));out.nextSeq=Math.max(1,...out.completed.map(g=>(Number(g.seq)||0)+1));return {raw:out,changed:true,removed};
   }
   function dedupeSaved(saved){
@@ -5591,6 +5591,112 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 <!-- ===== /v107 ===== -->
 
+
+
+<!-- ===== v121: preserve distinct completed work + restore second tub box + robust scan buttons ===== -->
+<script id="v121-preserve-work-and-scan-buttons">
+(function(){
+  if(window.__TC_V121__)return;window.__TC_V121__=true;
+
+  const SHEET121='경기광주5 밀크런';
+  const TUB_BC121='R225293230001';
+  const TUB_REC_ID121='box-1789800000000-tub374v121';
+  const n121=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const root121=id=>String(id||'').split('::')[0];
+
+  function isIncident121(st){
+    if(!st)return false;
+    const groups=Array.isArray(st.completed)?st.completed:[];
+    const hasOldTub=groups.some(g=>(g.items||[]).some(i=>String(i?.barcode||'').trim()===TUB_BC121) && /^(349~360|361~368)$/.test(String(g?.boxNo||'').trim()));
+    const label=(String(typeof currentFileName!=='undefined'?currentFileName:'')+' '+String(document.getElementById('projectSelect')?.selectedOptions?.[0]?.textContent||'')).replace(/\s+/g,'');
+    return hasOldTub||(label.includes('9월23일')&&label.includes('9월30일'));
+  }
+
+  function hasSecondTub121(st){
+    return (st?.completed||[]).some(g=>{
+      if(root121(g?.id)===TUB_REC_ID121)return true;
+      if(String(g?.boxNo||'').trim()!=='374'||Math.max(1,Math.floor(n121(g?.boxCount)||1))!==1)return false;
+      const items=Array.isArray(g?.items)?g.items:[];
+      return items.length===1&&String(items[0]?.barcode||'').trim()===TUB_BC121&&n121(items[0]?.totalQty)===5&&n121(items[0]?.perBoxQty)===5;
+    });
+  }
+
+  function sourceTub121(st){
+    let src=(st?.incomplete||[]).find(i=>String(i?.barcode||'').trim()===TUB_BC121)||null;
+    if(!src){for(const g of st?.completed||[]){src=(g.items||[]).find(i=>String(i?.barcode||'').trim()===TUB_BC121)||null;if(src)break}}
+    const x=src?JSON.parse(JSON.stringify(src)):{productNumber:56259501,productName:'원이네 무조립 접이식 욕조 이동식 블루핑크 1개 70 x 66 cm',barcode:TUB_BC121,center:SHEET121,order:900001};
+    x.productNumber=x.productNumber||56259501;
+    x.productName=x.productName||'원이네 무조립 접이식 욕조 이동식 블루핑크 1개 70 x 66 cm';
+    x.barcode=TUB_BC121;x.center=x.center||SHEET121;x.totalQty=5;x.perBoxQty=5;
+    delete x.remainingQty;delete x._visualRow;
+    return x;
+  }
+
+  function restoreSecondTub121(persist=true){
+    try{
+      if(!workbook)return false;const ws=workbook.getWorksheet?.(SHEET121);if(!ws)return false;
+      const st=ensurePalletState(ws);if(!st||!isIncident121(st)||hasSecondTub121(st))return false;
+      const rev=Math.max(Date.now(),n121(window.__TC_V78_SYNC__?.rev),...(st.completed||[]).map(g=>n121(g?.boxRevisionV82)))+1;
+      const seq=Math.max(0,...(st.completed||[]).map(g=>n121(g?.seq)))+1;
+      const g={id:TUB_REC_ID121,seq,boxCount:1,size:'70*42*37',weight:13.4,boxNo:'374',items:[sourceTub121(st)],boxCompletedAtV82:Date.now(),boxUpdatedAtV82:Date.now(),boxRevisionV82:rev,boxStatusV82:'completed',recoveredSecondTubV121:true};
+      st.completed=Array.isArray(st.completed)?st.completed:[];st.completed.push(g);st.completed.sort((a,b)=>n121(a?.seq)-n121(b?.seq));st.nextSeq=Math.max(n121(st.nextSeq)||1,seq+1);
+      try{const tomb=window.__TC_BOX_TOMBSTONES_V82__?.[SHEET121];if(tomb&&tomb[TUB_REC_ID121])delete tomb[TUB_REC_ID121]}catch(_){ }
+      try{const s=window.__TC_V78_SYNC__;if(s){s.rev=Math.max(n121(s.rev),rev);s.dirty=true;s.lastMutationAt=Date.now();sharedApplyingRemote=true}}catch(_){ }
+      delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;
+      try{const api=window.__TC_V108_API__;if(typeof api?.reconcileSheet108==='function')api.reconcileSheet108(ws)}catch(_){ }
+      try{assignVisualRows(ws,st);syncPalletState(ws,st);recalcWorkSheet(ws);recalcDashboard(workbook)}catch(e){console.warn('[v121 tub restore render]',e)}
+      if(activeSheet===SHEET121)try{renderSheet(true)}catch(_){ }
+      if(persist){try{schedulePersistentState(0);scheduleWorkbookSnapshot(700)}catch(_){ }setTimeout(()=>{try{savePersistentState(true)}catch(_){ }},180)}
+      try{setStatus('✓ 무조립 접이식 욕조 2번째 작업(5개 · 1박스 · 70*42*37 · 13.4kg)을 복구하고 저장했습니다.','ok')}catch(_){ }
+      return true;
+    }catch(e){console.warn('[v121 second tub restore]',e);return false}
+  }
+
+  // The old v85 cleanup used only the physical box number as a key. v121 patched that code above
+  // so distinct work IDs sharing a number are no longer deleted. Run recovery after all old timers settle.
+  [30,650,2400,5500].forEach(ms=>setTimeout(()=>{try{window.__TC_V120_API__?.refreshLive120?.(false);restoreSecondTub121(ms>0)}catch(_){ }},ms));
+
+  // Keep the second tub work through later local/server state applications. If an older state arrives,
+  // restore only this known completed work, then canonical incomplete quantities are reconciled again.
+  try{
+    const baseApply121=applyRecoveredState;
+    applyRecoveredState=function(saved){const r=baseApply121.apply(this,arguments);setTimeout(()=>{try{window.__TC_V120_API__?.refreshLive120?.(false);restoreSecondTub121(true)}catch(_){ }},50);return r};
+    window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v121 apply guard]',e)}
+
+  // --- Robust row Scan buttons ---
+  // Virtual completed/incomplete rows do not necessarily have the same row number as the Excel model.
+  // Read the barcode from the visible DOM cell itself instead of ws.getRow(r), which caused the last row button to disappear.
+  function domBarcode121(td){
+    if(!td)return'';const c=td.cloneNode(true);c.querySelectorAll('button').forEach(b=>b.remove());return String(c.textContent||'').trim();
+  }
+  function installScanButtons121(){
+    try{
+      const ws=workbook?.getWorksheet?.(activeSheet);if(!ws||ws.name==='발주서'||!isPackWorkSheet(ws))return;
+      const start=typeof generationStartRow==='function'?generationStartRow(ws):4;
+      document.querySelectorAll('#sheetHost td.cell[data-c="3"]').forEach(td=>{
+        const r=Number(td.dataset.r||0);if(r<start||td.querySelector('.v104-row-scan-btn,.v105-row-scan-btn,.v121-row-scan-btn'))return;
+        const barcode=domBarcode121(td);if(!barcode)return;
+        td.classList.add('v104-barcode-cell');
+        const b=document.createElement('button');b.type='button';b.className='v104-row-scan-btn v121-row-scan-btn';b.title=`${barcode} 스캔`;b.setAttribute('aria-label',`${barcode} 스캔`);
+        b.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation()});
+        b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const inp=document.getElementById('inlineScanInput');if(inp){inp.value=barcode;if(typeof addInlineBarcodeFromInput==='function')addInlineBarcodeFromInput();else if(typeof scanBarcodeInline==='function')scanBarcodeInline(barcode)}else if(typeof scanBarcodeInline==='function')scanBarcodeInline(barcode)});
+        td.appendChild(b);
+      });
+    }catch(e){console.warn('[v121 scan buttons]',e)}
+  }
+  window.installScanButtonsV121=installScanButtons121;
+  try{
+    const baseRender121=renderSheet;
+    renderSheet=function(){const r=baseRender121.apply(this,arguments);requestAnimationFrame(installScanButtons121);return r};window.renderSheet=renderSheet;
+  }catch(e){console.warn('[v121 render hook]',e)}
+  const host121=document.getElementById('sheetHost');if(host121){let raf=0;new MutationObserver(()=>{if(raf)return;raf=requestAnimationFrame(()=>{raf=0;installScanButtons121()})}).observe(host121,{childList:true,subtree:true})}
+  requestAnimationFrame(installScanButtons121);
+
+  window.__TC_V121_API__={restoreSecondTub121,installScanButtons121};
+})();
+</script>
+<!-- ===== /v121 ===== -->
 </body>
 </html>
 
@@ -9695,10 +9801,9 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
     return DESIRED120.items.map(d=>`${d.barcode}:${d.qty}:${d.qty}`).sort().join('|');
   }
   function isPhantomTub374_120(g){
-    if(!g||root120(g.id)===DESIRED_ROOT120)return false;
-    if(normBox120(g.boxNo)!=='374'||Math.max(1,Math.floor(n120(g.boxCount)||1))!==1)return false;
-    const items=Array.isArray(g.items)?g.items:[];
-    return items.length>0&&items.every(i=>String(i?.barcode||'').trim()===TUB_BARCODE120);
+    // v121 safety: never delete a user's completed box merely because another work record uses the same box number.
+    // Distinct completed-work IDs are preserved; only recursive fragments of the SAME work ID are deduped by v85/v109.
+    return false;
   }
 
   function clearDesiredTomb120(saved){
