@@ -323,11 +323,11 @@
   <section class="panel library-panel" id="savedLibraryPanel">
     <div class="preview-toolbar">
       <h2 style="margin:0">📚 공용 바코드 라벨</h2>
-      <div class="library-count" id="savedLibraryCount">공용 0개</div>
+      <div class="library-count" id="savedLibraryCount">실제 저장 확인 중...</div>
     </div>
     <div class="library-toolbar">
       <input id="savedLibrarySearch" type="text" placeholder="상품번호, 바코드, 제품명 검색" oninput="renderSavedLibrary(this.value)">
-      <button class="btn-secondary" type="button" onclick="renderSavedLibrary()">🔄 목록 새로고침</button>
+      <button class="btn-secondary" type="button" onclick="refreshSavedLibraryFromServer()">🔄 목록 새로고침</button>
     </div>
     <div class="library-table-wrap">
       <table class="library-table">
@@ -782,6 +782,7 @@
 
 
   // ---------------------------------------------------------
+  // v122-label-all: 공용 라벨 전체 조회 + 실제 저장 개수 표시
   // 공용 라벨 보관함 (서버 공유)
   // - 바코드 우선, 상품번호 보조 키로 발주서와 매칭
   // - 추후 Supabase 연결 시 이 저장 함수만 서버DB 방식으로 교체 가능
@@ -792,6 +793,7 @@
   const SHARED_EDIT_KEY_STORE=tcScopedKeyV52('tradecodeSharedLabelEditKeyV1');
   let savedLibraryView=[];
   let sharedLabelCache=[];
+  let sharedLabelTotalCount=0;
   let sharedEditKeyRequired=false;
 
   function normalizeBarcode(v){
@@ -808,6 +810,7 @@
 
   function setLabelLibrary(arr){
     sharedLabelCache=Array.isArray(arr)?arr:[];
+    sharedLabelTotalCount=sharedLabelCache.length;
     try{
       localStorage.setItem(LABEL_LIBRARY_KEY,JSON.stringify(sharedLabelCache));
       if('BroadcastChannel' in window){
@@ -821,7 +824,7 @@
   function loadCachedSharedLabels(){
     try{
       const arr=JSON.parse(localStorage.getItem(LABEL_LIBRARY_KEY)||'[]');
-      if(Array.isArray(arr)) sharedLabelCache=arr;
+      if(Array.isArray(arr)){ sharedLabelCache=arr; sharedLabelTotalCount=arr.length; }
     }catch(e){}
   }
 
@@ -886,7 +889,7 @@
       if(!res.ok||!data.ok)throw new Error(data.error||'저장소 상태 조회 실패');
       const local=(data.localSources||[]).map(x=>`${x.name}: ${Number(x.count||0)}개`).join(' / ')||'기존 라벨 파일 없음';
       const sb=data.supabaseConfigured ? `Supabase 연결됨 · ${data.supabaseCount===null?'조회 실패':Number(data.supabaseCount||0)+'개'}` : 'Supabase 환경변수 미연결';
-      alert(`공용 라벨 저장소 상태\n\n현재 표시 가능: ${Number(data.count||0)}개\n저장소: ${data.storage||'-'}\n${sb}\n${local}${data.supabaseError?`\nSupabase 오류: ${data.supabaseError}`:''}`);
+      alert(`공용 라벨 저장소 상태\n\n실제 저장 라벨: ${Number(data.count||0).toLocaleString()}개\n저장소: ${data.storage||'-'}\n${sb}\n${local}${data.supabaseError?`\nSupabase 오류: ${data.supabaseError}`:''}`);
     }catch(err){alert(err?.message||'저장소 상태를 확인하지 못했습니다.')}
   }
 
@@ -902,19 +905,21 @@
       // 직원 계정은 서버가 0개라고 응답하면 반드시 0개로 표시하여 관리자 캐시 노출을 막습니다.
       if(TC_LEGACY_V52 && serverLabels.length===0 && localProtected.length>0){
         sharedLabelCache=localProtected;
+        sharedLabelTotalCount=localProtected.length;
         if(!silent)setSaveStatus(`⚠ 서버 라벨은 0개지만 이 PC의 실제 저장 라벨 ${localProtected.length}개를 보호해서 표시합니다. '이 PC 기존 라벨 공용으로 옮기기'를 누르면 서버로 복원됩니다.`,false);
         return true;
       }
       setLabelLibrary(serverLabels);
+      sharedLabelTotalCount=Math.max(serverLabels.length,Number(data.count)||0);
       if(!silent){
         let storageText=data.storage==='supabase'?'Supabase 영구 저장':data.storage==='existing-label-file'?'기존 서버 라벨 저장소':'서버 저장';
-        setSaveStatus(`✓ 공용 라벨 ${sharedLabelCache.length}개 · ${storageText}`);
+        setSaveStatus(`✓ 실제 저장 라벨 ${sharedLabelTotalCount.toLocaleString()}개 · ${storageText}`);
       }
       return true;
     }catch(err){
       console.error(err);
       const localProtected=collectExactLocalLabelsV32();
-      if(localProtected.length)sharedLabelCache=localProtected; else loadCachedSharedLabels();
+      if(localProtected.length){sharedLabelCache=localProtected;sharedLabelTotalCount=localProtected.length;} else loadCachedSharedLabels();
       if(!silent) setSaveStatus(`${TC_LEGACY_V52?'공용':'내'} 서버 연결 실패 · 이 계정의 PC 저장 라벨 ${sharedLabelCache.length}개를 표시합니다.`,false);
       return false;
     }
@@ -2007,6 +2012,13 @@
     return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
 
+  async function refreshSavedLibraryFromServer(){
+    const ok=await fetchSharedLabels(false);
+    renderSavedLibrary();
+    if(ok)setSaveStatus(`✓ 라벨 목록 새로고침 완료 · 실제 저장 ${Math.max(sharedLabelTotalCount,getLabelLibrary().length).toLocaleString()}개`);
+  }
+  window.refreshSavedLibraryFromServer=refreshSavedLibraryFromServer;
+
   function renderSavedLibrary(filterText){
     const q=String(filterText!==undefined ? filterText : (el('savedLibrarySearch')?.value||'')).trim().toLowerCase();
     let lib=getLabelLibrary().slice().sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
@@ -2016,7 +2028,7 @@
       ].some(v=>String(v||'').toLowerCase().includes(q)));
     }
     savedLibraryView=lib;
-    if(el('savedLibraryCount')) el('savedLibraryCount').textContent=`${lib.length}개 표시 / 공용 전체 ${getLabelLibrary().length}개`;
+    if(el('savedLibraryCount')) el('savedLibraryCount').textContent=`현재 표시 ${lib.length.toLocaleString()}개 / 실제 저장 ${Math.max(sharedLabelTotalCount,getLabelLibrary().length).toLocaleString()}개`;
     const body=el('savedLibraryBody');
     if(!body) return;
     if(!lib.length){
