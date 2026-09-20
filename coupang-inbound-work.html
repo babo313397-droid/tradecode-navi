@@ -5697,6 +5697,157 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v121 ===== -->
+
+<!-- ===== v123: aggregate same product in center tab + normalize added order row style ===== -->
+<script id="v123-center-aggregate-order-style">
+(function(){
+  if(window.__TC_V123__)return;window.__TC_V123__=true;
+  const t123=v=>String(v??'').trim();
+  const n123=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const norm123=v=>t123(v).replace(/\s+/g,' ').toLowerCase();
+  const clone123=v=>{try{return typeof cloneObj==='function'?cloneObj(v):structuredClone(v)}catch(_){try{return JSON.parse(JSON.stringify(v))}catch(__){return v}}};
+  function cellText123(cell){try{return t123(typeof displayText==='function'?displayText(cell):(cell?.text??cell?.value??''))}catch(_){return t123(cell?.value)}}
+  function productKey123(it){
+    const b=norm123(it?.barcode),p=norm123(it?.productNumber),nm=norm123(it?.productName);
+    return b?'B:'+b:(p?'P:'+p:(nm?'N:'+nm:''));
+  }
+  function sameProduct123(a,b){
+    const ab=norm123(a?.barcode),bb=norm123(b?.barcode);if(ab&&bb)return ab===bb;
+    const ap=norm123(a?.productNumber),bp=norm123(b?.productNumber);if(ap&&bp)return ap===bp;
+    const an=norm123(a?.productName),bn=norm123(b?.productName);return !!an&&an===bn;
+  }
+  function source123(){try{return typeof window.v92ParseOrderSource==='function'?window.v92ParseOrderSource(workbook):null}catch(_){return null}}
+  function aggregate123(g){
+    const m=new Map(),out=[];
+    for(const it of (g?.items||[])){
+      const key=productKey123(it);if(!key)continue;
+      let x=m.get(key);
+      if(!x){x={...clone123(it),qty:0,_sourceRowsV123:[]};m.set(key,x);out.push(x)}
+      x.qty+=Math.max(0,n123(it.qty));x._sourceRowsV123.push(Number(it.sourceRow)||0);
+      if(!x.sourceRow||((Number(it.sourceRow)||999999)<Number(x.sourceRow)))x.sourceRow=Number(it.sourceRow)||x.sourceRow;
+    }
+    return out;
+  }
+  function buildIncomplete123(g,it,left,idx){
+    let center=it.center;try{if(typeof centerDisplay==='function')center=centerDisplay(g.company,it.center)}catch(_){ }
+    return {id:`v123:${g.key||g.name}:${productKey123(it)}:${idx}`,productNumber:clone123(it.productNumber),productName:it.productName||'',barcode:it.barcode||'',center:center||g.center||'',qty:left,remainingQty:left,centerFill:clone123(it.centerFill),centerFont:clone123(it.centerFont),order:Number(it.sourceRow)||0,_sourceRowsV123:(it._sourceRowsV123||[]).slice(),_aggregateSourceV123:true};
+  }
+  function sig123(arr){return (arr||[]).map(x=>`${productKey123(x)}:${n123(x.remainingQty??x.qty)}`).join('||')}
+  function reconcileOne123(g,ws,{persist=true}={}){
+    if(!g||!ws||ws.name==='발주서')return false;
+    if(typeof boxDraft!=='undefined'&&boxDraft&&boxDraft.sheetName===ws.name&&boxDraft.mode==='edit')return false;
+    let st;try{st=ensurePalletState(ws)}catch(_){return false}if(!st)return false;
+    const rebuilt=[];
+    for(const [idx,src] of aggregate123(g).entries()){
+      let done=0;
+      for(const cg of (st.completed||[]))for(const ci of (cg.items||[]))if(sameProduct123(src,ci))done+=Math.max(0,n123(ci.totalQty));
+      const left=Math.max(0,n123(src.qty)-done);if(left>0)rebuilt.push(buildIncomplete123(g,src,left,idx));
+    }
+    const changed=sig123(st.incomplete)!==sig123(rebuilt);
+    if(changed)st.incomplete=rebuilt;
+    ws._webSourceManagedV92=true;ws._webCompany=g.company;ws._webKind=g.kind;ws._webSourceOrder=Number(g.sourceOrder)||0;ws._webWorkType=g.kind==='parcel'?'parcel':(/밀크런/i.test(String(g.center||''))?'milkrun':'pallet');
+    try{ws.getCell('A1').value=g.name;ws.getCell('E3').value=n123(g.total)}catch(_){ }
+    try{assignVisualRows(ws,st)}catch(_){ }
+    if(changed){
+      try{if(typeof syncPalletState==='function')syncPalletState(ws,st);else markPalletDirty?.(ws,st)}catch(e){console.warn('[v123 sync aggregate]',ws.name,e)}
+      try{recalcWorkSheet(ws)}catch(_){ }
+      if(persist)try{schedulePersistentState?.(30)}catch(_){ }
+    }
+    return changed;
+  }
+  function reconcileAll123({persist=true,render=false}={}){
+    const src=source123();if(!src)return {changed:0,source:null};let changed=0;
+    for(const g of (src.groups||[])){
+      let ws=workbook?.getWorksheet?.(g.name);
+      if(!ws){try{ws=typeof cloneTemplateSheet==='function'?cloneTemplateSheet(workbook,g.kind==='pallet'?'pallet':'parcel',g.name):null}catch(_){ws=null}}
+      if(!ws)continue;
+      if(reconcileOne123(g,ws,{persist:false}))changed++;
+    }
+    if(changed&&persist){try{schedulePersistentState?.(25);scheduleWorkbookSnapshot?.(500)}catch(_){ }}
+    if(render&&activeSheet&&workbook?.getWorksheet?.(activeSheet))try{renderSheet(true)}catch(_){ }
+    return {changed,source:src};
+  }
+  window.v123ReconcileAll=reconcileAll123;
+
+  // Style repair: pasted Order rows keep their values, but use the same A:F visual style as the best
+  // existing row for the same center. This fixes the small/light-font row without merging/deleting it.
+  function rowIsProduct123(row){return !!(cellText123(row.getCell(1))||cellText123(row.getCell(2))||cellText123(row.getCell(3)))&&!!cellText123(row.getCell(4))}
+  function rowStyleScore123(row){
+    let size=0,count=0,bold=0;
+    for(let c=1;c<=5;c++){
+      const f=row.getCell(c).font||{},s=Number(f.size)||0;if(s){size+=s;count++}if(f.bold)bold++;
+    }
+    return (count?size/count:0)+(bold*1.5);
+  }
+  function normalizeOrderStyles123(order=workbook?.getWorksheet?.('발주서')){
+    if(!order)return false;const end=Math.max(8,Number(order.rowCount)||8),rows=[];
+    for(let r=8;r<=end;r++){const row=order.getRow(r);if(rowIsProduct123(row))rows.push(r)}
+    let changed=false;
+    for(const r of rows){
+      const row=order.getRow(r),center=norm123(cellText123(row.getCell(4)));if(!center)continue;
+      let donor=0,best=-Infinity;
+      for(const rr of rows){if(rr===r)continue;const x=order.getRow(rr);if(norm123(cellText123(x.getCell(4)))!==center)continue;const sc=rowStyleScore123(x);if(sc>best){best=sc;donor=rr}}
+      if(!donor)continue;
+      const cur=rowStyleScore123(row);if(best<=cur+0.2)continue;
+      const src=order.getRow(donor);
+      for(let c=1;c<=6;c++){
+        const dst=row.getCell(c),s=src.getCell(c);
+        try{dst.style=clone123(s.style||{});if(s.numFmt)dst.numFmt=s.numFmt;changed=true}catch(_){ }
+      }
+    }
+    return changed;
+  }
+  window.v123NormalizeOrderStyles=normalizeOrderStyles123;
+
+  // Every dashboard refresh ends with the aggregate rule. Completed box work is never changed here.
+  try{
+    const baseDash123=recalcDashboard;
+    recalcDashboard=function(){
+      const ret=baseDash123.apply(this,arguments);
+      try{reconcileAll123({persist:false,render:false})}catch(e){console.warn('[v123 dashboard aggregate]',e)}
+      return ret;
+    };window.recalcDashboard=recalcDashboard;
+  }catch(e){console.warn('[v123 dashboard hook]',e)}
+
+  // Opening a center tab is a final safety gate: duplicate unfinished rows can never remain visible.
+  try{
+    const baseRender123=renderSheet;
+    renderSheet=function(){
+      try{
+        const ws=workbook?.getWorksheet?.(activeSheet);
+        if(ws&&ws.name!=='발주서'){
+          const src=source123(),g=src?.groups?.find(x=>x.name===ws.name);if(g)reconcileOne123(g,ws,{persist:true});
+        }else if(ws?.name==='발주서')normalizeOrderStyles123(ws);
+      }catch(e){console.warn('[v123 prerender]',e)}
+      return baseRender123.apply(this,arguments);
+    };window.renderSheet=renderSheet;
+  }catch(e){console.warn('[v123 render hook]',e)}
+
+  // After Order paste/edit, repair formatting and aggregate the center list once the legacy hooks finish.
+  function afterOrder123(){
+    try{const order=workbook?.getWorksheet?.('발주서');if(order)normalizeOrderStyles123(order)}catch(_){ }
+    try{reconcileAll123({persist:true,render:false})}catch(_){ }
+    try{if(activeSheet==='발주서')renderSheet(true)}catch(_){ }
+    try{schedulePersistentState?.(30);scheduleWorkbookSnapshot?.(450)}catch(_){ }
+  }
+  try{
+    const basePaste123=v26PasteMatrix;
+    v26PasteMatrix=async function(text){const isOrder=activeSheet==='발주서',ret=await basePaste123.apply(this,arguments);if(isOrder&&ret){afterOrder123();setTimeout(afterOrder123,180);setTimeout(afterOrder123,900)}return ret};window.v26PasteMatrix=v26PasteMatrix;
+  }catch(e){console.warn('[v123 paste hook]',e)}
+  try{
+    const basePost123=window.v28PostCellMutation||v28PostCellMutation;
+    window.v28PostCellMutation=v28PostCellMutation=function(ws,message=''){const ret=basePost123.apply(this,arguments);if(ws?.name==='발주서'){afterOrder123();setTimeout(afterOrder123,180)}return ret};
+  }catch(e){console.warn('[v123 mutation hook]',e)}
+  try{
+    const baseApply123=applyRecoveredState;
+    applyRecoveredState=function(saved){const ret=baseApply123.apply(this,arguments);setTimeout(afterOrder123,120);setTimeout(afterOrder123,800);setTimeout(afterOrder123,3000);return ret};window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v123 recovery hook]',e)}
+
+  [100,800,3000].forEach(ms=>setTimeout(afterOrder123,ms));
+})();
+</script>
+<!-- ===== /v123 ===== -->
+
 </body>
 </html>
 
