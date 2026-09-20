@@ -10407,3 +10407,156 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 </script>
 <!-- ===== /v122 ===== -->
+
+<script id="v124-order-title-style-parcel-sort">
+// ===== v124: Order title/body visual repair + stable parcel company sort =====
+(function(){
+  if(window.__TC_V124__)return;window.__TC_V124__=true;
+  const t=v=>String(v??'').trim();
+  const n=v=>{const x=Number(v);return Number.isFinite(x)?x:0};
+  const clone=v=>{try{return typeof cloneObj==='function'?cloneObj(v):structuredClone(v)}catch(_){try{return JSON.parse(JSON.stringify(v))}catch(__){return v}}};
+  function txt(cell){try{return t(typeof displayText==='function'?displayText(cell):(cell?.text??cell?.value??''))}catch(_){return t(cell?.value)}}
+  function qty(cell){try{if(typeof cellNum==='function')return n(cellNum(cell));const v=cell?.value;if(typeof v==='number')return n(v);if(v&&typeof v==='object'&&Number.isFinite(Number(v.result)))return Number(v.result);const m=String(cell?.text??v??'').replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?n(m[0]):0}catch(_){return 0}}
+  function productRow(row){const a=txt(row.getCell(1)),b=txt(row.getCell(2)),c=txt(row.getCell(3)),d=txt(row.getCell(4)),q=qty(row.getCell(5));return !!(a||b||c)&&!!d&&(q>0)}
+  function centerKey(row){return txt(row.getCell(4)).replace(/\s+/g,'').toLowerCase()}
+  function fontSize(cell){const s=Number(cell?.font?.size);return Number.isFinite(s)&&s>0?s:11}
+  function rowFontAvg(row){let s=0,k=0;for(const c of [1,2,3,4,5]){s+=fontSize(row.getCell(c));k++}return k?s/k:11}
+  function median(arr){if(!arr.length)return 11;const a=arr.slice().sort((x,y)=>x-y),m=Math.floor(a.length/2);return a.length%2?a[m]:(a[m-1]+a[m])/2}
+  function colorArg(cell){try{const f=cell?.fill||{},c=f.fgColor||f.bgColor||{};return String(c.argb||'').toUpperCase()}catch(_){return''}}
+  function isYellow(cell){const x=colorArg(cell).replace(/^FF/,'');return x==='FFFF00'||x==='FFF200'||x==='FFD966'||x==='FFE699'||x==='FFF2CC'||x==='FFFF99'}
+  function yellowCount(row){let k=0;for(const c of [1,2,3,5,6])if(isYellow(row.getCell(c)))k++;return k}
+  function styleCopy(src,dst){try{dst.style=clone(src.style||{});if(src.numFmt)dst.numFmt=src.numFmt}catch(_){}}
+
+  function titleCandidate(row){
+    if(productRow(row))return '';
+    const vals=[];for(let c=1;c<=6;c++){const v=txt(row.getCell(c));if(v)vals.push(v)}
+    if(!vals.length)return '';
+    return vals.find(v=>/(?:선적(?:건)?|쿠팡\s*입고|입고건)/.test(v)&&/\d{1,2}\s*월/.test(v))
+      || vals.find(v=>/(?:코리아원|봄날애|차통익스프레스|차통|빅에잇|다사바)/.test(v)&&/(?:선적|입고)/.test(v))
+      || '';
+  }
+  function rowMerges(order,r){
+    const out=[];for(const mr of [...(order?.model?.merges||[])]){try{const p=typeof parseRange==='function'?parseRange(String(mr)):null;if(p&&p.r1<=r&&p.r2>=r&&p.c1<=6&&p.c2>=1)out.push(String(mr))}catch(_){}}
+    return out;
+  }
+  function mergedTitleDonor(order,titleRows){
+    const preferred=titleRows.filter(r=>/코리아원/.test(titleCandidate(order.getRow(r))));
+    for(const list of [preferred,titleRows])for(const r of list){if(rowMerges(order,r).some(m=>{try{const p=parseRange(m);return p.r1===r&&p.r2===r&&p.c1===1&&p.c2>=6}catch(_){return false}}))return r}
+    return titleRows[0]||0;
+  }
+  function normalizeTitleRows(order){
+    if(!order)return false;const end=Math.max(8,Number(order.rowCount)||8),titles=[];
+    for(let r=8;r<=end;r++)if(titleCandidate(order.getRow(r)))titles.push(r);
+    if(!titles.length)return false;const donorR=mergedTitleDonor(order,titles),donor=donorR?order.getRow(donorR):null;let changed=false;
+    for(const r of titles){
+      const row=order.getRow(r),title=titleCandidate(row);if(!title)continue;
+      const merges=rowMerges(order,r);for(const m of merges){try{order.unMergeCells(m);changed=true}catch(_){}}
+      if(donor&&donorR!==r){try{row.height=donor.height}catch(_){};for(let c=1;c<=6;c++)styleCopy(donor.getCell(c),row.getCell(c))}
+      if(txt(row.getCell(1))!==title){row.getCell(1).value=title;changed=true}
+      for(let c=2;c<=6;c++){if(txt(row.getCell(c))!==''){row.getCell(c).value=null;changed=true}}
+      try{order.mergeCells(r,1,r,6);changed=true}catch(_){ }
+    }
+    return changed;
+  }
+
+  // Repairs only obvious body-style outliers (yellow title-like fill, too-small or too-large pasted font).
+  // Values are never changed here.
+  function normalizeProductStyles(order){
+    if(!order)return false;const end=Math.max(8,Number(order.rowCount)||8),rows=[];
+    for(let r=8;r<=end;r++){const row=order.getRow(r);if(productRow(row))rows.push(r)}
+    if(rows.length<2)return false;
+    const baseSizes=rows.filter(r=>yellowCount(order.getRow(r))<2).map(r=>rowFontAvg(order.getRow(r)));
+    const med=median(baseSizes.length?baseSizes:rows.map(r=>rowFontAvg(order.getRow(r))));
+    const abnormal=r=>{const row=order.getRow(r),avg=rowFontAvg(row),yc=yellowCount(row);return yc>=2||avg<med-1.1||avg>med+1.6};
+    const sane=rows.filter(r=>!abnormal(r));if(!sane.length)return false;let changed=false;
+    for(const r of rows){
+      if(!abnormal(r))continue;const row=order.getRow(r),ck=centerKey(row);
+      let pool=sane.filter(rr=>centerKey(order.getRow(rr))===ck);if(!pool.length)pool=sane;
+      let donorR=0,best=Infinity;for(const rr of pool){const x=order.getRow(rr),score=Math.abs(rowFontAvg(x)-med)*20+Math.abs(rr-r)*0.001+yellowCount(x)*100;if(score<best){best=score;donorR=rr}}
+      if(!donorR)continue;const src=order.getRow(donorR),sameCenter=centerKey(src)===ck;
+      try{row.height=src.height}catch(_){}
+      for(let c=1;c<=6;c++){
+        if(c===4&&!sameCenter){
+          // Preserve a unique center fill when no same-center donor exists; repair only typography/borders/alignment.
+          const keepFill=clone(row.getCell(c).fill),keepColor=clone(row.getCell(c).font?.color);styleCopy(src.getCell(c),row.getCell(c));
+          if(keepFill&&!isYellow({fill:keepFill}))row.getCell(c).fill=keepFill;
+          if(keepColor)row.getCell(c).font={...clone(row.getCell(c).font||{}),color:keepColor};
+        }else styleCopy(src.getCell(c),row.getCell(c));
+      }
+      changed=true;
+    }
+    return changed;
+  }
+  function normalizeOrder124(){
+    const order=workbook?.getWorksheet?.('발주서');if(!order)return false;
+    let changed=false;try{changed=normalizeTitleRows(order)||changed}catch(e){console.warn('[v124 title]',e)}
+    try{changed=normalizeProductStyles(order)||changed}catch(e){console.warn('[v124 body style]',e)}
+    try{if(typeof window.v122ApplyProgressPercent==='function')window.v122ApplyProgressPercent()}catch(_){ }
+    return changed;
+  }
+  window.v124NormalizeOrder=normalizeOrder124;
+
+  // Parcel-tab company order: KoreaOne -> Bomnalae -> Chatong -> Big8 -> Dasaba.
+  function companyName124(v){
+    const s=t(v);
+    if(/다사바/i.test(s))return '다사바';
+    if(/빅에잇|big\s*8/i.test(s))return '빅에잇';
+    if(/봄날애/.test(s))return '봄날애';
+    if(/차통익스프레스|차통/.test(s))return '차통';
+    if(/코리아원/.test(s))return '코리아원';
+    return '';
+  }
+  try{
+    const baseCompany124=v25CompanyOfWorksheet;
+    v25CompanyOfWorksheet=function(ws){
+      if(!ws)return '기타';
+      const byName=companyName124(ws.name);if(byName)return byName;
+      const byMeta=companyName124(ws._webCompany);if(byMeta)return byMeta;
+      return baseCompany124?baseCompany124(ws):'기타';
+    };window.v25CompanyOfWorksheet=v25CompanyOfWorksheet;
+    v25GroupRank=function(ws){
+      const comp=v25CompanyOfWorksheet(ws),type=v25WorkTypeOfWorksheet(ws),cr=comp==='코리아원'?0:comp==='봄날애'?1:comp==='차통'?2:comp==='빅에잇'?3:comp==='다사바'?4:9;
+      if(type==='parcel')return 100+cr;
+      if(cr<9)return cr*2+(type==='milkrun'?1:0);
+      return 90+(type==='milkrun'?1:0);
+    };window.v25GroupRank=v25GroupRank;
+  }catch(e){console.warn('[v124 sort hook]',e)}
+
+  try{
+    const baseAdd124=window.addExtraWork||addExtraWork;
+    window.addExtraWork=addExtraWork=function(kind){
+      const ws=baseAdd124.apply(this,arguments);
+      try{
+        if(ws){const c=companyName124(ws.name);if(c){ws._webCompany=c;ws._webCenter=t(ws.name).replace(/^\s*(?:코리아원|봄날애|차통익스프레스|차통|빅에잇|다사바)\s*/i,'').trim()}renderTabs?.()}
+      }catch(e){console.warn('[v124 add sort]',e)}
+      return ws;
+    };
+  }catch(e){console.warn('[v124 add hook]',e)}
+
+  function persistVisual124(){
+    try{schedulePersistentState?.(40);scheduleWorkbookSnapshot?.(180)}catch(_){ }
+    setTimeout(()=>{try{saveWorkbookSnapshotNow?.()}catch(_){ }},500);
+  }
+
+  // Final wrappers run after all older versions, so older style/reconcile hooks cannot leave the Order sheet malformed.
+  try{
+    const basePaste124=v26PasteMatrix;
+    v26PasteMatrix=async function(text){const isOrder=activeSheet==='발주서',ret=await basePaste124.apply(this,arguments);if(isOrder&&ret){const ch=normalizeOrder124();try{renderTabs?.();renderSheet(true)}catch(_){ }if(ch)persistVisual124()}return ret};window.v26PasteMatrix=v26PasteMatrix;
+  }catch(e){console.warn('[v124 paste hook]',e)}
+  try{
+    const basePost124=window.v28PostCellMutation||v28PostCellMutation;
+    window.v28PostCellMutation=v28PostCellMutation=function(ws,message=''){const ret=basePost124.apply(this,arguments);if(ws?.name==='발주서'){const ch=normalizeOrder124();try{renderTabs?.();if(activeSheet==='발주서')renderSheet(true)}catch(_){ }if(ch)persistVisual124()}return ret};
+  }catch(e){console.warn('[v124 mutation hook]',e)}
+  try{
+    const baseRender124=renderSheet;
+    renderSheet=function(){try{if(activeSheet==='발주서')normalizeOrder124()}catch(_){ }return baseRender124.apply(this,arguments)};window.renderSheet=renderSheet;
+  }catch(e){console.warn('[v124 render hook]',e)}
+  try{
+    const baseApply124=applyRecoveredState;
+    applyRecoveredState=function(saved){const ret=baseApply124.apply(this,arguments);setTimeout(()=>{try{const ch=normalizeOrder124();renderTabs?.();if(activeSheet==='발주서')renderSheet(true);if(ch)persistVisual124()}catch(e){console.warn('[v124 recovery]',e)}},180);return ret};window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v124 recovery hook]',e)}
+
+  [120,900,2800].forEach(ms=>setTimeout(()=>{try{const ch=normalizeOrder124();renderTabs?.();if(activeSheet==='발주서')renderSheet(true);if(ch)persistVisual124()}catch(e){console.warn('[v124 init]',e)}},ms));
+})();
+// ===== /v124 =====
+</script>
