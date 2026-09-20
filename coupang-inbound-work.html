@@ -5848,6 +5848,162 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 </script>
 <!-- ===== /v123 ===== -->
 
+
+<script id="v125-order-title-orphan-extra-bottom">
+// ===== v125: Order title yellow + orphan merged product repair + manual extra rows pinned to bottom =====
+(function(){
+  if(window.__TC_V125__)return;window.__TC_V125__=true;
+  const V96_MARK='__V96_EXTRA_ORDER__',V125_TITLE='__V125_EXTRA_TITLE__';
+  const COL_MARK=36,COL_SHEET=37,COL_KEY=38;
+  const t=v=>String(v??'').trim();
+  const clone=v=>{try{return typeof cloneObj==='function'?cloneObj(v):structuredClone(v)}catch(_){try{return JSON.parse(JSON.stringify(v))}catch(__){return v}}};
+  const txt=cell=>{try{return t(typeof displayText==='function'?displayText(cell):(cell?.text??cell?.value??''))}catch(_){return t(cell?.value)}};
+  const num=cell=>{try{if(typeof cellNum==='function')return Number(cellNum(cell))||0;const v=cell?.value;if(typeof v==='number')return Number(v)||0;if(v&&typeof v==='object'&&Number.isFinite(Number(v.result)))return Number(v.result);const m=String(cell?.text??v??'').replace(/,/g,'').match(/-?\d+(?:\.\d+)?/);return m?Number(m[0])||0:0}catch(_){return 0}};
+  const copyStyle=(src,dst)=>{try{dst.style=clone(src.style||{});if(src.numFmt)dst.numFmt=src.numFmt}catch(_){}};
+  const companyOf=v=>{const s=t(v);if(/코리아원/.test(s))return'코리아원';if(/봄날애/.test(s))return'봄날애';if(/차통익스프레스|차통/.test(s))return'차통';if(/빅에잇|big\s*8/i.test(s))return'빅에잇';if(/다사바/i.test(s))return'다사바';return''};
+  const companyRank=v=>{const c=companyOf(v);return c==='코리아원'?0:c==='봄날애'?1:c==='차통'?2:c==='빅에잇'?3:c==='다사바'?4:9};
+  function rowMerges(order,r){const out=[];for(const mr of [...(order?.model?.merges||[])]){try{const p=typeof parseRange==='function'?parseRange(String(mr)):null;if(p&&p.r1<=r&&p.r2>=r&&p.c1<=6&&p.c2>=1)out.push(String(mr))}catch(_){}}return out}
+  function titleText(row){const vals=[];for(let c=1;c<=6;c++){const v=txt(row.getCell(c));if(v)vals.push(v)}if(!vals.length)return'';return vals.find(v=>/(?:선적(?:건)?|쿠팡\s*입고|입고건)/.test(v)&&/\d{1,2}\s*월/.test(v))||vals.find(v=>/(?:코리아원|봄날애|차통익스프레스|차통)/.test(v)&&/(?:선적|입고)/.test(v))||''}
+  function productish(row){const a=txt(row.getCell(1)),b=txt(row.getCell(2)),c=txt(row.getCell(3)),d=txt(row.getCell(4)),q=num(row.getCell(5));return !!(a||b||c)&&!!d&&q>0}
+  function yellowTitleStyle125(row){
+    for(let c=1;c<=6;c++){
+      const cell=row.getCell(c),font=clone(cell.font||{}),alignment=clone(cell.alignment||{}),border=clone(cell.border||{});
+      cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'},bgColor:{argb:'FFFFFF00'}};
+      cell.font={...font,bold:true,color:font.color||{argb:'FF000000'}};
+      cell.alignment={...alignment,horizontal:'center',vertical:'middle'};
+      if(border)cell.border=border;
+    }
+  }
+  function normalizeCoreTitles125(order){
+    if(!order)return false;let changed=false;const end=Math.max(8,Number(order.rowCount)||8);
+    for(let r=8;r<=end;r++){
+      const row=order.getRow(r),title=titleText(row);if(!title)continue;
+      const co=companyOf(title);if(!['코리아원','봄날애','차통'].includes(co))continue;
+      // One title per line, always A:F merged, bright yellow.
+      for(const m of rowMerges(order,r)){try{order.unMergeCells(m);changed=true}catch(_){}}
+      row.getCell(1).value=title;for(let c=2;c<=6;c++)row.getCell(c).value=null;
+      yellowTitleStyle125(row);try{order.mergeCells(r,1,r,6)}catch(_){ }changed=true;
+    }
+    return changed;
+  }
+  function nearestProductDonor125(order,r,center=''){
+    const end=Math.max(8,Number(order.rowCount)||8),ck=t(center).replace(/\s+/g,'').toLowerCase();let best=0,score=1e9;
+    for(let rr=8;rr<=end;rr++){
+      const row=order.getRow(rr);if(!productish(row))continue;
+      const d=txt(row.getCell(4)).replace(/\s+/g,'').toLowerCase(),s=Math.abs(rr-r)+(ck&&d===ck?-10000:0);if(s<score){score=s;best=rr}
+    }
+    return best;
+  }
+  function stateCandidates125(id){
+    const key=t(id).toUpperCase(),out=[];
+    for(const ws of (workbook?.worksheets||[])){
+      if(!ws||ws.name==='발주서'||/^__WEBTPL_/.test(ws.name))continue;
+      let st=null;try{st=typeof ensurePalletState==='function'?ensurePalletState(ws):null}catch(_){ }
+      if(st){
+        const matches=[];let total=0;
+        for(const g of (st.completed||[]))for(const it of (g.items||[])){
+          const p=t(it?.productNumber).toUpperCase(),b=t(it?.barcode).toUpperCase();if(p===key||b===key){matches.push(it);total+=Math.max(0,Number(it?.totalQty||0))}
+        }
+        for(const it of (st.incomplete||[])){
+          const p=t(it?.productNumber).toUpperCase(),b=t(it?.barcode).toUpperCase();if(p===key||b===key){matches.push(it);total+=Math.max(0,Number(it?.remainingQty??it?.qty??0))}
+        }
+        if(matches.length){const it=matches[0],center=t(it?.center||ws._webCenter||'')||t(ws.name).replace(/^\s*(?:코리아원|봄날애|차통익스프레스|차통|빅에잇|다사바)\s*/i,'');out.push({productNumber:it?.productNumber,productName:t(it?.productName),barcode:t(it?.barcode),center,qty:total,ws})}
+      }
+      // Raw visual rows are a fallback when no pallet state carries the item.
+      const start=typeof generationStartRow==='function'?generationStartRow(ws):4,end=Math.max(start,Number(ws.rowCount)||start);
+      for(let rr=start;rr<=end;rr++){
+        const row=ws.getRow(rr),p=txt(row.getCell(1)).toUpperCase(),b=txt(row.getCell(3)).toUpperCase();if(p!==key&&b!==key)continue;
+        const q=num(row.getCell(5));if(!(q>0))continue;out.push({productNumber:row.getCell(1).value,productName:txt(row.getCell(2)),barcode:txt(row.getCell(3)),center:txt(row.getCell(4))||t(ws._webCenter),qty:q,ws});
+      }
+    }
+    return out;
+  }
+  function chooseCandidate125(order,r,id){
+    const prev=order.getRow(Math.max(8,r-1)),next=order.getRow(r+1),context=txt(prev.getCell(4))||txt(next.getCell(4)),ck=t(context).replace(/\s+/g,'').toLowerCase(),arr=stateCandidates125(id);
+    if(!arr.length)return null;const same=arr.filter(x=>t(x.center).replace(/\s+/g,'').toLowerCase()===ck);return (same[0]||arr[0]);
+  }
+  function repairMergedOrphanRows125(order){
+    if(!order)return false;let changed=false;const end=Math.max(8,Number(order.rowCount)||8);
+    for(let r=8;r<=end;r++){
+      const row=order.getRow(r),title=titleText(row),merges=rowMerges(order,r);if(title)continue;
+      // A normal product/detail row must never remain merged across A:F.
+      if(merges.length){for(const m of merges){try{order.unMergeCells(m);changed=true}catch(_){}}}
+      const a=txt(row.getCell(1)),b=txt(row.getCell(2)),c=txt(row.getCell(3)),d=txt(row.getCell(4)),e=txt(row.getCell(5));
+      if(!a||b||c||d||e)continue;
+      if(!/^\d{5,}$/.test(a)&&!/^R\d+/i.test(a))continue;
+      const cand=chooseCandidate125(order,r,a);
+      if(cand){
+        if(!b&&cand.productName)row.getCell(2).value=cand.productName;
+        if(!c&&cand.barcode)row.getCell(3).value=cand.barcode;
+        if(!d&&cand.center)row.getCell(4).value=cand.center;
+        if(!e&&Number(cand.qty)>0)row.getCell(5).value=Number(cand.qty);
+      }
+      const donor=nearestProductDonor125(order,r,cand?.center||d);if(donor){const src=order.getRow(donor);try{row.height=src.height}catch(_){ }for(let cc=1;cc<=6;cc++)copyStyle(src.getCell(cc),row.getCell(cc))}
+      changed=true;
+    }
+    return changed;
+  }
+  function snapshotRow125(row){const vals=[],styles=[];for(let c=1;c<=6;c++){vals[c]=clone(row.getCell(c).value);styles[c]=clone(row.getCell(c).style||{})}return{vals,styles,height:row.height,key:txt(row.getCell(COL_KEY))}}
+  function clearRow125(order,r){for(const m of rowMerges(order,r)){try{order.unMergeCells(m)}catch(_){}}const row=order.getRow(r);for(let c=1;c<=6;c++)row.getCell(c).value=null;row.getCell(COL_MARK).value=null;row.getCell(COL_SHEET).value=null;row.getCell(COL_KEY).value=null}
+  function meaningfulBaseEnd125(order){let last=7;const end=Math.max(8,Number(order.rowCount)||8);for(let r=8;r<=end;r++){const row=order.getRow(r),mark=txt(row.getCell(COL_MARK));if(mark===V96_MARK||mark===V125_TITLE)continue;let any=false;for(let c=1;c<=6;c++)if(txt(row.getCell(c))){any=true;break}if(any)last=r}return last}
+  function titleDonor125(order){const end=Math.max(8,Number(order.rowCount)||8);for(let r=8;r<=end;r++)if(titleText(order.getRow(r)))return r;return 0}
+  function groupCompany125(sheetName){const ws=workbook?.getWorksheet?.(sheetName);return companyOf(sheetName)||companyOf(ws?._webCompany)||'코리아원'}
+  function manualRowsToBottom125(order){
+    if(!order)return false;const groups=new Map(),end=Math.max(8,Number(order.rowCount)||8);let found=false;
+    // Capture all auto-synced extra rows, regardless of where legacy v96 inserted them.
+    for(let r=8;r<=end;r++){
+      const row=order.getRow(r),mark=txt(row.getCell(COL_MARK));
+      if(mark===V96_MARK){const sheet=txt(row.getCell(COL_SHEET))||'추가 작업';if(!groups.has(sheet))groups.set(sheet,[]);groups.get(sheet).push(snapshotRow125(row));found=true}
+    }
+    // Existing v125 title rows are presentation only; rebuild them in one stable block.
+    let hadTitles=false;for(let r=8;r<=end;r++)if(txt(order.getRow(r).getCell(COL_MARK))===V125_TITLE){hadTitles=true;break}
+    if(!found&&!hadTitles)return false;
+    for(let r=8;r<=end;r++){const mark=txt(order.getRow(r).getCell(COL_MARK));if(mark===V96_MARK||mark===V125_TITLE)clearRow125(order,r)}
+    const sorted=[...groups.entries()].sort((a,b)=>companyRank(a[0])-companyRank(b[0])||a[0].localeCompare(b[0],'ko'));
+    if(!sorted.length)return hadTitles;
+    let cursor=meaningfulBaseEnd125(order)+1;const donorR=titleDonor125(order),donor=donorR?order.getRow(donorR):null;
+    for(const [sheet,items] of sorted){
+      const tr=order.getRow(cursor);if(donor){try{tr.height=donor.height}catch(_){ }for(let c=1;c<=6;c++)copyStyle(donor.getCell(c),tr.getCell(c))}
+      tr.getCell(1).value=sheet;for(let c=2;c<=6;c++)tr.getCell(c).value=null;yellowTitleStyle125(tr);try{order.mergeCells(cursor,1,cursor,6)}catch(_){ }
+      tr.getCell(COL_MARK).value=V125_TITLE;tr.getCell(COL_SHEET).value=sheet;cursor++;
+      for(const item of items){const row=order.getRow(cursor);try{row.height=item.height}catch(_){ }for(let c=1;c<=6;c++){row.getCell(c).value=clone(item.vals[c]);row.getCell(c).style=clone(item.styles[c]||{})}row.getCell(COL_MARK).value=V96_MARK;row.getCell(COL_SHEET).value=sheet;row.getCell(COL_KEY).value=item.key;cursor++}
+    }
+    try{order.getColumn(COL_MARK).hidden=true;order.getColumn(COL_SHEET).hidden=true;order.getColumn(COL_KEY).hidden=true}catch(_){ }
+    return true;
+  }
+  function normalizeOrder125(){
+    const order=workbook?.getWorksheet?.('발주서');if(!order)return false;let changed=false;
+    try{changed=repairMergedOrphanRows125(order)||changed}catch(e){console.warn('[v125 orphan row]',e)}
+    try{changed=normalizeCoreTitles125(order)||changed}catch(e){console.warn('[v125 titles]',e)}
+    try{changed=manualRowsToBottom125(order)||changed}catch(e){console.warn('[v125 extra rows bottom]',e)}
+    try{if(typeof window.v122ApplyProgressPercent==='function')window.v122ApplyProgressPercent()}catch(_){ }
+    return changed;
+  }
+  window.v125NormalizeOrder=normalizeOrder125;
+  function persist125(){try{schedulePersistentState?.(50);scheduleWorkbookSnapshot?.(260)}catch(_){ }setTimeout(()=>{try{saveWorkbookSnapshotNow?.()}catch(_){ }},700)}
+
+  // v96 creates/updates extra-order marker rows during dashboard refresh. Move those rows only AFTER that refresh.
+  try{
+    const baseDash125=recalcDashboard;
+    recalcDashboard=function(){let ret;try{ret=baseDash125.apply(this,arguments)}finally{try{normalizeOrder125()}catch(e){console.warn('[v125 post dashboard]',e)}}return ret};window.recalcDashboard=recalcDashboard;
+  }catch(e){console.warn('[v125 dashboard hook]',e)}
+  try{
+    const basePost125=window.v28PostCellMutation||v28PostCellMutation;
+    window.v28PostCellMutation=v28PostCellMutation=function(ws,message=''){const ret=basePost125.apply(this,arguments);setTimeout(()=>{try{const ch=normalizeOrder125();if(activeSheet==='발주서')renderSheet(true);if(ch)persist125()}catch(e){console.warn('[v125 mutation]',e)}},0);return ret};
+  }catch(e){console.warn('[v125 mutation hook]',e)}
+  try{
+    const baseRender125=renderSheet;
+    renderSheet=function(){if(activeSheet==='발주서')try{normalizeOrder125()}catch(_){ }return baseRender125.apply(this,arguments)};window.renderSheet=renderSheet;
+  }catch(e){console.warn('[v125 render hook]',e)}
+  try{
+    const baseApply125=applyRecoveredState;
+    applyRecoveredState=function(saved){const ret=baseApply125.apply(this,arguments);setTimeout(()=>{try{recalcDashboard(workbook);const ch=normalizeOrder125();renderTabs?.();if(activeSheet==='발주서')renderSheet(true);if(ch)persist125()}catch(e){console.warn('[v125 recovery]',e)}},260);return ret};window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v125 recovery hook]',e)}
+  [150,900,2600].forEach(ms=>setTimeout(()=>{try{recalcDashboard(workbook);const ch=normalizeOrder125();renderTabs?.();if(activeSheet==='발주서')renderSheet(true);if(ch)persist125()}catch(e){console.warn('[v125 init]',e)}},ms));
+})();
+// ===== /v125 =====
+
+</script>
 </body>
 </html>
 
