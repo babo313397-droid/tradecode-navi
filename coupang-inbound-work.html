@@ -10732,159 +10732,155 @@ window.__TC_V126__={version:126,fastCenterSwitch:true,noReconcileOnView:true,dup
 // ===== /v124 =====
 </script>
 
-<!-- ===== v128: surgical multi-PC sync + completed-box preservation (based on v126; v127 removed) ===== -->
-<script id="v128-safe-sync">
+
+<!-- ===== v129: exact-clone cleanup + draft-safe live sync (v126 base) ===== -->
+<script id="v129-exact-clone-safe-sync">
 (function(){
-  if(window.__TC_V128_SAFE_SYNC__)return;window.__TC_V128_SAFE_SYNC__=true;
+  if(window.__TC_V129_SAFE_SYNC__)return;window.__TC_V129_SAFE_SYNC__=true;
 
-  const clone128=v=>{try{return JSON.parse(JSON.stringify(v))}catch(_){return v}};
-  const n128=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
-  const id128=g=>String(g?.id||'');
-  const rev128=g=>n128(g?.boxRevisionV82);
-  const upd128=g=>Math.max(n128(g?.boxUpdatedAtV82),n128(g?.boxCompletedAtV82));
-  const tombsGlobal128=()=>{try{return window.__TC_BOX_TOMBSTONES_V82__||{}}catch(_){return {}}};
+  const clone129=v=>{try{return JSON.parse(JSON.stringify(v))}catch(_){return v}};
+  const n129=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const txt129=v=>String(v??'').trim();
+  const norm129=v=>txt129(v).replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase();
+  const root129=id=>{const s=txt129(id);if(!s)return '';const m=s.match(/^(box-\d+-[A-Za-z0-9_-]+)(?:::|$)/);return m?m[1]:s};
+  const itemKey129=it=>[
+    norm129(it?.barcode),norm129(it?.productNumber),txt129(it?.productName).replace(/\s+/g,' ').toLowerCase(),
+    n129(it?.totalQty),n129(it?.perBoxQty)
+  ].join('|');
+  const workSig129=g=>{
+    const box=norm129(g?.boxNo);if(!box)return '';
+    const items=(Array.isArray(g?.items)?g.items:[]).map(itemKey129).sort().join('||');
+    const size=norm129(g?.size).replace(/[×xX]/g,'*');
+    const weight=Number.isFinite(Number(g?.weight))?Number(g.weight).toFixed(4):txt129(g?.weight);
+    return [box,n129(g?.boxCount),size,weight,norm129(g?.trackingNo),items].join('##');
+  };
+  const rev129=g=>n129(g?.boxRevisionV82);
+  const upd129=g=>Math.max(n129(g?.boxUpdatedAtV82),n129(g?.boxCompletedAtV82));
 
-  function mergeTombs128(a,b){
-    const out={};
-    for(const src of [a,b,tombsGlobal128()]){
+  function newer129(a,b){
+    const ar=rev129(a),br=rev129(b);if(ar!==br)return ar>br?a:b;
+    const au=upd129(a),bu=upd129(b);if(au!==bu)return au>bu?a:b;
+    return (Array.isArray(a?.items)?a.items.length:0)>=(Array.isArray(b?.items)?b.items.length:0)?a:b;
+  }
+  function dedupeCompleted129(raw){
+    if(!raw||typeof raw!=='object')return {raw:raw||{},changed:false,removed:0};
+    const out=clone129(raw)||{}, src=Array.isArray(out.completed)?out.completed:[], keep=[];let removed=0;
+    for(const g0 of src){
+      if(!g0||typeof g0!=='object')continue;
+      const g=clone129(g0),rid=root129(g.id),sig=workSig129(g);
+      let at=-1;
+      for(let i=0;i<keep.length;i++){
+        const x=keep[i],sameRoot=rid&&root129(x.id)===rid,sameExact=sig&&workSig129(x)===sig;
+        if(sameRoot||sameExact){at=i;break}
+      }
+      if(at<0){keep.push(g);continue}
+      removed++;
+      const old=keep[at], chosen=clone129(newer129(old,g));
+      const seqs=[n129(old.seq),n129(g.seq)].filter(v=>v>0);if(seqs.length)chosen.seq=Math.min(...seqs);
+      const ats=[n129(old.boxCompletedAtV82),n129(g.boxCompletedAtV82)].filter(v=>v>0);if(ats.length)chosen.boxCompletedAtV82=Math.min(...ats);
+      keep[at]=chosen;
+    }
+    out.completed=keep.sort((a,b)=>n129(a.seq)-n129(b.seq));
+    if(removed)out.nextSeq=Math.max(n129(out.nextSeq)||1,...out.completed.map(g=>n129(g.seq)+1));
+    return {raw:out,changed:removed>0,removed};
+  }
+  function sanitizeSaved129(saved){
+    if(!saved||typeof saved!=='object'||!Array.isArray(saved.palletStates))return {saved,changed:false,removed:0};
+    const out=clone129(saved), rows=[];let changed=false,removed=0;
+    for(const pair of out.palletStates){
+      if(!Array.isArray(pair)||pair.length<2){rows.push(pair);continue}
+      const x=dedupeCompleted129(pair[1]);rows.push([pair[0],x.raw]);changed=changed||x.changed;removed+=x.removed;
+    }
+    out.palletStates=rows;
+    if(changed)out.exactCloneRepairV129={at:Date.now(),removed};
+    return {saved:out,changed,removed};
+  }
+  function mergeTombsIntoLocal129(src){
+    try{
+      const dst=window.__TC_BOX_TOMBSTONES_V82__=window.__TC_BOX_TOMBSTONES_V82__||{};
       for(const [sheet,rows] of Object.entries(src&&typeof src==='object'?src:{})){
-        const dst=out[sheet]||(out[sheet]={});
-        for(const [id,rev] of Object.entries(rows&&typeof rows==='object'?rows:{}))dst[id]=Math.max(n128(dst[id]),n128(rev));
+        const d=dst[sheet]||(dst[sheet]={});for(const [id,rev] of Object.entries(rows&&typeof rows==='object'?rows:{}))d[id]=Math.max(n129(d[id]),n129(rev));
       }
-    }
-    return out;
-  }
-  function newerGroup128(a,b){
-    if(!a)return b;if(!b)return a;
-    const ar=rev128(a),br=rev128(b);if(ar!==br)return ar>br?a:b;
-    const au=upd128(a),bu=upd128(b);if(au!==bu)return au>bu?a:b;
-    return (Array.isArray(a.items)?a.items.length:0)>=(Array.isArray(b.items)?b.items.length:0)?a:b;
-  }
-  function rawMap128(state){
-    const m=new Map();
-    for(const pair of (Array.isArray(state?.palletStates)?state.palletStates:[]))if(Array.isArray(pair)&&pair[0]&&pair[1])m.set(String(pair[0]),pair[1]);
-    return m;
-  }
-  function liveState128(){
-    const p={palletStates:[],boxTombstonesV82:clone128(tombsGlobal128()),stateRevisionV78:n128(window.__TC_V78_SYNC__?.rev),savedAt:Date.now()};
-    try{for(const [name,st] of palletStates.entries())p.palletStates.push([name,cleanPalletStateForSave(st)])}catch(_){ }
-    return p;
-  }
-  function mergeStates128(remote,local){
-    if(!remote&&!local)return null;
-    const base=clone128(remote||local)||{},lm=rawMap128(local||{}),rm=rawMap128(remote||{}),tombs=mergeTombs128(remote?.boxTombstonesV82,local?.boxTombstonesV82);
-    const names=new Set([...rm.keys(),...lm.keys()]),pairs=[];let recovered=0;
-    for(const name of names){
-      const rr=rm.get(name),lr=lm.get(name);let raw=clone128(rr||lr)||{};
-      const byId=new Map();
-      for(const g of (Array.isArray(rr?.completed)?rr.completed:[])){const id=id128(g);if(id)byId.set(id,clone128(g))}
-      for(const g0 of (Array.isArray(lr?.completed)?lr.completed:[])){
-        const g=clone128(g0),id=id128(g);if(!id)continue;
-        const tomb=n128(tombs?.[name]?.[id]);if(tomb&&tomb>=rev128(g))continue;
-        const old=byId.get(id),keep=newerGroup128(old,g);
-        if(!old){recovered++;byId.set(id,keep)}else if(keep===g)byId.set(id,keep);
-      }
-      raw.completed=[...byId.values()].filter(g=>{
-        const id=id128(g),tomb=n128(tombs?.[name]?.[id]);return !(tomb&&tomb>=rev128(g));
-      }).sort((a,b)=>(n128(a.seq)-n128(b.seq))||(upd128(a)-upd128(b)));
-      raw.nextSeq=Math.max(n128(rr?.nextSeq),n128(lr?.nextSeq),1,...raw.completed.map(g=>n128(g.seq)+1));
-      pairs.push([name,raw]);
-    }
-    base.palletStates=pairs;base.boxTombstonesV82=tombs;
-    base.stateRevisionV78=Math.max(n128(remote?.stateRevisionV78),n128(local?.stateRevisionV78));
-    base.savedAt=Math.max(n128(remote?.savedAt),n128(local?.savedAt),Date.now());
-    Object.defineProperty(base,'__recoveredCompleted128',{value:recovered,enumerable:false,configurable:true});
-    return base;
+    }catch(_){ }
   }
 
-  // Any recovered/server state is first unioned with the completed boxes already on this PC.
-  // This is the core fence: a remote refresh cannot make an already-completed local box disappear
-  // unless an explicit v82 cancel tombstone is newer than that completed box.
+  // Sanitize only provable clones BEFORE older recovery wrappers see the state.
+  // Distinct completed works sharing a physical box number are preserved when contents differ.
   try{
-    const baseApply128=applyRecoveredState;
-    applyRecoveredState=function(saved){
-      let merged=saved;
-      try{merged=mergeStates128(saved,liveState128())||saved}catch(e){console.warn('[v128 merge before apply]',e)}
-      const keepActive=activeSheet;
-      const ret=baseApply128.call(this,merged);
-      try{
-        // Rebuild only unfinished quantities from the canonical Order source after the completed union.
-        if(typeof window.v123ReconcileAll==='function')window.v123ReconcileAll({persist:false,render:false});
-        else if(typeof window.__TC_V108_API__?.reconcileAll108==='function')window.__TC_V108_API__.reconcileAll108();
-        for(const [name,st] of palletStates.entries()){
-          const ws=workbook?.getWorksheet?.(name);if(!ws)continue;delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;assignVisualRows(ws,st);recalcWorkSheet(ws);
-        }
-        if(keepActive&&workbook?.getWorksheet?.(keepActive))activeSheet=keepActive;
-      }catch(e){console.warn('[v128 post apply reconcile]',e)}
-      return ret;
-    };
+    const baseApply129=applyRecoveredState;
+    applyRecoveredState=function(saved){const x=sanitizeSaved129(saved);return baseApply129.call(this,x.saved)};
     window.applyRecoveredState=applyRecoveredState;
-  }catch(e){console.warn('[v128 apply fence install]',e)}
+  }catch(e){console.warn('[v129 apply sanitize]',e)}
 
-  // On page/update restore, do not choose either the local OR server state wholesale.
-  // Union their completed-box sets first. This can recover a box such as 382 if it still exists
-  // in this PC's IndexedDB even when a newer server snapshot accidentally omitted it.
+  // Never send an exact duplicate clone back to the server.
   try{
-    const basePersistGet128=persistGet;
-    persistGet=async function(key){
-      if(key!=='state')return await basePersistGet128.apply(this,arguments);
-      if(!currentProjectIdV18)return null;
-      let local=null,remote=null;
-      try{local=await localPersistGet(localProjectKeyV18('state'))}catch(_){ }
-      try{remote=await sharedRemoteGet('state')}catch(_){ }
-      if(remote==null&&local==null)return null;
-      if(remote==null)return local;
-      if(local==null){try{await localPersistPut(localProjectKeyV18('state'),remote)}catch(_){ }return remote}
-      const merged=mergeStates128(remote,local)||remote;
-      if(local?.activeSheet)merged.activeSheet=local.activeSheet;
-      // Draft stays PC-local. Keep the locally saved draft only; never import another PC's draft here.
-      merged.boxDraft=local?.boxDraft||null;
-      try{await localPersistPut(localProjectKeyV18('state'),merged)}catch(_){ }
-      if(n128(merged.__recoveredCompleted128)>0){
-        setTimeout(()=>{try{sharedRemotePut('state',merged)}catch(_){ }},0);
-      }
-      return merged;
-    };
-    window.persistGet=persistGet;
-  }catch(e){console.warn('[v128 persistGet install]',e)}
+    const basePayload129=persistentStatePayload;
+    persistentStatePayload=function(){const p=basePayload129.apply(this,arguments),x=sanitizeSaved129(p);return x.saved};
+    window.persistentStatePayload=persistentStatePayload;
+  }catch(e){console.warn('[v129 payload sanitize]',e)}
 
-  // Independent server timestamp: do not compare a browser's Date.now()/savedAt with the server's updatedAt.
-  // This removes the long multi-PC lag while leaving box completion/cancel/save functions untouched.
-  let pollBusy128=false,serverSeen128=0;
-  async function poll128(){
-    if(pollBusy128||document.hidden||persistRestoring||!workbook||!currentProjectIdV18)return;
-    pollBusy128=true;
+  // When a user is actively scanning a box, update ONLY the shared pallet states.
+  // Do not call applyRecoveredState here: that would replace/restore the local draft and caused v127's ghost draft.
+  const basePoll129=sharedPollUpdates;
+  let pollBusy129=false, serverSeen129=0;
+  async function poll129(){
+    if(pollBusy129||document.hidden||persistRestoring||sharedApplyingRemote||!workbook||!currentProjectIdV18)return;
+    const activeDraft=!!(boxDraft&&((Array.isArray(boxDraft.items)&&boxDraft.items.length)||boxDraft.mode==='edit'));
+    if(!activeDraft)return await basePoll129.apply(this,arguments);
+    pollBusy129=true;
     try{
       const st=await sharedStatus();if(!st?.ok)return;
-      const stateAt=n128(st.state?.updatedAt);if(!stateAt||stateAt<=serverSeen128)return;
-      const remote=await sharedRemoteGet('state');if(!remote){serverSeen128=Math.max(serverSeen128,stateAt);return}
-      const sync=window.__TC_V78_SYNC__||{};
-      const incomingRev=n128(remote.stateRevisionV78);
-      if(sync.dirty&&incomingRev&&incomingRev<n128(sync.rev)){
-        try{schedulePersistentState(0)}catch(_){ }
-        return;
+      const srcAt=n129(st.source?.updatedAt),stateAt=n129(st.state?.updatedAt);
+      if(srcAt&&srcAt>n129(sharedLastSourceAt)+5){
+        setStatus('☁ 다른 PC에서 선적 파일이 변경되었습니다. 현재 박스를 완료/취소한 뒤 새 파일 상태를 반영합니다.','busy');return;
       }
-      const keepActive=activeSheet;
-      remote.activeSheet=keepActive;
-      remote.boxDraft=null; // never import the other PC's unfinished scan list
-      sharedApplyingRemote=true;persistRestoring=true;
-      try{applyRecoveredState(remote)}finally{persistRestoring=false;sharedApplyingRemote=false}
-      serverSeen128=Math.max(serverSeen128,stateAt);
-      sharedLastStateAt=Math.max(n128(sharedLastStateAt),stateAt);
-      if(keepActive&&workbook?.getWorksheet?.(keepActive))activeSheet=keepActive;
-      try{renderTabs();renderSheet(true);if(boxDraft)renderInlineDraft()}catch(_){ }
-      setStatus('☁ 다른 PC 완료 작업을 동기화했습니다.','ok');
-    }catch(e){console.warn('[v128 multi-PC sync]',e)}finally{pollBusy128=false}
+      if(!stateAt||stateAt<=serverSeen129)return;
+      const remote=await sharedRemoteGet('state');if(!remote){serverSeen129=Math.max(serverSeen129,stateAt);return}
+      const sync=window.__TC_V78_SYNC__||{},incomingRev=n129(remote.stateRevisionV78);
+      if(sync.dirty&&incomingRev&&incomingRev<n129(sync.rev)){try{schedulePersistentState(0)}catch(_){ }return}
+      const fixed=sanitizeSaved129(remote).saved;mergeTombsIntoLocal129(fixed.boxTombstonesV82);
+      const changedSheets=[];
+      for(const pair of (Array.isArray(fixed.palletStates)?fixed.palletStates:[])){
+        if(!Array.isArray(pair)||pair.length<2)continue;
+        const name=String(pair[0]||''),ws=workbook.getWorksheet?.(name);if(!name||!ws)continue;
+        const raw=clone129(pair[1])||{};
+        raw.completed=Array.isArray(raw.completed)?raw.completed:[];raw.incomplete=Array.isArray(raw.incomplete)?raw.incomplete:[];
+        palletStates.set(name,raw);try{dirtyPalletSheets?.add?.(name)}catch(_){ }
+        try{delete raw._autoPalletPlan;delete raw._visualSegments;delete raw._mappedPallets;assignVisualRows(ws,raw);recalcWorkSheet(ws)}catch(e){console.warn('[v129 sheet sync]',name,e)}
+        changedSheets.push(name);
+      }
+      sharedLastStateAt=Math.max(n129(sharedLastStateAt),stateAt);serverSeen129=Math.max(serverSeen129,stateAt);
+      try{
+        if(changedSheets.includes(activeSheet)){renderSheet(true);renderInlineDraft?.();focusInlineScan?.()}
+        const refresh=()=>{try{recalcDashboard?.(workbook)}catch(_){ }};
+        if('requestIdleCallback' in window)requestIdleCallback(refresh,{timeout:1200});else setTimeout(refresh,120);
+      }catch(_){ }
+      // Cache the received canonical state locally only. Never echo it to the server from the poller.
+      try{const cache=persistentStatePayload();await localPersistPut(localProjectKeyV18('state'),cache)}catch(_){ }
+      setStatus('☁ 다른 PC 완료 작업 반영 · 현재 스캔 중인 박스는 그대로 유지','ok');
+    }catch(e){console.warn('[v129 draft-safe poll]',e)}finally{pollBusy129=false}
   }
-  sharedPollUpdates=poll128;window.sharedPollUpdates=poll128;
+  sharedPollUpdates=poll129;window.sharedPollUpdates=poll129;
 
-  // No commit/save wrapper is added here. v126's existing completion path is left intact so
-  // a completed box always clears the scan list exactly as it did before the v127 experiment.
-  setTimeout(poll128,120);
-  window.addEventListener('focus',()=>setTimeout(poll128,20));
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(poll128,20)});
-  window.__TC_V128_SAFE_SYNC__={poll:poll128,mergeStates:mergeStates128,get serverSeen(){return serverSeen128}};
+  // One local cleanup after restore. It only removes byte-for-byte-equivalent work clones
+  // (or recursive fragments of the same original group); it never removes by box number alone.
+  function cleanupLive129(){
+    try{
+      let removed=0;
+      for(const [name,st0] of palletStates.entries()){
+        const x=dedupeCompleted129(st0);if(!x.changed)continue;removed+=x.removed;palletStates.set(name,x.raw);
+        const ws=workbook?.getWorksheet?.(name);if(ws){delete x.raw._autoPalletPlan;delete x.raw._visualSegments;delete x.raw._mappedPallets;assignVisualRows(ws,x.raw);recalcWorkSheet(ws)}
+      }
+      if(removed){
+        try{window.__TC_V108_API__?.reconcileAll108?.()}catch(_){ }
+        try{renderSheet(true);recalcDashboard?.(workbook);schedulePersistentState(0)}catch(_){ }
+        setStatus(`✓ 동일 완료작업 복제 ${removed}건을 정리했습니다. 서로 다른 실제 작업은 유지합니다.`,'ok');
+      }
+      return removed;
+    }catch(e){console.warn('[v129 local clone cleanup]',e);return 0}
+  }
+  [500,1800].forEach(ms=>setTimeout(cleanupLive129,ms));
+  window.__TC_V129_SAFE_SYNC__={poll:poll129,cleanup:cleanupLive129,dedupe:dedupeCompleted129};
 })();
-
 </script>
-<!-- ===== /v128 ===== -->
+<!-- ===== /v129 ===== -->
