@@ -10733,154 +10733,267 @@ window.__TC_V126__={version:126,fastCenterSwitch:true,noReconcileOnView:true,dup
 </script>
 
 
-<!-- ===== v129: exact-clone cleanup + draft-safe live sync (v126 base) ===== -->
-<script id="v129-exact-clone-safe-sync">
+<!-- ===== v130: canonical completed-work fence + non-destructive live sync ===== -->
+<script id="v130-canonical-completed-fence">
 (function(){
-  if(window.__TC_V129_SAFE_SYNC__)return;window.__TC_V129_SAFE_SYNC__=true;
+  if(window.__TC_V130__)return;window.__TC_V130__=true;
 
-  const clone129=v=>{try{return JSON.parse(JSON.stringify(v))}catch(_){return v}};
-  const n129=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
-  const txt129=v=>String(v??'').trim();
-  const norm129=v=>txt129(v).replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase();
-  const root129=id=>{const s=txt129(id);if(!s)return '';const m=s.match(/^(box-\d+-[A-Za-z0-9_-]+)(?:::|$)/);return m?m[1]:s};
-  const itemKey129=it=>[
-    norm129(it?.barcode),norm129(it?.productNumber),txt129(it?.productName).replace(/\s+/g,' ').toLowerCase(),
-    n129(it?.totalQty),n129(it?.perBoxQty)
-  ].join('|');
-  const workSig129=g=>{
-    const box=norm129(g?.boxNo);if(!box)return '';
-    const items=(Array.isArray(g?.items)?g.items:[]).map(itemKey129).sort().join('||');
-    const size=norm129(g?.size).replace(/[×xX]/g,'*');
-    const weight=Number.isFinite(Number(g?.weight))?Number(g.weight).toFixed(4):txt129(g?.weight);
-    return [box,n129(g?.boxCount),size,weight,norm129(g?.trackingNo),items].join('##');
+  const c130=v=>{try{return JSON.parse(JSON.stringify(v))}catch(_){return v}};
+  const n130=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const t130=v=>String(v??'').trim();
+  const norm130=v=>t130(v).replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase();
+  const root130=id=>{const s=t130(id);if(!s)return '';const m=s.match(/^(box-\d+-[A-Za-z0-9_-]+)(?:::|$)/);return m?m[1]:s};
+  const sku130=it=>{
+    const bc=norm130(it?.barcode),pn=norm130(it?.productNumber);
+    return bc?('B:'+bc):(pn?('P:'+pn):('N:'+t130(it?.productName).replace(/\s+/g,' ').toLowerCase()));
   };
-  const rev129=g=>n129(g?.boxRevisionV82);
-  const upd129=g=>Math.max(n129(g?.boxUpdatedAtV82),n129(g?.boxCompletedAtV82));
+  // A physical completed-work fingerprint. Outbound box number, seq, timestamps, revision and
+  // cosmetic product-name differences are intentionally ignored. This catches the 349~360 / 361~368
+  // copies while preserving two box 374 works when their actual item contents differ.
+  const physicalSig130=g=>{
+    const box=norm130(g?.boxNo);if(!box)return '';
+    const count=Math.max(1,Math.floor(n130(g?.boxCount)||1));
+    const size=norm130(g?.size).replace(/[×xX]/g,'*');
+    const items=(Array.isArray(g?.items)?g.items:[]).map(it=>{
+      const per=n130(it?.perBoxQty);const total=n130(it?.totalQty)||(per*count);
+      return `${sku130(it)}:${per}:${total}`;
+    }).sort().join('||');
+    return `${box}##${count}##${size}##${items}`;
+  };
+  const rev130=g=>n130(g?.boxRevisionV82);
+  const updated130=g=>Math.max(n130(g?.boxUpdatedAtV82),n130(g?.boxCompletedAtV82));
+  const created130=g=>n130(g?.boxCompletedAtV82)||Number.MAX_SAFE_INTEGER;
+  const seq130=g=>{const v=n130(g?.seq);return v>0?v:Number.MAX_SAFE_INTEGER};
+  const globalTombs130=()=>{try{return window.__TC_BOX_TOMBSTONES_V82__=window.__TC_BOX_TOMBSTONES_V82__||{}}catch(_){return {}}};
+  function sheetTombs130(name){const all=globalTombs130();return all[String(name)]||(all[String(name)]={})}
+  function mergeTombs130(src){
+    const all=globalTombs130();
+    for(const [sheet,rows] of Object.entries(src&&typeof src==='object'?src:{})){
+      const d=all[sheet]||(all[sheet]={});for(const [id,r] of Object.entries(rows&&typeof rows==='object'?rows:{}))d[id]=Math.max(n130(d[id]),n130(r));
+    }
+    return all;
+  }
+  function tombed130(sheet,g,tombs=globalTombs130()){
+    const id=t130(g?.id);if(!id)return false;const tr=n130(tombs?.[sheet]?.[id]);return !!tr&&tr>rev130(g);
+  }
+  function canonicalBase130(arr){
+    return arr.slice().sort((a,b)=>
+      (seq130(a)-seq130(b)) || (created130(a)-created130(b)) || (updated130(a)-updated130(b)) || t130(a?.id).localeCompare(t130(b?.id))
+    )[0];
+  }
+  function newest130(arr){
+    return arr.slice().sort((a,b)=>
+      (rev130(b)-rev130(a)) || (updated130(b)-updated130(a)) || (seq130(a)-seq130(b))
+    )[0];
+  }
+  function mergeCanonical130(base,latest){
+    const out=c130(base)||{};
+    // Keep the original identity/sequence so pallet order does not jump after cleanup, but retain
+    // later editable metadata if the same physical work was re-saved under another id.
+    if(latest){
+      if(latest.weight!=null&&t130(latest.weight)!=='')out.weight=latest.weight;
+      if(latest.trackingNo!=null&&t130(latest.trackingNo)!=='')out.trackingNo=latest.trackingNo;
+      out.boxRevisionV82=Math.max(rev130(base),rev130(latest));
+      out.boxUpdatedAtV82=Math.max(updated130(base),updated130(latest));
+    }
+    const times=[n130(base?.boxCompletedAtV82),n130(latest?.boxCompletedAtV82)].filter(x=>x>0);if(times.length)out.boxCompletedAtV82=Math.min(...times);
+    out.boxStatusV82='completed';
+    return out;
+  }
+  function nextFenceRev130(extra=0){
+    let m=Math.max(Date.now(),n130(window.__TC_V78_SYNC__?.rev),n130(extra));
+    for(const rows of Object.values(globalTombs130()))for(const r of Object.values(rows||{}))m=Math.max(m,n130(r));
+    try{for(const [,st] of palletStates.entries())for(const g of (st.completed||[]))m=Math.max(m,rev130(g))}catch(_){ }
+    return m+1;
+  }
 
-  function newer129(a,b){
-    const ar=rev129(a),br=rev129(b);if(ar!==br)return ar>br?a:b;
-    const au=upd129(a),bu=upd129(b);if(au!==bu)return au>bu?a:b;
-    return (Array.isArray(a?.items)?a.items.length:0)>=(Array.isArray(b?.items)?b.items.length:0)?a:b;
-  }
-  function dedupeCompleted129(raw){
-    if(!raw||typeof raw!=='object')return {raw:raw||{},changed:false,removed:0};
-    const out=clone129(raw)||{}, src=Array.isArray(out.completed)?out.completed:[], keep=[];let removed=0;
-    for(const g0 of src){
-      if(!g0||typeof g0!=='object')continue;
-      const g=clone129(g0),rid=root129(g.id),sig=workSig129(g);
-      let at=-1;
-      for(let i=0;i<keep.length;i++){
-        const x=keep[i],sameRoot=rid&&root129(x.id)===rid,sameExact=sig&&workSig129(x)===sig;
-        if(sameRoot||sameExact){at=i;break}
-      }
-      if(at<0){keep.push(g);continue}
-      removed++;
-      const old=keep[at], chosen=clone129(newer129(old,g));
-      const seqs=[n129(old.seq),n129(g.seq)].filter(v=>v>0);if(seqs.length)chosen.seq=Math.min(...seqs);
-      const ats=[n129(old.boxCompletedAtV82),n129(g.boxCompletedAtV82)].filter(v=>v>0);if(ats.length)chosen.boxCompletedAtV82=Math.min(...ats);
-      keep[at]=chosen;
+  function canonicalizeCompleted130(sheet,groups,{createTombs=false,extraRev=0}={}){
+    const src=(Array.isArray(groups)?groups:[]).filter(Boolean).map(c130),byId=new Map(),free=[];
+    // Same id: keep latest revision only.
+    for(const g of src){
+      const id=t130(g?.id);if(!id){free.push(g);continue}
+      const cur=byId.get(id);if(!cur||rev130(g)>rev130(cur)||(rev130(g)===rev130(cur)&&updated130(g)>updated130(cur)))byId.set(id,g);
     }
-    out.completed=keep.sort((a,b)=>n129(a.seq)-n129(b.seq));
-    if(removed)out.nextSeq=Math.max(n129(out.nextSeq)||1,...out.completed.map(g=>n129(g.seq)+1));
-    return {raw:out,changed:removed>0,removed};
-  }
-  function sanitizeSaved129(saved){
-    if(!saved||typeof saved!=='object'||!Array.isArray(saved.palletStates))return {saved,changed:false,removed:0};
-    const out=clone129(saved), rows=[];let changed=false,removed=0;
-    for(const pair of out.palletStates){
-      if(!Array.isArray(pair)||pair.length<2){rows.push(pair);continue}
-      const x=dedupeCompleted129(pair[1]);rows.push([pair[0],x.raw]);changed=changed||x.changed;removed+=x.removed;
+    const unique=[...byId.values(),...free];
+    const bySig=new Map(),noSig=[];
+    for(const g of unique){const sig=physicalSig130(g);if(!sig){noSig.push(g);continue}(bySig.get(sig)||bySig.set(sig,[]).get(sig)).push(g)}
+    const out=[];let removed=0;const removedIds=[];
+    for(const bucket of bySig.values()){
+      if(bucket.length===1){out.push(bucket[0]);continue}
+      const base=canonicalBase130(bucket),latest=newest130(bucket),keep=mergeCanonical130(base,latest);out.push(keep);
+      for(const g of bucket){if(t130(g.id)&&t130(g.id)!==t130(keep.id)){removed++;removedIds.push(t130(g.id))}}
     }
-    out.palletStates=rows;
-    if(changed)out.exactCloneRepairV129={at:Date.now(),removed};
+    out.push(...noSig);
+    const tombs=sheetTombs130(sheet);
+    // Existing explicit cancels still win.
+    let filtered=out.filter(g=>!tombed130(sheet,g));
+    if(createTombs&&removedIds.length){
+      let fence=nextFenceRev130(extraRev);
+      for(const id of removedIds)tombs[id]=Math.max(n130(tombs[id]),fence++);
+      filtered=filtered.filter(g=>!tombed130(sheet,g));
+      try{
+        const s=window.__TC_V78_SYNC__;if(s){s.rev=Math.max(n130(s.rev),fence);s.dirty=true;s.lastMutationAt=Date.now();sharedApplyingRemote=true}
+      }catch(_){ }
+    }
+    filtered.sort((a,b)=>(seq130(a)-seq130(b))||(created130(a)-created130(b)));
+    return {completed:filtered,removed,removedIds};
+  }
+
+  function sanitizeSaved130(saved,{createTombs=false,extraRev=0}={}){
+    if(!saved||typeof saved!=='object')return {saved,changed:false,removed:0};
+    const out=c130(saved)||{};mergeTombs130(out.boxTombstonesV82||{});let changed=false,removed=0;
+    if(Array.isArray(out.palletStates))out.palletStates=out.palletStates.map(pair=>{
+      if(!Array.isArray(pair)||pair.length<2)return pair;const name=String(pair[0]||''),raw=c130(pair[1])||{};
+      const x=canonicalizeCompleted130(name,raw.completed,{createTombs,extraRev});if(x.removed){changed=true;removed+=x.removed}
+      raw.completed=x.completed;raw.nextSeq=Math.max(n130(raw.nextSeq)||1,...raw.completed.map(g=>seq130(g)+1));return [name,raw];
+    });
+    out.boxTombstonesV82=c130(globalTombs130());
+    if(changed)out.exactPhysicalCloneRepairV130={at:Date.now(),removed};
     return {saved:out,changed,removed};
   }
-  function mergeTombsIntoLocal129(src){
-    try{
-      const dst=window.__TC_BOX_TOMBSTONES_V82__=window.__TC_BOX_TOMBSTONES_V82__||{};
-      for(const [sheet,rows] of Object.entries(src&&typeof src==='object'?src:{})){
-        const d=dst[sheet]||(dst[sheet]={});for(const [id,rev] of Object.entries(rows&&typeof rows==='object'?rows:{}))d[id]=Math.max(n129(d[id]),n129(rev));
-      }
-    }catch(_){ }
+
+  function rawMap130(saved){const m=new Map();for(const p of (Array.isArray(saved?.palletStates)?saved.palletStates:[]))if(Array.isArray(p)&&p[0]&&p[1])m.set(String(p[0]),p[1]);return m}
+  function liveRaw130(name){try{return palletStates.get(name)||null}catch(_){return null}}
+
+  // Merge an incoming server state into the already-open page WITHOUT replacing the current draft.
+  // Remote is used as the metadata base; completed boxes are unioned by id, then physical clones are
+  // collapsed. Explicit tombstones remove cancelled ids. Incomplete qty is rebuilt from Order source.
+  function applyRemoteDelta130(saved){
+    if(!saved||!workbook)return {changed:0,removed:0};
+    mergeTombs130(saved.boxTombstonesV82||{});const rm=rawMap130(saved);let changed=0,removed=0;
+    for(const [name,rr0] of rm){
+      const ws=workbook.getWorksheet?.(name);if(!ws||typeof isPackWorkSheet==='function'&&!isPackWorkSheet(ws))continue;
+      const lr0=liveRaw130(name)||{};const rr=c130(rr0)||{},lr=c130(lr0)||{};
+      const byId=new Map();
+      const take=g=>{if(!g)return;const id=t130(g.id);if(!id)return;const cur=byId.get(id);if(!cur||rev130(g)>rev130(cur)||(rev130(g)===rev130(cur)&&updated130(g)>updated130(cur)))byId.set(id,c130(g))};
+      for(const g of (lr.completed||[]))take(g);for(const g of (rr.completed||[]))take(g);
+      let raw={...lr,...rr};
+      const x=canonicalizeCompleted130(name,[...byId.values()],{createTombs:false});removed+=x.removed;
+      raw.completed=x.completed.filter(g=>!tombed130(name,g));
+      // Keep local workbook bookkeeping fields if remote doesn't know them yet.
+      raw.templateRow=n130(rr.templateRow)||n130(lr.templateRow)||generationStartRow(ws);raw.nextItemId=Math.max(n130(rr.nextItemId)||1,n130(lr.nextItemId)||1);
+      raw.nextSeq=Math.max(n130(rr.nextSeq)||1,n130(lr.nextSeq)||1,...raw.completed.map(g=>seq130(g)+1));
+      delete raw._autoPalletPlan;delete raw._visualSegments;delete raw._mappedPallets;
+      palletStates.set(name,raw);try{dirtyPalletSheets?.add?.(name)}catch(_){ }
+      try{window.__TC_V108_API__?.reconcileSheet108?.(ws)}catch(_){ }
+      try{assignVisualRows(ws,raw);recalcWorkSheet(ws)}catch(e){console.warn('[v130 delta render]',name,e)}
+      changed++;
+    }
+    try{if(activeSheet&&workbook.getWorksheet?.(activeSheet))renderSheet(true)}catch(_){ }
+    try{recalcDashboard?.(workbook)}catch(_){ }
+    try{if(boxDraft)renderInlineDraft?.()}catch(_){ }
+    return {changed,removed};
   }
 
-  // Sanitize only provable clones BEFORE older recovery wrappers see the state.
-  // Distinct completed works sharing a physical box number are preserved when contents differ.
+  // Older 4-second timer cannot be cancelled because it captured the old function object.
+  // Intercept its applyRecoveredState call: normal/local restores still use the existing full restore,
+  // while a live remote state update becomes a delta merge and therefore cannot erase local completed work
+  // or resurrect a stale scan draft.
+  let fullRestoreDepth130=0;
   try{
-    const baseApply129=applyRecoveredState;
-    applyRecoveredState=function(saved){const x=sanitizeSaved129(saved);return baseApply129.call(this,x.saved)};
+    const baseRestore130=restorePersistentSession;
+    restorePersistentSession=async function(){fullRestoreDepth130++;try{return await baseRestore130.apply(this,arguments)}finally{fullRestoreDepth130--}};
+    window.restorePersistentSession=restorePersistentSession;
+  }catch(e){console.warn('[v130 restore flag]',e)}
+  try{
+    const baseApply130=applyRecoveredState;
+    applyRecoveredState=function(saved){
+      if(sharedApplyingRemote&&fullRestoreDepth130===0&&workbook){applyRemoteDelta130(saved);return}
+      const x=sanitizeSaved130(saved,{createTombs:false});return baseApply130.call(this,x.saved);
+    };
     window.applyRecoveredState=applyRecoveredState;
-  }catch(e){console.warn('[v129 apply sanitize]',e)}
+  }catch(e){console.warn('[v130 apply fence]',e)}
 
-  // Never send an exact duplicate clone back to the server.
+  // Any workbook snapshot re-inference is canonicalized before it enters palletStates.
   try{
-    const basePayload129=persistentStatePayload;
-    persistentStatePayload=function(){const p=basePayload129.apply(this,arguments),x=sanitizeSaved129(p);return x.saved};
-    window.persistentStatePayload=persistentStatePayload;
-  }catch(e){console.warn('[v129 payload sanitize]',e)}
+    const baseInfer130=inferPalletState;
+    inferPalletState=function(ws){const st=baseInfer130.apply(this,arguments);if(ws&&st){const x=canonicalizeCompleted130(ws.name,st.completed,{createTombs:false});st.completed=x.completed;st.nextSeq=Math.max(n130(st.nextSeq)||1,...st.completed.map(g=>seq130(g)+1))}return st};
+    window.inferPalletState=inferPalletState;
+  }catch(e){console.warn('[v130 infer fence]',e)}
 
-  // When a user is actively scanning a box, update ONLY the shared pallet states.
-  // Do not call applyRecoveredState here: that would replace/restore the local draft and caused v127's ghost draft.
-  const basePoll129=sharedPollUpdates;
-  let pollBusy129=false, serverSeen129=0;
-  async function poll129(){
-    if(pollBusy129||document.hidden||persistRestoring||sharedApplyingRemote||!workbook||!currentProjectIdV18)return;
-    const activeDraft=!!(boxDraft&&((Array.isArray(boxDraft.items)&&boxDraft.items.length)||boxDraft.mode==='edit'));
-    if(!activeDraft)return await basePoll129.apply(this,arguments);
-    pollBusy129=true;
+  // Never serialize a duplicate clone. This does not alter commit/cancel/pallet-move functions.
+  try{
+    const basePayload130=persistentStatePayload;
+    persistentStatePayload=function(){const p=basePayload130.apply(this,arguments),x=sanitizeSaved130(p,{createTombs:false});x.saved.boxTombstonesV82=c130(globalTombs130());return x.saved};
+    window.persistentStatePayload=persistentStatePayload;
+  }catch(e){console.warn('[v130 payload fence]',e)}
+
+  // Also canonicalize immediately before physical worksheet rows are written, so a stale workbook
+  // snapshot cannot bring the duplicate rows back after navigating away and returning.
+  try{
+    const baseSync130=syncPalletState;
+    syncPalletState=function(ws,state){
+      if(ws&&state&&Array.isArray(state.completed)){const x=canonicalizeCompleted130(ws.name,state.completed,{createTombs:false});state.completed=x.completed;state.nextSeq=Math.max(n130(state.nextSeq)||1,...state.completed.map(g=>seq130(g)+1))}
+      return baseSync130.apply(this,arguments);
+    };
+    window.syncPalletState=syncPalletState;
+  }catch(e){console.warn('[v130 worksheet fence]',e)}
+
+  // Fast multi-PC state polling. Source-file changes keep the existing safe restore path; state-only
+  // updates are merged as deltas for every PC, including while a box is being scanned.
+  let pollBusy130=false,serverSeen130=0;
+  async function poll130(){
+    if(pollBusy130||document.hidden||persistRestoring||sharedApplyingRemote||!workbook||!currentProjectIdV18)return;
+    pollBusy130=true;
     try{
       const st=await sharedStatus();if(!st?.ok)return;
-      const srcAt=n129(st.source?.updatedAt),stateAt=n129(st.state?.updatedAt);
-      if(srcAt&&srcAt>n129(sharedLastSourceAt)+5){
-        setStatus('☁ 다른 PC에서 선적 파일이 변경되었습니다. 현재 박스를 완료/취소한 뒤 새 파일 상태를 반영합니다.','busy');return;
+      const srcAt=n130(st.source?.updatedAt),stateAt=n130(st.state?.updatedAt);
+      if(srcAt&&srcAt>n130(sharedLastSourceAt)+5){
+        if(boxDraft&&Array.isArray(boxDraft.items)&&boxDraft.items.length){setStatus('☁ 다른 PC에서 선적 파일이 변경되었습니다. 현재 박스를 완료/취소한 뒤 반영합니다.','busy');return}
+        sharedApplyingRemote=true;try{await restorePersistentSession();sharedLastSourceAt=srcAt;sharedLastStateAt=Math.max(n130(sharedLastStateAt),stateAt)}finally{sharedApplyingRemote=false}return;
       }
-      if(!stateAt||stateAt<=serverSeen129)return;
-      const remote=await sharedRemoteGet('state');if(!remote){serverSeen129=Math.max(serverSeen129,stateAt);return}
-      const sync=window.__TC_V78_SYNC__||{},incomingRev=n129(remote.stateRevisionV78);
-      if(sync.dirty&&incomingRev&&incomingRev<n129(sync.rev)){try{schedulePersistentState(0)}catch(_){ }return}
-      const fixed=sanitizeSaved129(remote).saved;mergeTombsIntoLocal129(fixed.boxTombstonesV82);
-      const changedSheets=[];
-      for(const pair of (Array.isArray(fixed.palletStates)?fixed.palletStates:[])){
-        if(!Array.isArray(pair)||pair.length<2)continue;
-        const name=String(pair[0]||''),ws=workbook.getWorksheet?.(name);if(!name||!ws)continue;
-        const raw=clone129(pair[1])||{};
-        raw.completed=Array.isArray(raw.completed)?raw.completed:[];raw.incomplete=Array.isArray(raw.incomplete)?raw.incomplete:[];
-        palletStates.set(name,raw);try{dirtyPalletSheets?.add?.(name)}catch(_){ }
-        try{delete raw._autoPalletPlan;delete raw._visualSegments;delete raw._mappedPallets;assignVisualRows(ws,raw);recalcWorkSheet(ws)}catch(e){console.warn('[v129 sheet sync]',name,e)}
-        changedSheets.push(name);
-      }
-      sharedLastStateAt=Math.max(n129(sharedLastStateAt),stateAt);serverSeen129=Math.max(serverSeen129,stateAt);
-      try{
-        if(changedSheets.includes(activeSheet)){renderSheet(true);renderInlineDraft?.();focusInlineScan?.()}
-        const refresh=()=>{try{recalcDashboard?.(workbook)}catch(_){ }};
-        if('requestIdleCallback' in window)requestIdleCallback(refresh,{timeout:1200});else setTimeout(refresh,120);
-      }catch(_){ }
-      // Cache the received canonical state locally only. Never echo it to the server from the poller.
-      try{const cache=persistentStatePayload();await localPersistPut(localProjectKeyV18('state'),cache)}catch(_){ }
-      setStatus('☁ 다른 PC 완료 작업 반영 · 현재 스캔 중인 박스는 그대로 유지','ok');
-    }catch(e){console.warn('[v129 draft-safe poll]',e)}finally{pollBusy129=false}
+      if(!stateAt||stateAt<=serverSeen130)return;
+      const remote=await sharedRemoteGet('state');if(!remote){serverSeen130=Math.max(serverSeen130,stateAt);return}
+      const sync=window.__TC_V78_SYNC__||{},incomingRev=n130(remote.stateRevisionV78);
+      if(sync.dirty&&incomingRev&&incomingRev<n130(sync.rev)){try{schedulePersistentState?.(0)}catch(_){ }return}
+      applyRemoteDelta130(remote);serverSeen130=Math.max(serverSeen130,stateAt);sharedLastStateAt=Math.max(n130(sharedLastStateAt),stateAt);
+      // local cache only; never echo a poll result back to the server.
+      try{await localPersistPut(localProjectKeyV18('state'),persistentStatePayload())}catch(_){ }
+      setStatus('☁ 다른 PC 완료 작업 반영 완료','ok');
+    }catch(e){console.warn('[v130 live sync]',e)}finally{pollBusy130=false}
   }
-  sharedPollUpdates=poll129;window.sharedPollUpdates=poll129;
+  sharedPollUpdates=poll130;window.sharedPollUpdates=poll130;
 
-  // One local cleanup after restore. It only removes byte-for-byte-equivalent work clones
-  // (or recursive fragments of the same original group); it never removes by box number alone.
-  function cleanupLive129(){
+  async function stabilize130(){
+    if(!workbook||!currentProjectIdV18)return false;
+    let remote=null;try{remote=await sharedRemoteGet('state')}catch(_){ }
+    const remoteRev=n130(remote?.stateRevisionV78);if(remote?.boxTombstonesV82)mergeTombs130(remote.boxTombstonesV82);
+    const rm=rawMap130(remote||{});let removed=0,changed=false;
+    // First union remote + live completed so no unique completed work is lost, then quarantine only
+    // provable physical clones. The earliest seq/id remains the canonical work.
+    const names=new Set([...rm.keys(),...Array.from(palletStates.keys())]);
+    for(const name of names){
+      const ws=workbook.getWorksheet?.(name);if(!ws)continue;const lr=liveRaw130(name)||{},rr=rm.get(name)||{};const byId=new Map();
+      const take=g=>{const id=t130(g?.id);if(!id)return;const cur=byId.get(id);if(!cur||rev130(g)>rev130(cur)||(rev130(g)===rev130(cur)&&updated130(g)>updated130(cur)))byId.set(id,c130(g))};
+      for(const g of (lr.completed||[]))take(g);for(const g of (rr.completed||[]))take(g);
+      const x=canonicalizeCompleted130(name,[...byId.values()],{createTombs:true,extraRev:remoteRev});removed+=x.removed;
+      let st={...lr};if(!Object.keys(st).length)st=c130(rr)||{};st.completed=x.completed;st.nextSeq=Math.max(n130(st.nextSeq)||1,n130(rr.nextSeq)||1,...st.completed.map(g=>seq130(g)+1));
+      delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;palletStates.set(name,st);try{dirtyPalletSheets?.add?.(name)}catch(_){ }
+      try{window.__TC_V108_API__?.reconcileSheet108?.(ws)}catch(_){ }
+      try{assignVisualRows(ws,st);syncPalletState(ws,st);recalcWorkSheet(ws)}catch(e){console.warn('[v130 stabilize sheet]',name,e)}
+      changed=changed||x.removed>0;
+    }
+    if(!changed)return false;
+    // Make the cleanup newer than every server/browser snapshot so old clone ids cannot return.
     try{
-      let removed=0;
-      for(const [name,st0] of palletStates.entries()){
-        const x=dedupeCompleted129(st0);if(!x.changed)continue;removed+=x.removed;palletStates.set(name,x.raw);
-        const ws=workbook?.getWorksheet?.(name);if(ws){delete x.raw._autoPalletPlan;delete x.raw._visualSegments;delete x.raw._mappedPallets;assignVisualRows(ws,x.raw);recalcWorkSheet(ws)}
-      }
-      if(removed){
-        try{window.__TC_V108_API__?.reconcileAll108?.()}catch(_){ }
-        try{renderSheet(true);recalcDashboard?.(workbook);schedulePersistentState(0)}catch(_){ }
-        setStatus(`✓ 동일 완료작업 복제 ${removed}건을 정리했습니다. 서로 다른 실제 작업은 유지합니다.`,'ok');
-      }
-      return removed;
-    }catch(e){console.warn('[v129 local clone cleanup]',e);return 0}
+      const s=window.__TC_V78_SYNC__;if(s){s.rev=Math.max(n130(s.rev),nextFenceRev130(remoteRev));s.dirty=true;s.lastMutationAt=Date.now();sharedApplyingRemote=true}
+    }catch(_){ }
+    try{recalcDashboard?.(workbook);if(activeSheet&&workbook.getWorksheet?.(activeSheet))renderSheet(true)}catch(_){ }
+    const payload=persistentStatePayload();payload.boxTombstonesV82=c130(globalTombs130());
+    try{await localPersistPut(localProjectKeyV18('state'),payload)}catch(_){ }
+    try{await sharedSendState(payload)}catch(_){ }
+    try{scheduleWorkbookSnapshot?.(60);setTimeout(()=>{try{saveWorkbookSnapshotNow?.()}catch(_){ }},180)}catch(_){ }
+    try{const s=window.__TC_V78_SYNC__;if(s&&n130(s.ack)>=n130(s.rev)){s.dirty=false;sharedApplyingRemote=false}}catch(_){ }
+    setStatus(`✓ 중복 완료작업 ${removed}건을 정본에서 제거하고 재발 방지 고정 저장했습니다.`,'ok');
+    return true;
   }
-  [500,1800].forEach(ms=>setTimeout(cleanupLive129,ms));
-  window.__TC_V129_SAFE_SYNC__={poll:poll129,cleanup:cleanupLive129,dedupe:dedupeCompleted129};
+
+  // Run after legacy startup repair timers, and again after their longest 5.2s timer. Because removed
+  // clone ids are tombstoned, the second pass should normally find nothing.
+  [700,2400,6200].forEach(ms=>setTimeout(()=>{stabilize130().catch(e=>console.warn('[v130 stabilize]',e))},ms));
+  window.addEventListener('focus',()=>setTimeout(poll130,20));
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(poll130,20)});
+  window.__TC_V130_API__={physicalSig130,canonicalizeCompleted130,applyRemoteDelta130,stabilize130,poll130};
 })();
 </script>
-<!-- ===== /v129 ===== -->
+<!-- ===== /v130 ===== -->
