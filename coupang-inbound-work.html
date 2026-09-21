@@ -242,7 +242,7 @@ function visibleWorkSheets(){return visibleWorksheets().filter(ws=>ws.name!=='�
 function makeTabButton(ws){const b=document.createElement('button');b.className='sheet-tab'+(ws.name===activeSheet?' active':'');b.textContent=ws.name;b.onclick=()=>switchSheet(ws.name);return b}
 function makeAddTab(kind){const b=document.createElement('button');b.className='sheet-tab-add';b.textContent=kind==='pallet'?'＋ 팔레트 작업':'＋ 택배 작업';b.title=kind==='pallet'?'예비 팔레트 작업 시트를 추가합니다.':'예비 택배 작업 시트를 추가합니다.';b.onclick=()=>addExtraWork(kind);return b}
 function renderTabs(){const host=$('sheetTabs');host.innerHTML='';const left=document.createElement('button');left.className='sheet-nav-arrow';left.textContent='◀';left.onclick=()=>host.scrollBy({left:-320,behavior:'smooth'});host.appendChild(left);const sheets=visibleWorksheets();let palletAddDone=false;for(const ws of sheets){if(!palletAddDone&&ws.name==='안성 5'){host.appendChild(makeAddTab('pallet'));palletAddDone=true}host.appendChild(makeTabButton(ws))}if(!palletAddDone){host.appendChild(makeAddTab('pallet'))}host.appendChild(makeAddTab('parcel'));const right=document.createElement('button');right.className='sheet-nav-arrow';right.textContent='▶';right.onclick=()=>host.scrollBy({left:320,behavior:'smooth'});host.appendChild(right)}
-function switchSheet(name){if(!workbook.getWorksheet(name))return;activeSheet=name;selectedCell='';selectedRow=0;hideRowMenu();renderTabs();renderSheet();schedulePersistentState(120)}
+function switchSheet(name){if(!workbook.getWorksheet(name))return;activeSheet=name;selectedCell='';selectedRow=0;hideRowMenu();renderTabs();try{if(window.__tcSwitchFrame126)cancelAnimationFrame(window.__tcSwitchFrame126)}catch(_){ }window.__tcSwitchFrame126=requestAnimationFrame(()=>{window.__tcSwitchFrame126=0;try{renderSheet()}catch(e){console.warn('[v126 fast switch render]',e)}});schedulePersistentState(700)}
 function isEditableCell(ws,r,c,cell){if(!ws||ws.name==='발주서'||r<4)return false;if(cell&&cell.value&&typeof cell.value==='object'&&cell.value.formula)return false;return c<=19}
 function coerceValue(text,cell,c){const t=String(text??'').trim();if(t==='')return null;if([1,3].includes(c))return t;const old=cell.value;if(typeof old==='number'&&/^-?\d+(\.\d+)?$/.test(t))return Number(t);if([5,6,7,11,12,13,14,15].includes(c)&&/^-?\d+(\.\d+)?$/.test(t))return Number(t);return t}
 function beginCellEdit(td,cell,ws,r,c){if(td.classList.contains('editing'))return;const original=displayText(cell);td.classList.add('editing');td.contentEditable='true';td.spellcheck=false;td.focus();const range=document.createRange();range.selectNodeContents(td);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);let done=false;const finish=(commit)=>{if(done)return;done=true;td.removeEventListener('blur',onBlur);td.removeEventListener('keydown',onKey);td.contentEditable='false';td.classList.remove('editing');if(commit){cell.value=coerceValue(td.innerText,cell,c);if(isPackWorkSheet(ws))palletStates.delete(ws.name);recalcAll();renderSheet(true);schedulePersistentState(120);scheduleWorkbookSnapshot()}else{td.textContent=original}};const onBlur=()=>finish(true);const onKey=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}else if(e.key==='Tab'){e.preventDefault();finish(true)}};td.addEventListener('blur',onBlur);td.addEventListener('keydown',onKey)}
@@ -2907,16 +2907,24 @@ palletVisualCellHtml=function(ws,r,c,item,value,extra='',span=''){
 function v28AppendPackBlankRows(ws,count=40){
   if(!ws||!isPackWorkSheet(ws))return;
   const tbody=document.querySelector('#sheetHost table.sheet-table tbody');if(!tbody||tbody.querySelector('tr.v28-pack-blank'))return;
-  const state=ensurePalletState(ws),start=generationStartRow(ws),used=(state.completed||[]).reduce((a,g)=>a+(g.items||[]).length,0)+(state.incomplete||[]).length;
-  const first=start+used,maxC=v26MaxCols(ws),template=ws.getRow(start);
-  v28EnsureTrailingRows(ws,40);
+  const state=ensurePalletState(ws),start=generationStartRow(ws),maxC=v26MaxCols(ws),template=ws.getRow(start);
+  // v126: blank-entry rows must begin AFTER every row already rendered by the live pallet state.
+  // The old calculation used only completed/incomplete counts; stale physical Excel rows could then be
+  // appended again with the same row number, which produced the fatal-looking 27/28,27/28 duplicates.
+  let domMax=start-1;
+  for(const th of tbody.querySelectorAll('th.row-number.data-row')){const x=Number(th.dataset.rowNo||th.textContent||0);if(Number.isFinite(x)&&x>domMax)domMax=x}
+  const visualEnd=Number(state?._visualEnd)||domMax;
+  const first=Math.max(start,domMax+1,visualEnd+1);
+  v28EnsureTrailingRows(ws,Math.max(40,count));
   for(let i=0;i<count;i++){
     const r=first+i;
     const tr=document.createElement('tr');tr.className='v28-pack-blank';tr.style.height=pxFromPoints(template.height)+'px';
     const th=document.createElement('th');th.className='row-number data-row';th.dataset.rowNo=String(r);th.textContent=String(r);tr.appendChild(th);
     for(let c=1;c<=maxC;c++){
       if(ws.getColumn(c).hidden)continue;
-      const td=document.createElement('td');td.className='cell editable';td.dataset.editable='1';td.dataset.r=String(r);td.dataset.c=String(c);td.dataset.addr=`${excelCol(c)}${r}`;td.style.cssText=cellCss(template.getCell(c));td.textContent=displayText(ws.getRow(r).getCell(c));tr.appendChild(td);
+      const td=document.createElement('td');td.className='cell editable';td.dataset.editable='1';td.dataset.r=String(r);td.dataset.c=String(c);td.dataset.addr=`${excelCol(c)}${r}`;td.style.cssText=cellCss(template.getCell(c));
+      // It is a blank input row. Never echo stale worksheet values into it.
+      td.textContent='';tr.appendChild(td);
     }
     tbody.appendChild(tr);
   }
@@ -5745,15 +5753,21 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
     }
     const changed=sig123(st.incomplete)!==sig123(rebuilt);
     if(changed)st.incomplete=rebuilt;
+    // v126: also repair stale physical worksheet rows left by older versions. The live state is canonical.
+    // This does NOT touch completed box data; it only forces the visible worksheet body to match the
+    // already-reconciled completed + unique incomplete state when old duplicate body rows remain.
+    let physicalRows=0;try{const sr=generationStartRow(ws);for(let rr=sr;rr<=Number(ws.rowCount||sr);rr++){const row=ws.getRow(rr);if(cellText123(row.getCell(1))||cellText123(row.getCell(2))||cellText123(row.getCell(3))||n123(row.getCell(5).value)>0)physicalRows++}}catch(_){ }
+    const expectedRows=(st.completed||[]).reduce((a,cg)=>a+Math.max(1,(cg.items||[]).length),0)+rebuilt.length;
+    const needsSync=changed||physicalRows!==expectedRows;
     ws._webSourceManagedV92=true;ws._webCompany=g.company;ws._webKind=g.kind;ws._webSourceOrder=Number(g.sourceOrder)||0;ws._webWorkType=g.kind==='parcel'?'parcel':(/밀크런/i.test(String(g.center||''))?'milkrun':'pallet');
     try{ws.getCell('A1').value=g.name;ws.getCell('E3').value=n123(g.total)}catch(_){ }
     try{assignVisualRows(ws,st)}catch(_){ }
-    if(changed){
-      try{if(typeof syncPalletState==='function')syncPalletState(ws,st);else markPalletDirty?.(ws,st)}catch(e){console.warn('[v123 sync aggregate]',ws.name,e)}
+    if(needsSync){
+      try{if(typeof syncPalletState==='function')syncPalletState(ws,st);else markPalletDirty?.(ws,st)}catch(e){console.warn('[v126 sync aggregate]',ws.name,e)}
       try{recalcWorkSheet(ws)}catch(_){ }
-      if(persist)try{schedulePersistentState?.(30)}catch(_){ }
+      if(persist)try{schedulePersistentState?.(90)}catch(_){ }
     }
-    return changed;
+    return needsSync;
   }
   function reconcileAll123({persist=true,render=false}={}){
     const src=source123();if(!src)return {changed:0,source:null};let changed=0;
@@ -5799,29 +5813,24 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
   }
   window.v123NormalizeOrderStyles=normalizeOrderStyles123;
 
-  // Every dashboard refresh ends with the aggregate rule. Completed box work is never changed here.
+  // v126 performance: dashboard calculation must not run a second full Order->Center reconciliation.
+  // v122 already owns the authoritative reconciliation after real edits. Keeping this older extra pass
+  // doubled the work on box updates and was a major source of UI stalls.
   try{
     const baseDash123=recalcDashboard;
-    recalcDashboard=function(){
-      const ret=baseDash123.apply(this,arguments);
-      try{reconcileAll123({persist:false,render:false})}catch(e){console.warn('[v123 dashboard aggregate]',e)}
-      return ret;
-    };window.recalcDashboard=recalcDashboard;
-  }catch(e){console.warn('[v123 dashboard hook]',e)}
+    recalcDashboard=function(){return baseDash123.apply(this,arguments)};window.recalcDashboard=recalcDashboard;
+  }catch(e){console.warn('[v126 dashboard hook]',e)}
 
-  // Opening a center tab is a final safety gate: duplicate unfinished rows can never remain visible.
+  // v126 performance: a tab click is VIEW-ONLY. Do not parse the full Order sheet, reconcile quantities,
+  // or schedule a save merely because the user moved between centers. Reconciliation still runs after
+  // Order paste/edit/recovery, where the data actually changes.
   try{
     const baseRender123=renderSheet;
     renderSheet=function(){
-      try{
-        const ws=workbook?.getWorksheet?.(activeSheet);
-        if(ws&&ws.name!=='발주서'){
-          const src=source123(),g=src?.groups?.find(x=>x.name===ws.name);if(g)reconcileOne123(g,ws,{persist:true});
-        }else if(ws?.name==='발주서')normalizeOrderStyles123(ws);
-      }catch(e){console.warn('[v123 prerender]',e)}
+      try{const ws=workbook?.getWorksheet?.(activeSheet);if(ws?.name==='발주서')normalizeOrderStyles123(ws)}catch(e){console.warn('[v126 order prerender]',e)}
       return baseRender123.apply(this,arguments);
     };window.renderSheet=renderSheet;
-  }catch(e){console.warn('[v123 render hook]',e)}
+  }catch(e){console.warn('[v126 render hook]',e)}
 
   // After Order paste/edit, repair formatting and aggregate the center list once the legacy hooks finish.
   function afterOrder123(){
@@ -6003,6 +6012,12 @@ requestAnimationFrame(()=>{const ws=workbook?.getWorksheet(activeSheet);if(ws){v
 })();
 // ===== /v125 =====
 
+</script>
+
+<script id="v126-performance-duplicate-guard">
+// ===== v126: center-switch performance + duplicate visual-row guard =====
+window.__TC_V126__={version:126,fastCenterSwitch:true,noReconcileOnView:true,duplicateBlankGuard:true};
+// ===== /v126 =====
 </script>
 </body>
 </html>
