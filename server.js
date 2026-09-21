@@ -668,28 +668,33 @@ function normPhysicalBoxNoV85(v){
   return String(v??'').trim().replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase();
 }
 function dedupeCompletedPhysicalV85(raw){
+  // v129: do NOT dedupe merely because the physical box number is the same.
+  // Legitimate completed works may share a box number. Remove only:
+  // 1) recursive fragments of the same original completed-work id, or
+  // 2) exact clones: same box label/count/size/weight/tracking + same item quantities.
   if(!raw||typeof raw!=='object')return {raw:raw||{},changed:false,removed:0};
-  const out=cloneJsonV82(raw)||{};
-  const src=Array.isArray(out.completed)?out.completed:[];
-  const byKey=new Map(), noKey=[]; let removed=0;
+  const out=cloneJsonV82(raw)||{},src=Array.isArray(out.completed)?out.completed:[],keep=[];let removed=0;
+  const txt=v=>String(v??'').trim();
+  const norm=v=>txt(v).replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase();
+  const root=id=>{const s=txt(id);if(!s)return '';const m=s.match(/^(box-\d+-[A-Za-z0-9_-]+)(?:::|$)/);return m?m[1]:s};
+  const itemKey=it=>[norm(it&&it.barcode),norm(it&&it.productNumber),txt(it&&it.productName).replace(/\s+/g,' ').toLowerCase(),Number(it&&it.totalQty||0),Number(it&&it.perBoxQty||0)].join('|');
+  const sig=g=>{const box=norm(g&&g.boxNo);if(!box)return '';const items=(Array.isArray(g&&g.items)?g.items:[]).map(itemKey).sort().join('||');const size=norm(g&&g.size).replace(/[×xX]/g,'*');const w=Number.isFinite(Number(g&&g.weight))?Number(g.weight).toFixed(4):txt(g&&g.weight);return [box,Number(g&&g.boxCount||0),size,w,norm(g&&g.trackingNo),items].join('##')};
+  const newer=(a,b)=>{const ar=boxGroupRevV82(a),br=boxGroupRevV82(b);if(ar!==br)return ar>br?a:b;const au=Number(a&&a.boxUpdatedAtV82||a&&a.boxCompletedAtV82||0),bu=Number(b&&b.boxUpdatedAtV82||b&&b.boxCompletedAtV82||0);if(au!==bu)return au>bu?a:b;return (Array.isArray(a&&a.items)?a.items.length:0)>=(Array.isArray(b&&b.items)?b.items.length:0)?a:b};
   for(const g0 of src){
-    if(!g0||typeof g0!=='object'){continue}
-    const g=cloneJsonV82(g0), boxKey=normPhysicalBoxNoV85(g.boxNo);
-    if(!boxKey){noKey.push(g);continue}
-    const key='BOX:'+boxKey, cur=byKey.get(key);
-    if(!cur){byKey.set(key,g);continue}
+    if(!g0||typeof g0!=='object')continue;
+    const g=cloneJsonV82(g0),rid=root(g.id),sg=sig(g);let at=-1;
+    for(let i=0;i<keep.length;i++){
+      const x=keep[i],sameRoot=rid&&root(x.id)===rid,sameExact=sg&&sig(x)===sg;
+      if(sameRoot||sameExact){at=i;break}
+    }
+    if(at<0){keep.push(g);continue}
     removed++;
-    const cr=boxGroupRevV82(cur), nr=boxGroupRevV82(g);
-    const cu=Number(cur.boxUpdatedAtV82||cur.boxCompletedAtV82||0), nu=Number(g.boxUpdatedAtV82||g.boxCompletedAtV82||0);
-    let keep=cur;
-    if(nr>cr||(nr===cr&&nu>cu))keep=g;
-    const minSeq=Math.min(...[Number(cur.seq)||0,Number(g.seq)||0].filter(n=>n>0));
-    if(minSeq>0)keep.seq=minSeq;
-    const firstAt=Math.min(...[Number(cur.boxCompletedAtV82)||0,Number(g.boxCompletedAtV82)||0].filter(n=>n>0));
-    if(firstAt>0)keep.boxCompletedAtV82=firstAt;
-    byKey.set(key,keep);
+    const cur=keep[at],chosen=cloneJsonV82(newer(cur,g));
+    const seqs=[Number(cur.seq)||0,Number(g.seq)||0].filter(n=>n>0);if(seqs.length)chosen.seq=Math.min(...seqs);
+    const ats=[Number(cur.boxCompletedAtV82)||0,Number(g.boxCompletedAtV82)||0].filter(n=>n>0);if(ats.length)chosen.boxCompletedAtV82=Math.min(...ats);
+    keep[at]=chosen;
   }
-  out.completed=[...byKey.values(),...noKey].sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));
+  out.completed=keep.sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));
   return {raw:out,changed:removed>0,removed};
 }
 function sanitizeCompletedStateV85(state){
