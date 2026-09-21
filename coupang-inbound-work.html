@@ -10732,153 +10732,159 @@ window.__TC_V126__={version:126,fastCenterSwitch:true,noReconcileOnView:true,dup
 // ===== /v124 =====
 </script>
 
-<!-- ===== v127: live multi-PC completed-work sync without dropping local in-progress draft ===== -->
-<script id="v127-live-multipc-sync">
+<!-- ===== v128: surgical multi-PC sync + completed-box preservation (based on v126; v127 removed) ===== -->
+<script id="v128-safe-sync">
 (function(){
-  // v126까지의 문제: 다른 PC에 입력 중인 박스(boxDraft)가 하나라도 있으면
-  // sharedPollUpdates()가 서버의 최신 완료 상태 자체를 적용하지 않고 return 했다.
-  // 그래서 한 PC는 382번까지 완료했는데 다른 PC는 자신이 스캔 중인 박스 때문에
-  // 376번 화면에 오래 머무를 수 있었다.
-  let pollBusy127=false;
-  let lastServerStateAt127=0;
-  let lastAppliedRev127=0;
+  if(window.__TC_V128_SAFE_SYNC__)return;window.__TC_V128_SAFE_SYNC__=true;
 
-  function clone127(v){try{return JSON.parse(JSON.stringify(v))}catch(_){return v}}
-  function currentSync127(){try{return window.__TC_V78_SYNC__||{rev:0,ack:0,dirty:false}}catch(_){return {rev:0,ack:0,dirty:false}}}
-  function draftHasItems127(d){return !!(d&&Array.isArray(d.items)&&d.items.length)}
-  function productMatch127(a,b){
-    const norm=v=>String(v??'').trim().toUpperCase().replace(/\s+/g,'');
-    const ab=norm(a?.barcode),bb=norm(b?.barcode);if(ab&&bb)return ab===bb;
-    const ap=norm(a?.productNumber),bp=norm(b?.productNumber);if(ap&&bp)return ap===bp;
-    return false;
-  }
-  function refreshDraftAvailability127(draft){
-    if(!draft||!draft.sheetName||!workbook?.getWorksheet?.(draft.sheetName))return {draft,short:false};
-    const ws=workbook.getWorksheet(draft.sheetName),st=ensurePalletState(ws);let short=false;
-    for(const it of (draft.items||[])){
-      let available=0;
-      for(const src of (st.incomplete||[]))if(productMatch127(it,src))available+=Math.max(0,Number(src.remainingQty??src.qty??0));
-      if(draft.mode==='edit'){
-        const g=(st.completed||[]).find(x=>String(x.id||'')===String(draft.groupId||''));
-        if(g)for(const src of (g.items||[]))if(productMatch127(it,src))available+=Math.max(0,Number(src.totalQty||0));
+  const clone128=v=>{try{return JSON.parse(JSON.stringify(v))}catch(_){return v}};
+  const n128=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const id128=g=>String(g?.id||'');
+  const rev128=g=>n128(g?.boxRevisionV82);
+  const upd128=g=>Math.max(n128(g?.boxUpdatedAtV82),n128(g?.boxCompletedAtV82));
+  const tombsGlobal128=()=>{try{return window.__TC_BOX_TOMBSTONES_V82__||{}}catch(_){return {}}};
+
+  function mergeTombs128(a,b){
+    const out={};
+    for(const src of [a,b,tombsGlobal128()]){
+      for(const [sheet,rows] of Object.entries(src&&typeof src==='object'?src:{})){
+        const dst=out[sheet]||(out[sheet]={});
+        for(const [id,rev] of Object.entries(rows&&typeof rows==='object'?rows:{}))dst[id]=Math.max(n128(dst[id]),n128(rev));
       }
-      it.availableQty=available;
-      const need=Math.max(1,Number(draft.boxCount)||1)*Math.max(0,Number(it.perBoxQty)||0);
-      if(need>available)short=true;
     }
-    return {draft,short};
+    return out;
+  }
+  function newerGroup128(a,b){
+    if(!a)return b;if(!b)return a;
+    const ar=rev128(a),br=rev128(b);if(ar!==br)return ar>br?a:b;
+    const au=upd128(a),bu=upd128(b);if(au!==bu)return au>bu?a:b;
+    return (Array.isArray(a.items)?a.items.length:0)>=(Array.isArray(b.items)?b.items.length:0)?a:b;
+  }
+  function rawMap128(state){
+    const m=new Map();
+    for(const pair of (Array.isArray(state?.palletStates)?state.palletStates:[]))if(Array.isArray(pair)&&pair[0]&&pair[1])m.set(String(pair[0]),pair[1]);
+    return m;
+  }
+  function liveState128(){
+    const p={palletStates:[],boxTombstonesV82:clone128(tombsGlobal128()),stateRevisionV78:n128(window.__TC_V78_SYNC__?.rev),savedAt:Date.now()};
+    try{for(const [name,st] of palletStates.entries())p.palletStates.push([name,cleanPalletStateForSave(st)])}catch(_){ }
+    return p;
+  }
+  function mergeStates128(remote,local){
+    if(!remote&&!local)return null;
+    const base=clone128(remote||local)||{},lm=rawMap128(local||{}),rm=rawMap128(remote||{}),tombs=mergeTombs128(remote?.boxTombstonesV82,local?.boxTombstonesV82);
+    const names=new Set([...rm.keys(),...lm.keys()]),pairs=[];let recovered=0;
+    for(const name of names){
+      const rr=rm.get(name),lr=lm.get(name);let raw=clone128(rr||lr)||{};
+      const byId=new Map();
+      for(const g of (Array.isArray(rr?.completed)?rr.completed:[])){const id=id128(g);if(id)byId.set(id,clone128(g))}
+      for(const g0 of (Array.isArray(lr?.completed)?lr.completed:[])){
+        const g=clone128(g0),id=id128(g);if(!id)continue;
+        const tomb=n128(tombs?.[name]?.[id]);if(tomb&&tomb>=rev128(g))continue;
+        const old=byId.get(id),keep=newerGroup128(old,g);
+        if(!old){recovered++;byId.set(id,keep)}else if(keep===g)byId.set(id,keep);
+      }
+      raw.completed=[...byId.values()].filter(g=>{
+        const id=id128(g),tomb=n128(tombs?.[name]?.[id]);return !(tomb&&tomb>=rev128(g));
+      }).sort((a,b)=>(n128(a.seq)-n128(b.seq))||(upd128(a)-upd128(b)));
+      raw.nextSeq=Math.max(n128(rr?.nextSeq),n128(lr?.nextSeq),1,...raw.completed.map(g=>n128(g.seq)+1));
+      pairs.push([name,raw]);
+    }
+    base.palletStates=pairs;base.boxTombstonesV82=tombs;
+    base.stateRevisionV78=Math.max(n128(remote?.stateRevisionV78),n128(local?.stateRevisionV78));
+    base.savedAt=Math.max(n128(remote?.savedAt),n128(local?.savedAt),Date.now());
+    Object.defineProperty(base,'__recoveredCompleted128',{value:recovered,enumerable:false,configurable:true});
+    return base;
   }
 
-  async function getProjectState127(){
-    if(!currentProjectIdV18)return null;
-    const r=await sharedFetch(projectApiV18('/state'),{cache:'no-store'},false);
-    if(r.status===404)return null;
-    if(!r.ok)throw new Error('state '+r.status);
-    const j=await r.json();
-    return {row:j,state:j?.state||null,updatedAt:Number(j?.updatedAt||r.headers.get('X-Updated-At')||0)};
-  }
-
-  async function poll127(){
-    if(pollBusy127||document.hidden||persistRestoring||!workbook||!currentProjectIdV18)return;
-    pollBusy127=true;
-    try{
-      const sr=await sharedFetch(projectApiV18('/status'),{cache:'no-store'},false);
-      if(!sr.ok)return;
-      const status=await sr.json();if(!status?.ok)return;
-      const srcAt=Number(status.source?.updatedAt||0),stateAt=Number(status.state?.updatedAt||0);
-
-      // 새 원본 엑셀 자체가 바뀌는 경우에는 작성 중 박스를 보호한다.
-      if(srcAt&&srcAt>Number(sharedLastSourceAt||0)+5){
-        if(draftHasItems127(boxDraft)){
-          setStatus('☁ 새 선적 원본 업데이트 대기 중 · 현재 입력 박스를 완료/초기화하면 원본을 갱신합니다.','busy');
-          return;
-        }
-        sharedApplyingRemote=true;
-        try{await restorePersistentSession();sharedLastSourceAt=srcAt;sharedLastStateAt=Number(status.state?.updatedAt||sharedLastStateAt)}finally{sharedApplyingRemote=false}
-        return;
-      }
-
-      // 서버 상태의 updatedAt은 서버 시각만 별도로 추적한다.
-      // v113의 로컬 savedAt과 비교하지 않으므로 PC 시계 차이/로컬 캐시 때문에 최신 상태를 놓치지 않는다.
-      if(!stateAt||stateAt<=lastServerStateAt127)return;
-      const got=await getProjectState127();if(!got?.state)return;
-      const remote=got.state, incomingRev=Number(remote.stateRevisionV78||0),sync=currentSync127();
-      lastServerStateAt127=Math.max(lastServerStateAt127,stateAt,got.updatedAt||0);
-
-      // 이 PC에 서버 미확정 완료 작업이 있으면 오래된 원격 상태로 덮지 않는다.
-      if(sync.dirty&&incomingRev&&incomingRev<Number(sync.rev||0)){
-        try{schedulePersistentState?.(0)}catch(_){ }
-        return;
-      }
-      if(incomingRev&&incomingRev<lastAppliedRev127)return;
-
-      // 입력 중인 박스는 이 PC 전용으로 보존한 채, 완료 목록/마지막 박스번호는 서버 최신값을 즉시 반영한다.
-      try{if(typeof pullInlineDraft==='function')pullInlineDraft()}catch(_){ }
+  // Any recovered/server state is first unioned with the completed boxes already on this PC.
+  // This is the core fence: a remote refresh cannot make an already-completed local box disappear
+  // unless an explicit v82 cancel tombstone is newer than that completed box.
+  try{
+    const baseApply128=applyRecoveredState;
+    applyRecoveredState=function(saved){
+      let merged=saved;
+      try{merged=mergeStates128(saved,liveState128())||saved}catch(e){console.warn('[v128 merge before apply]',e)}
       const keepActive=activeSheet;
-      const keepDraft=draftHasItems127(boxDraft)||boxDraft?.mode==='edit'?clone127(boxDraft):null;
-      remote.activeSheet=keepActive;
-      remote.boxDraft=null; // 다른 PC의 입력 중 draft는 가져오지 않는다.
-
-      sharedApplyingRemote=true;persistRestoring=true;
+      const ret=baseApply128.call(this,merged);
       try{
-        applyRecoveredState(remote);
-        sharedLastStateAt=Math.max(Number(sharedLastStateAt||0),stateAt,got.updatedAt||0);
-        if(incomingRev)lastAppliedRev127=Math.max(lastAppliedRev127,incomingRev);
-      }finally{
-        persistRestoring=false;sharedApplyingRemote=false;
+        // Rebuild only unfinished quantities from the canonical Order source after the completed union.
+        if(typeof window.v123ReconcileAll==='function')window.v123ReconcileAll({persist:false,render:false});
+        else if(typeof window.__TC_V108_API__?.reconcileAll108==='function')window.__TC_V108_API__.reconcileAll108();
+        for(const [name,st] of palletStates.entries()){
+          const ws=workbook?.getWorksheet?.(name);if(!ws)continue;delete st._autoPalletPlan;delete st._visualSegments;delete st._mappedPallets;assignVisualRows(ws,st);recalcWorkSheet(ws);
+        }
+        if(keepActive&&workbook?.getWorksheet?.(keepActive))activeSheet=keepActive;
+      }catch(e){console.warn('[v128 post apply reconcile]',e)}
+      return ret;
+    };
+    window.applyRecoveredState=applyRecoveredState;
+  }catch(e){console.warn('[v128 apply fence install]',e)}
+
+  // On page/update restore, do not choose either the local OR server state wholesale.
+  // Union their completed-box sets first. This can recover a box such as 382 if it still exists
+  // in this PC's IndexedDB even when a newer server snapshot accidentally omitted it.
+  try{
+    const basePersistGet128=persistGet;
+    persistGet=async function(key){
+      if(key!=='state')return await basePersistGet128.apply(this,arguments);
+      if(!currentProjectIdV18)return null;
+      let local=null,remote=null;
+      try{local=await localPersistGet(localProjectKeyV18('state'))}catch(_){ }
+      try{remote=await sharedRemoteGet('state')}catch(_){ }
+      if(remote==null&&local==null)return null;
+      if(remote==null)return local;
+      if(local==null){try{await localPersistPut(localProjectKeyV18('state'),remote)}catch(_){ }return remote}
+      const merged=mergeStates128(remote,local)||remote;
+      if(local?.activeSheet)merged.activeSheet=local.activeSheet;
+      // Draft stays PC-local. Keep the locally saved draft only; never import another PC's draft here.
+      merged.boxDraft=local?.boxDraft||null;
+      try{await localPersistPut(localProjectKeyV18('state'),merged)}catch(_){ }
+      if(n128(merged.__recoveredCompleted128)>0){
+        setTimeout(()=>{try{sharedRemotePut('state',merged)}catch(_){ }},0);
       }
+      return merged;
+    };
+    window.persistGet=persistGet;
+  }catch(e){console.warn('[v128 persistGet install]',e)}
 
-      if(keepDraft&&workbook?.getWorksheet?.(keepDraft.sheetName)){
-        const checked=refreshDraftAvailability127(keepDraft);boxDraft=checked.draft;
-        if(workbook.getWorksheet(keepActive))activeSheet=keepActive;
-        try{renderTabs?.();renderSheet?.(true);renderInlineDraft?.();focusInlineScan?.()}catch(_){ }
-        if(checked.short)setStatus('☁ 다른 PC 최신 작업을 반영했습니다. 현재 입력 박스의 남은 수량이 변경되어 수량을 다시 확인해 주세요.','busy');
-        else setStatus('☁ 다른 PC 최신 작업 반영 완료 · 입력 중인 박스는 그대로 유지했습니다.','ok');
-      }else{
-        if(workbook?.getWorksheet?.(keepActive))activeSheet=keepActive;
-        try{renderTabs?.();renderSheet?.(true)}catch(_){ }
-        setStatus('☁ 다른 PC 최신 작업을 즉시 반영했습니다.','ok');
-      }
-    }catch(e){console.warn('[v127 live poll]',e)}finally{pollBusy127=false}
-  }
-
-  // v112의 1.2초 fastPoll이 아래 함수를 동적으로 호출하므로 이 교체만으로 즉시 동기화된다.
-  // 기존 4초 타이머는 안전망으로 남겨 둔다.
-  sharedPollUpdates=poll127;
-  window.sharedPollUpdates=poll127;
-
-  // 박스 완료 직후 큐 저장을 기다리기만 하지 않고 서버 PUT을 한 번 즉시 확정한다.
-  async function pushNow127(){
-    if(!workbook||!currentProjectIdV18||persistRestoring)return;
+  // Independent server timestamp: do not compare a browser's Date.now()/savedAt with the server's updatedAt.
+  // This removes the long multi-PC lag while leaving box completion/cancel/save functions untouched.
+  let pollBusy128=false,serverSeen128=0;
+  async function poll128(){
+    if(pollBusy128||document.hidden||persistRestoring||!workbook||!currentProjectIdV18)return;
+    pollBusy128=true;
     try{
-      const payload=persistentStatePayload();
-      // 로컬 정본 먼저 확정
-      try{await localPersistPut(localProjectKeyV18('state'),payload)}catch(_){ }
-      // v78 sharedSendState는 revision ACK까지 확인하는 직접 PUT 경로다.
-      await sharedSendState(payload);
-    }catch(e){console.warn('[v127 immediate push]',e)}
+      const st=await sharedStatus();if(!st?.ok)return;
+      const stateAt=n128(st.state?.updatedAt);if(!stateAt||stateAt<=serverSeen128)return;
+      const remote=await sharedRemoteGet('state');if(!remote){serverSeen128=Math.max(serverSeen128,stateAt);return}
+      const sync=window.__TC_V78_SYNC__||{};
+      const incomingRev=n128(remote.stateRevisionV78);
+      if(sync.dirty&&incomingRev&&incomingRev<n128(sync.rev)){
+        try{schedulePersistentState(0)}catch(_){ }
+        return;
+      }
+      const keepActive=activeSheet;
+      remote.activeSheet=keepActive;
+      remote.boxDraft=null; // never import the other PC's unfinished scan list
+      sharedApplyingRemote=true;persistRestoring=true;
+      try{applyRecoveredState(remote)}finally{persistRestoring=false;sharedApplyingRemote=false}
+      serverSeen128=Math.max(serverSeen128,stateAt);
+      sharedLastStateAt=Math.max(n128(sharedLastStateAt),stateAt);
+      if(keepActive&&workbook?.getWorksheet?.(keepActive))activeSheet=keepActive;
+      try{renderTabs();renderSheet(true);if(boxDraft)renderInlineDraft()}catch(_){ }
+      setStatus('☁ 다른 PC 완료 작업을 동기화했습니다.','ok');
+    }catch(e){console.warn('[v128 multi-PC sync]',e)}finally{pollBusy128=false}
   }
-  try{
-    const baseCommit127=commitInlineBoxDraft;
-    commitInlineBoxDraft=function(){const ret=baseCommit127.apply(this,arguments);setTimeout(()=>pushNow127(),15);return ret};
-    window.commitInlineBoxDraft=commitInlineBoxDraft;
-  }catch(e){console.warn('[v127 commit hook]',e)}
-  try{
-    const baseCancel127=cancelInlineEditedBox;
-    cancelInlineEditedBox=function(){const ret=baseCancel127.apply(this,arguments);setTimeout(()=>pushNow127(),15);return ret};
-    window.cancelInlineEditedBox=cancelInlineEditedBox;
-  }catch(_){ }
-  try{
-    const baseCancelGroup127=cancelGroup;
-    cancelGroup=function(){const ret=baseCancelGroup127.apply(this,arguments);setTimeout(()=>pushNow127(),15);return ret};
-    window.cancelGroup=cancelGroup;
-  }catch(_){ }
+  sharedPollUpdates=poll128;window.sharedPollUpdates=poll128;
 
-  // 첫 진입/포커스 복귀도 즉시 서버 확인. 별도 고빈도 타이머는 추가하지 않는다.
-  setTimeout(()=>poll127(),80);
-  window.addEventListener('focus',()=>setTimeout(()=>poll127(),10));
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(()=>poll127(),10)});
-  window.__TC_V127_SYNC__={poll:poll127,push:pushNow127,get lastServerStateAt(){return lastServerStateAt127}};
+  // No commit/save wrapper is added here. v126's existing completion path is left intact so
+  // a completed box always clears the scan list exactly as it did before the v127 experiment.
+  setTimeout(poll128,120);
+  window.addEventListener('focus',()=>setTimeout(poll128,20));
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(poll128,20)});
+  window.__TC_V128_SAFE_SYNC__={poll:poll128,mergeStates:mergeStates128,get serverSeen(){return serverSeen128}};
 })();
+
 </script>
-<!-- ===== /v127 ===== -->
+<!-- ===== /v128 ===== -->
