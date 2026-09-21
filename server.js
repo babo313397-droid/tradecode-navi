@@ -668,33 +668,27 @@ function normPhysicalBoxNoV85(v){
   return String(v??'').trim().replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase();
 }
 function dedupeCompletedPhysicalV85(raw){
-  // v129: do NOT dedupe merely because the physical box number is the same.
-  // Legitimate completed works may share a box number. Remove only:
-  // 1) recursive fragments of the same original completed-work id, or
-  // 2) exact clones: same box label/count/size/weight/tracking + same item quantities.
+  // v130: same box number alone is NOT enough. A clone is the same physical box/range,
+  // same count/size and same SKU quantities. Different contents sharing 374 stay separate.
   if(!raw||typeof raw!=='object')return {raw:raw||{},changed:false,removed:0};
-  const out=cloneJsonV82(raw)||{},src=Array.isArray(out.completed)?out.completed:[],keep=[];let removed=0;
-  const txt=v=>String(v??'').trim();
-  const norm=v=>txt(v).replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase();
-  const root=id=>{const s=txt(id);if(!s)return '';const m=s.match(/^(box-\d+-[A-Za-z0-9_-]+)(?:::|$)/);return m?m[1]:s};
-  const itemKey=it=>[norm(it&&it.barcode),norm(it&&it.productNumber),txt(it&&it.productName).replace(/\s+/g,' ').toLowerCase(),Number(it&&it.totalQty||0),Number(it&&it.perBoxQty||0)].join('|');
-  const sig=g=>{const box=norm(g&&g.boxNo);if(!box)return '';const items=(Array.isArray(g&&g.items)?g.items:[]).map(itemKey).sort().join('||');const size=norm(g&&g.size).replace(/[×xX]/g,'*');const w=Number.isFinite(Number(g&&g.weight))?Number(g.weight).toFixed(4):txt(g&&g.weight);return [box,Number(g&&g.boxCount||0),size,w,norm(g&&g.trackingNo),items].join('##')};
-  const newer=(a,b)=>{const ar=boxGroupRevV82(a),br=boxGroupRevV82(b);if(ar!==br)return ar>br?a:b;const au=Number(a&&a.boxUpdatedAtV82||a&&a.boxCompletedAtV82||0),bu=Number(b&&b.boxUpdatedAtV82||b&&b.boxCompletedAtV82||0);if(au!==bu)return au>bu?a:b;return (Array.isArray(a&&a.items)?a.items.length:0)>=(Array.isArray(b&&b.items)?b.items.length:0)?a:b};
-  for(const g0 of src){
-    if(!g0||typeof g0!=='object')continue;
-    const g=cloneJsonV82(g0),rid=root(g.id),sg=sig(g);let at=-1;
-    for(let i=0;i<keep.length;i++){
-      const x=keep[i],sameRoot=rid&&root(x.id)===rid,sameExact=sg&&sig(x)===sg;
-      if(sameRoot||sameExact){at=i;break}
-    }
-    if(at<0){keep.push(g);continue}
-    removed++;
-    const cur=keep[at],chosen=cloneJsonV82(newer(cur,g));
-    const seqs=[Number(cur.seq)||0,Number(g.seq)||0].filter(n=>n>0);if(seqs.length)chosen.seq=Math.min(...seqs);
-    const ats=[Number(cur.boxCompletedAtV82)||0,Number(g.boxCompletedAtV82)||0].filter(n=>n>0);if(ats.length)chosen.boxCompletedAtV82=Math.min(...ats);
-    keep[at]=chosen;
+  const out=cloneJsonV82(raw)||{},src=Array.isArray(out.completed)?out.completed:[],byId=new Map(),free=[];
+  const txt=v=>String(v??'').trim(),norm=v=>txt(v).replace(/[～〜–—−]/g,'~').replace(/\s+/g,'').toUpperCase();
+  const sku=it=>{const bc=norm(it&&it.barcode),pn=norm(it&&it.productNumber);return bc?('B:'+bc):(pn?('P:'+pn):('N:'+txt(it&&it.productName).replace(/\s+/g,' ').toLowerCase()))};
+  const seq=g=>{const x=Number(g&&g.seq);return x>0?x:Number.MAX_SAFE_INTEGER};
+  const created=g=>Number(g&&g.boxCompletedAtV82)||Number.MAX_SAFE_INTEGER;
+  const updated=g=>Math.max(Number(g&&g.boxUpdatedAtV82||0),Number(g&&g.boxCompletedAtV82||0));
+  const sig=g=>{const box=norm(g&&g.boxNo);if(!box)return '';const cnt=Math.max(1,Math.floor(Number(g&&g.boxCount)||1)),size=norm(g&&g.size).replace(/[×xX]/g,'*');const items=(Array.isArray(g&&g.items)?g.items:[]).map(it=>{const per=Number(it&&it.perBoxQty)||0,total=Number(it&&it.totalQty)||(per*cnt);return `${sku(it)}:${per}:${total}`}).sort().join('||');return `${box}##${cnt}##${size}##${items}`};
+  for(const g0 of src){if(!g0||typeof g0!=='object')continue;const g=cloneJsonV82(g0),id=txt(g.id);if(!id){free.push(g);continue}const cur=byId.get(id);if(!cur||boxGroupRevV82(g)>boxGroupRevV82(cur)||(boxGroupRevV82(g)===boxGroupRevV82(cur)&&updated(g)>updated(cur)))byId.set(id,g)}
+  const buckets=new Map(),noSig=[];for(const g of [...byId.values(),...free]){const k=sig(g);if(!k){noSig.push(g);continue}(buckets.get(k)||buckets.set(k,[]).get(k)).push(g)}
+  const keep=[];let removed=0;
+  for(const rows of buckets.values()){
+    if(rows.length===1){keep.push(rows[0]);continue}
+    rows.sort((a,b)=>(seq(a)-seq(b))||(created(a)-created(b))||txt(a.id).localeCompare(txt(b.id)));
+    const base=cloneJsonV82(rows[0]),latest=rows.slice().sort((a,b)=>(boxGroupRevV82(b)-boxGroupRevV82(a))||(updated(b)-updated(a)))[0];
+    if(latest){if(latest.weight!=null&&txt(latest.weight)!=='')base.weight=latest.weight;if(latest.trackingNo!=null&&txt(latest.trackingNo)!=='')base.trackingNo=latest.trackingNo;base.boxRevisionV82=Math.max(boxGroupRevV82(base),boxGroupRevV82(latest));base.boxUpdatedAtV82=Math.max(updated(base),updated(latest))}
+    const ats=rows.map(g=>Number(g.boxCompletedAtV82)||0).filter(n=>n>0);if(ats.length)base.boxCompletedAtV82=Math.min(...ats);keep.push(base);removed+=rows.length-1;
   }
-  out.completed=keep.sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0));
+  out.completed=[...keep,...noSig].sort((a,b)=>(seq(a)-seq(b))||(created(a)-created(b)));out.nextSeq=Math.max(Number(out.nextSeq||1),...out.completed.map(g=>(Number(g.seq)||0)+1));
   return {raw:out,changed:removed>0,removed};
 }
 function sanitizeCompletedStateV85(state){
