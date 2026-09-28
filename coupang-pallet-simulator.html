@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>쿠팡 팔레트 시뮬레이션 | TradeCode Navi</title>
+<meta name="description" content="110×110cm 팔레트 기준 쿠팡 팔레트 적재 시뮬레이션. 박스 규격과 수량을 입력하면 규격/오버팔레트 여부와 층별 적재 배치를 시각화합니다.">
+<style>
+:root{
+  --green:#0b6b3a;--green2:#0f7d46;--ink:#173126;--muted:#63746d;--line:#dce6e0;--soft:#f5f8f6;--warn:#c47700;--bad:#b42318;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:Arial,"Noto Sans KR",sans-serif;background:#f3f6f4;color:var(--ink)}
+body{padding:20px 20px 90px}
+.shell{max-width:1500px;margin:0 auto}
+.topbar{display:flex;gap:14px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.brand{display:flex;align-items:center;gap:10px}.brand-badge{width:38px;height:38px;border-radius:9px;background:var(--green);color:#fff;display:grid;place-items:center;font-weight:1000}.brand h1{font-size:22px;margin:0}.brand p{margin:3px 0 0;color:var(--muted);font-size:12px}
+.top-actions{display:flex;gap:8px;flex-wrap:wrap}.btn{height:38px;border:1px solid #aebfb6;background:#fff;border-radius:8px;padding:0 13px;font-weight:850;cursor:pointer;color:#274638}.btn:hover{background:#f8fbf9}.btn.primary{background:var(--green);border-color:var(--green);color:#fff}.btn.danger{color:#a51f1f;border-color:#d7adad;background:#fff8f8}.btn.small{height:30px;padding:0 9px;font-size:12px}
+.rulebar{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:8px;margin-bottom:14px}.rule{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}.rule b{display:block;font-size:12px;color:#486157;margin-bottom:4px}.rule strong{font-size:17px;color:#153f2c}.rule small{display:block;color:#75877f;font-size:10.5px;margin-top:2px}
+.grid{display:grid;grid-template-columns:minmax(580px,760px) 1fr;gap:14px;align-items:start}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 18px rgba(32,62,48,.05)}.card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px 14px;border-bottom:1px solid var(--line)}.card-head h2{font-size:15px;margin:0}.card-body{padding:14px}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.controls label{font-size:12px;font-weight:800;color:#405d50}.controls select{height:34px;border:1px solid #adbbb4;border-radius:7px;padding:0 28px 0 9px;background:#fff;font-weight:800;color:#243f33}
+.table-wrap{overflow:auto;max-height:500px;border:1px solid #dfe8e3;border-radius:9px}.box-table{border-collapse:collapse;width:100%;min-width:690px;font-size:12px}.box-table th{position:sticky;top:0;z-index:2;background:#eff6f2;color:#254b38;border-bottom:1px solid #cddcd4;padding:8px 6px;text-align:center;white-space:nowrap}.box-table td{border-bottom:1px solid #edf1ef;padding:5px}.box-table input[type=text],.box-table input[type=number]{width:100%;height:32px;border:1px solid #c6d2cc;border-radius:6px;padding:0 7px;font-size:12px}.box-table input[type=number]{text-align:right}.box-table .center{text-align:center}.box-table .del{width:30px;height:30px;border:1px solid #e3bcbc;background:#fff7f7;color:#ad2020;border-radius:6px;cursor:pointer;font-weight:900}.size-chip{display:inline-flex;align-items:center;gap:6px;font-weight:800}.swatch{width:14px;height:14px;border-radius:4px;border:1px solid rgba(0,0,0,.2);display:inline-block;vertical-align:-2px}
+.hint{margin-top:10px;padding:10px 11px;border-radius:8px;background:#f6f9f7;color:#567067;font-size:11px;line-height:1.55}.hint b{color:#274d3a}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(105px,1fr));gap:8px;margin-bottom:10px}.summary-card{border:1px solid var(--line);background:#fbfdfc;border-radius:9px;padding:10px}.summary-card b{font-size:10.5px;color:#6c7d76;display:block;margin-bottom:4px}.summary-card strong{font-size:21px}.summary-card.good strong{color:var(--green)}.summary-card.over strong{color:var(--warn)}.summary-card.bad strong{color:var(--bad)}
+.empty{padding:80px 20px;text-align:center;color:#71827a}.empty .ico{font-size:50px;opacity:.4;margin-bottom:10px}.result-list{display:flex;flex-direction:column;gap:12px}
+.pallet-card{border:1px solid #dbe5df;border-radius:11px;overflow:hidden;background:#fff}.pallet-title{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:#f8fbf9;border-bottom:1px solid #e1e9e4}.pallet-title strong{font-size:14px}.badge{display:inline-flex;align-items:center;height:25px;padding:0 9px;border-radius:999px;font-size:11px;font-weight:900}.badge.standard{background:#e8f6ed;color:#116336}.badge.over{background:#fff2d9;color:#9b5d00}.badge.bad{background:#fdebea;color:#a52a21}.pallet-meta{display:flex;gap:12px;flex-wrap:wrap;color:#566d62;font-size:11px;padding:9px 12px;border-bottom:1px solid #eef2f0}.pallet-meta b{color:#203f31}
+.view-tabs{display:flex;gap:5px;flex-wrap:wrap;padding:9px 12px 0}.view-tab{border:1px solid #c8d6cf;background:#fff;border-radius:6px;height:29px;padding:0 9px;font-size:11px;font-weight:800;cursor:pointer}.view-tab.active{background:#234f3a;color:#fff;border-color:#234f3a}.view-box{padding:10px 12px 12px}.viz-wrap{display:grid;grid-template-columns:minmax(350px,1fr) 88px;gap:10px;align-items:stretch}.viz{min-height:300px;border:1px solid #e1e8e4;border-radius:8px;background:#fcfefd;overflow:auto}.viz svg{display:block;width:100%;height:auto;min-height:300px}.height-gauge{position:relative;border:1px solid #d8e2dc;border-radius:8px;background:linear-gradient(to top,#f2f6f3,#fff);min-height:300px;padding:8px}.gauge-track{position:absolute;left:35px;top:18px;bottom:24px;width:18px;border:1px solid #b8c8c0;background:#eef4f1;border-radius:4px;overflow:hidden}.gauge-fill{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(to top,#1a7746,#73b68f)}.gauge-170{position:absolute;left:5px;top:12px;font-size:10px;color:#7c4b00}.gauge-value{position:absolute;left:4px;bottom:6px;font-size:10px;font-weight:900;color:#214733}.legend{display:flex;gap:7px;flex-wrap:wrap;padding:0 12px 11px;color:#4f655b;font-size:10.5px}.legend span{display:inline-flex;align-items:center;gap:4px}
+.error-box{border:1px solid #efc0bc;background:#fff7f6;color:#7f2019;border-radius:9px;padding:10px 12px;margin-bottom:10px;font-size:12px;line-height:1.55}.note{font-size:10.5px;color:#73827b;line-height:1.5;margin-top:8px}
+@media(max-width:1150px){.grid{grid-template-columns:1fr}.rulebar{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:720px){body{padding:10px 10px 84px}.topbar{align-items:flex-start;flex-direction:column}.rulebar{grid-template-columns:repeat(2,1fr)}.summary{grid-template-columns:repeat(2,1fr)}.viz-wrap{grid-template-columns:1fr}.height-gauge{display:none}}
+@media print{body{background:#fff;padding:0}.top-actions,.controls,.view-tabs,#tc-pallet-simulator-launcher{display:none!important}.grid{grid-template-columns:1fr}.left-pane{display:none}.card{box-shadow:none;border:0}.result-list{gap:18px}.pallet-card{break-inside:avoid}.viz-wrap{grid-template-columns:1fr}.height-gauge{display:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="brand"><div class="brand-badge">TC</div><div><h1>쿠팡 팔레트 시뮬레이션</h1><p>박스 규격과 수량을 입력하면 층별 적재와 규격/오버팔레트 여부를 시각화합니다.</p></div></div>
+    <div class="top-actions"><button class="btn" onclick="loadSample()">예시 불러오기</button><button class="btn" onclick="window.print()">결과 인쇄</button><button class="btn danger" onclick="clearAllRows()">전체 초기화</button><button class="btn primary" onclick="simulate()">시뮬레이션 실행</button></div>
+  </div>
+
+  <div class="rulebar">
+    <div class="rule"><b>사용 팔레트</b><strong>아주 / KPP</strong><small>동일 규격 적용</small></div>
+    <div class="rule"><b>팔레트 바닥</b><strong>110 × 110 cm</strong><small>규격 판정 기준</small></div>
+    <div class="rule"><b>팔레트 자체 높이</b><strong>15 cm</strong><small>총높이에 포함</small></div>
+    <div class="rule"><b>최대 총높이</b><strong>170 cm</strong><small>적재 가능 높이 155cm</small></div>
+    <div class="rule"><b>오버 허용</b><strong>면당 5 cm</strong><small>최대 2면까지</small></div>
+    <div class="rule"><b>박스 회전</b><strong>가로↔세로</strong><small>높이 방향은 고정</small></div>
+  </div>
+
+  <div class="grid">
+    <div class="left-pane">
+      <section class="card">
+        <div class="card-head"><h2>박스 입력</h2><div class="controls"><label>팔레트 종류 <select id="palletType"><option value="아주 팔레트">아주 팔레트</option><option value="KPP 팔레트">KPP 팔레트</option></select></label><button class="btn small" onclick="addRow()">＋ 박스 추가</button></div></div>
+        <div class="card-body">
+          <div class="table-wrap">
+            <table class="box-table">
+              <thead><tr><th style="width:170px">구분/상품명</th><th>가로 cm</th><th>세로 cm</th><th>높이 cm</th><th>수량</th><th>회전</th><th style="width:38px"></th></tr></thead>
+              <tbody id="boxRows"></tbody>
+            </table>
+          </div>
+          <div class="hint">
+            <b>판정 기준</b> · 110×110 안에 들어오면 <b>규격 팔레트</b>. 한 면당 최대 5cm, 전체 최대 2면까지 넘는 배치는 <b>오버팔레트</b>로 표시합니다. 총높이는 팔레트 15cm를 포함해 170cm를 넘지 않도록 계산합니다.<br>
+            서로 다른 높이의 박스는 안전하게 층을 분리해서 적재합니다. 같은 높이의 서로 다른 박스는 한 층 안에서 혼합 배치할 수 있습니다.
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="card-head"><h2>시뮬레이션 결과</h2><div id="runState" style="font-size:11px;color:#698078">입력 후 시뮬레이션 실행</div></div>
+      <div class="card-body" id="resultArea"><div class="empty"><div class="ico">▦</div><b>아직 계산하지 않았습니다.</b><div style="margin-top:5px;font-size:12px">왼쪽에 박스 규격과 수량을 입력하고 실행해 주세요.</div></div></div>
+    </section>
+  </div>
+</div>
+<script>
+'use strict';
+const PALLET={w:110,d:110,palletH:15,maxTotalH:170,maxLoadH:155,overPerFace:5,maxOverFaces:2};
+const COLORS=['#4f86c6','#e07a5f','#6a994e','#9b5de5','#f2b134','#2a9d8f','#e76f51','#577590','#bc6c25','#5c7cfa','#8f5d5d','#43aa8b'];
+let lastResult=null;
+
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function hexMix(hex,amount){let h=String(hex).replace('#','');if(h.length===3)h=h.split('').map(x=>x+x).join('');let r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);const mix=v=>Math.max(0,Math.min(255,Math.round(amount>=0?v+(255-v)*amount:v*(1+amount))));return '#'+[mix(r),mix(g),mix(b)].map(v=>v.toString(16).padStart(2,'0')).join('')}
+function rowTemplate(data={}){const tr=document.createElement('tr');tr.innerHTML=`
+  <td><input type="text" class="name" placeholder="예: A박스" value="${esc(data.name||'')}"></td>
+  <td><input type="number" class="l" min="0.1" step="0.1" value="${data.l??''}"></td>
+  <td><input type="number" class="w" min="0.1" step="0.1" value="${data.w??''}"></td>
+  <td><input type="number" class="h" min="0.1" step="0.1" value="${data.h??''}"></td>
+  <td><input type="number" class="qty" min="1" step="1" value="${data.qty??''}"></td>
+  <td class="center"><input type="checkbox" class="rot" ${data.rot===false?'':'checked'} title="가로·세로 회전 허용"></td>
+  <td class="center"><button class="del" type="button" title="삭제">×</button></td>`;
+  tr.querySelector('.del').onclick=()=>{tr.remove();if(!document.querySelector('#boxRows tr'))addRow();saveRows()};
+  tr.querySelectorAll('input').forEach(x=>x.addEventListener('input',saveRows));
+  return tr;
+}
+function addRow(data={}){document.getElementById('boxRows').appendChild(rowTemplate(data));saveRows()}
+function clearAllRows(){if(!confirm('입력한 박스 목록을 모두 초기화할까요?'))return;document.getElementById('boxRows').innerHTML='';addRow();localStorage.removeItem('tcPalletSimulatorRowsV1');lastResult=null;document.getElementById('resultArea').innerHTML='<div class="empty"><div class="ico">▦</div><b>초기화되었습니다.</b></div>'}
+function loadSample(){document.getElementById('boxRows').innerHTML='';[
+  {name:'60×50×45 박스',l:60,w:50,h:45,qty:12},{name:'60×50×25 박스',l:60,w:50,h:25,qty:24},{name:'70×42×37 박스',l:70,w:42,h:37,qty:12}
+].forEach(addRow);saveRows();simulate()}
+function saveRows(){try{localStorage.setItem('tcPalletSimulatorRowsV1',JSON.stringify(readRowsRaw()))}catch(_){}}
+function restoreRows(){try{const a=JSON.parse(localStorage.getItem('tcPalletSimulatorRowsV1')||'null');if(Array.isArray(a)&&a.length){a.forEach(addRow);return}}catch(_){}addRow()}
+function readRowsRaw(){return [...document.querySelectorAll('#boxRows tr')].map(tr=>({name:tr.querySelector('.name').value,l:tr.querySelector('.l').value,w:tr.querySelector('.w').value,h:tr.querySelector('.h').value,qty:tr.querySelector('.qty').value,rot:tr.querySelector('.rot').checked}))}
+function parseRows(){
+  const rows=readRowsRaw(),out=[],errors=[];let ix=0;
+  for(const r of rows){ix++;const l=Number(r.l),w=Number(r.w),h=Number(r.h),qty=Math.floor(Number(r.qty));if(!r.name&&!l&&!w&&!h&&!qty)continue;
+    if(!(l>0&&w>0&&h>0&&qty>0)){errors.push(`${ix}행: 가로·세로·높이·수량을 모두 입력해 주세요.`);continue}
+    out.push({id:'B'+ix,name:r.name||`박스 ${ix}`,l,w,h,qty,remaining:qty,rot:r.rot!==false});
+  }
+  return {boxes:out,errors};
+}
+function sizeKey(b){return [b.l,b.w,b.h].map(n=>Number(n).toFixed(2)).join('x')}
+function applyColors(boxes){const keys=[...new Set(boxes.map(sizeKey))];const map=new Map(keys.map((k,i)=>[k,COLORS[i%COLORS.length]]));boxes.forEach(b=>b.color=map.get(sizeKey(b)))}
+
+function intersects(a,b){return !(a.x>=b.x+b.w||a.x+a.w<=b.x||a.y>=b.y+b.d||a.y+a.d<=b.y)}
+function splitFree(free,used){
+  if(!intersects(free,used))return [free];const out=[];
+  if(used.x>free.x)out.push({x:free.x,y:free.y,w:used.x-free.x,d:free.d});
+  if(used.x+used.w<free.x+free.w)out.push({x:used.x+used.w,y:free.y,w:(free.x+free.w)-(used.x+used.w),d:free.d});
+  if(used.y>free.y)out.push({x:free.x,y:free.y,w:free.w,d:used.y-free.y});
+  if(used.y+used.d<free.y+free.d)out.push({x:free.x,y:used.y+used.d,w:free.w,d:(free.y+free.d)-(used.y+used.d)});
+  return out.filter(r=>r.w>0.0001&&r.d>0.0001);
+}
+function contained(a,b){return a.x>=b.x-1e-6&&a.y>=b.y-1e-6&&a.x+a.w<=b.x+b.w+1e-6&&a.y+a.d<=b.y+b.d+1e-6}
+function pruneFree(list){const out=[];for(let i=0;i<list.length;i++){let drop=false;for(let j=0;j<list.length;j++){if(i!==j&&contained(list[i],list[j])){drop=true;break}}if(!drop)out.push(list[i])}return out}
+function packMaxRects(units,binW,binD){
+  let free=[{x:0,y:0,w:binW,d:binD}],placements=[];
+  const sorted=units.slice().sort((a,b)=>(b.l*b.w-a.l*a.w)||(Math.max(b.l,b.w)-Math.max(a.l,a.w))||a.typeIndex-b.typeIndex);
+  for(const u of sorted){let best=null;
+    for(const fr of free){const ors=[{w:u.l,d:u.w,rot:false}];if(u.rot&&Math.abs(u.l-u.w)>.001)ors.push({w:u.w,d:u.l,rot:true});
+      for(const o of ors){if(o.w<=fr.w+1e-6&&o.d<=fr.d+1e-6){const lw=fr.w-o.w,ld=fr.d-o.d;const score=[Math.min(lw,ld),Math.max(lw,ld),lw*ld,fr.y,fr.x];if(!best||score.some((v,i)=>v<best.score[i]-1e-9&&score.slice(0,i).every((x,j)=>Math.abs(x-best.score[j])<1e-9))){best={x:fr.x,y:fr.y,w:o.w,d:o.d,rot:o.rot,u,score}}}}
+    }
+    if(!best)continue;
+    placements.push({x:best.x,y:best.y,w:best.w,d:best.d,rot:best.rot,typeIndex:best.u.typeIndex,unitId:best.u.unitId});
+    const nf=[];for(const fr of free)nf.push(...splitFree(fr,best));free=pruneFree(nf);
+  }
+  let usedW=0,usedD=0,area=0;for(const p of placements){usedW=Math.max(usedW,p.x+p.w);usedD=Math.max(usedD,p.y+p.d);area+=p.w*p.d}
+  return {placements,usedW,usedD,area};
+}
+function axisFaceOptions(size,neg,pos){
+  if(size<=110+1e-6)return [{faces:[],offset:(110-size)/2,over:{}}];
+  if(size<=115+1e-6){const e=size-110;return [{faces:[neg],offset:110-size,over:{[neg]:e}},{faces:[pos],offset:0,over:{[pos]:e}}]}
+  if(size<=120+1e-6){const e=(size-110)/2;if(e<=5+1e-6)return [{faces:[neg,pos],offset:-e,over:{[neg]:e,[pos]:e}}]}
+  return [];
+}
+function faceOptionsForDims(w,d){
+  const xs=axisFaceOptions(w,'L','R'),ys=axisFaceOptions(d,'T','B'),out=[];
+  for(const x of xs)for(const y of ys){const faces=[...x.faces,...y.faces];if(faces.length<=2)out.push({faces,offsetX:x.offset,offsetY:y.offset,over:{...x.over,...y.over}})}
+  return out;
+}
+function compareCandidate(a,b){
+  if(a.placements.length!==b.placements.length)return b.placements.length-a.placements.length;
+  if(a.area!==b.area)return b.area-a.area;
+  const af=Math.min(...a.faceOptions.map(x=>x.faces.length)),bf=Math.min(...b.faceOptions.map(x=>x.faces.length));if(af!==bf)return af-bf;
+  const ao=Math.max(0,a.usedW-110)+Math.max(0,a.usedD-110),bo=Math.max(0,b.usedW-110)+Math.max(0,b.usedD-110);if(Math.abs(ao-bo)>.001)return ao-bo;
+  return (a.binW*a.binD)-(b.binW*b.binD);
+}
+function bestLayerPack(units){
+  const bins=[[110,110],[115,110],[110,115],[115,115],[120,110],[110,120]];const candidates=[];
+  for(const [bw,bd] of bins){const p=packMaxRects(units,bw,bd);if(!p.placements.length)continue;const fo=faceOptionsForDims(p.usedW,p.usedD);if(!fo.length)continue;candidates.push({...p,binW:bw,binD:bd,faceOptions:fo})}
+  candidates.sort(compareCandidate);return candidates[0]||null;
+}
+function buildHeightPlan(boxes,typeIdxs,h,allowOver){
+  const rem=new Map(typeIdxs.map(i=>[i,boxes[i].remaining])),layers=[];let unitSeq=0,guard=0;
+  while([...rem.values()].some(q=>q>0)&&guard++<10000){
+    const active=typeIdxs.filter(i=>(rem.get(i)||0)>0);if(!active.length)break;
+    const minArea=Math.min(...active.map(i=>boxes[i].l*boxes[i].w));
+    const roughCap=Math.max(50,Math.min(5000,Math.ceil(13200/Math.max(.25,minArea))+active.length*4));
+    const units=[];
+    for(const i of active){const b=boxes[i],cap=Math.min(rem.get(i)||0,roughCap-units.length);for(let q=0;q<cap;q++)units.push({l:b.l,w:b.w,rot:b.rot,typeIndex:i,unitId:++unitSeq});if(units.length>=roughCap)break}
+    let packed=null;
+    if(allowOver)packed=bestLayerPack(units);
+    else{
+      const p=packMaxRects(units,110,110);if(p.placements.length){const fo=faceOptionsForDims(p.usedW,p.usedD).filter(x=>x.faces.length===0);if(fo.length)packed={...p,binW:110,binD:110,faceOptions:fo}}
+    }
+    if(!packed)return null;
+    const cnt=new Map();for(const p of packed.placements)cnt.set(p.typeIndex,(cnt.get(p.typeIndex)||0)+1);
+    if(!cnt.size)return null;
+    for(const [i,c] of cnt)rem.set(i,Math.max(0,(rem.get(i)||0)-c));
+    layers.push({id:'TMP'+layers.length,height:h,placements:packed.placements,usedW:packed.usedW,usedD:packed.usedD,faceOptions:packed.faceOptions,counts:cnt,area:packed.area});
+  }
+  return {layers,remaining:rem};
+}
+function buildLayers(boxes){
+  const layers=[],impossible=[];const heightOrder=[...new Set(boxes.map(b=>b.h))].sort((a,b)=>b-a);
+  for(const h of heightOrder){
+    const typeIdxs=boxes.map((b,i)=>({b,i})).filter(x=>Math.abs(x.b.h-h)<1e-6&&x.b.remaining>0).map(x=>x.i);if(!typeIdxs.length)continue;
+    const overPlan=buildHeightPlan(boxes,typeIdxs,h,true),stdPlan=buildHeightPlan(boxes,typeIdxs,h,false);
+    if(!overPlan){for(const i of typeIdxs){impossible.push({typeIndex:i,reason:'바닥 규격(오버 허용 포함)에 배치할 수 없습니다.',qty:boxes[i].remaining});boxes[i].remaining=0}continue}
+    let chosen=overPlan;
+    if(stdPlan){
+      const stdP=assignLayers(stdPlan.layers,boxes,'estimate').length,overP=assignLayers(overPlan.layers,boxes,'estimate').length;
+      // 같은 팔레트 수로 끝낼 수 있으면 규격 적재를 우선합니다.
+      if(stdP<=overP)chosen=stdPlan;
+    }
+    for(const i of typeIdxs)boxes[i].remaining=Number(chosen.remaining.get(i)||0);
+    for(const l of chosen.layers){l.id='L'+(layers.length+1);layers.push(l)}
+  }
+  return {layers,impossible};
+}
+function optionForPallet(layer,pallet){
+  const existing=new Set(pallet.faces);let best=null;
+  for(const opt of layer.faceOptions){const u=new Set([...existing,...opt.faces]);if(u.size>2)continue;const newFaces=[...u].length-existing.size;const overSum=Object.values(opt.over).reduce((a,b)=>a+b,0);const score=[u.size,newFaces,overSum];if(!best||score.some((v,i)=>v<best.score[i]-1e-9&&score.slice(0,i).every((x,j)=>Math.abs(x-best.score[j])<1e-9)))best={opt,score,union:u}}
+  return best;
+}
+function assignLayers(layers,boxes,palletType){
+  const sorted=layers.slice().sort((a,b)=>(b.height-a.height)||(Math.min(...b.faceOptions.map(x=>x.faces.length))-Math.min(...a.faceOptions.map(x=>x.faces.length)))||(b.area-a.area));
+  const pallets=[];
+  for(const layer of sorted){let pick=null;
+    for(const p of pallets){if(p.loadH+layer.height>PALLET.maxLoadH+1e-6)continue;const of=optionForPallet(layer,p);if(!of)continue;const left=PALLET.maxLoadH-(p.loadH+layer.height);const score=[of.union.size,left,p.layers.length];if(!pick||score.some((v,i)=>v<pick.score[i]-1e-9&&score.slice(0,i).every((x,j)=>Math.abs(x-pick.score[j])<1e-9)))pick={p,of,score}}
+    if(!pick){const p={no:pallets.length+1,type:palletType,loadH:0,faces:new Set(),over:{},layers:[],boxes:0};const of=optionForPallet(layer,p);if(!of)continue;pallets.push(p);pick={p,of}}
+    const p=pick.p,opt=pick.of.opt,z=PALLET.palletH+p.loadH;
+    p.layers.push({...layer,z,chosen:opt,placements:layer.placements.map(x=>({...x,drawX:x.x+opt.offsetX,drawY:x.y+opt.offsetY}))});p.loadH+=layer.height;p.faces=new Set([...p.faces,...opt.faces]);for(const [f,v] of Object.entries(opt.over))p.over[f]=Math.max(Number(p.over[f]||0),Number(v||0));p.boxes+=layer.placements.length;
+  }
+  for(const p of pallets){p.totalH=PALLET.palletH+p.loadH;p.status=p.faces.size?'over':'standard';p.layers.sort((a,b)=>a.z-b.z)}
+  return pallets;
+}
+function validateDimensions(boxes){const errs=[];for(const b of boxes){if(b.h>PALLET.maxLoadH+1e-6)errs.push(`${b.name}: 박스 높이 ${b.h}cm가 적재 가능 높이 155cm를 초과합니다.`);const can=[[120,110],[110,120],[115,115]].some(([W,D])=>(b.l<=W&&b.w<=D)||(b.rot&&b.w<=W&&b.l<=D));if(!can)errs.push(`${b.name}: 바닥 ${b.l}×${b.w}cm는 2면 오버 허용 범위에도 들어가지 않습니다.`)}return errs}
+function simulate(){
+  const parsed=parseRows();if(parsed.errors.length){renderErrors(parsed.errors);return}if(!parsed.boxes.length){renderErrors(['박스를 한 개 이상 입력해 주세요.']);return}
+  const boxes=parsed.boxes;applyColors(boxes);const hard=validateDimensions(boxes);if(hard.length){renderErrors(hard);return}
+  const totalQty=boxes.reduce((s,b)=>s+b.qty,0);if(totalQty>12000){renderErrors([`총 ${totalQty.toLocaleString()}박스입니다. 화면 시뮬레이션은 12,000박스 이하로 나눠 실행해 주세요.`]);return}
+  const work=boxes.map(b=>({...b}));const {layers,impossible}=buildLayers(work);const palletType=document.getElementById('palletType').value;const pallets=assignLayers(layers,work,palletType);
+  const placed=pallets.reduce((s,p)=>s+p.boxes,0),unplaced=impossible.reduce((s,x)=>s+x.qty,0);lastResult={boxes,work,layers,pallets,impossible,totalQty,placed,unplaced,palletType};renderResult(lastResult);saveRows();document.getElementById('runState').textContent=`${new Date().toLocaleTimeString()} 계산 완료`;
+}
+function renderErrors(errors){document.getElementById('resultArea').innerHTML=`<div class="error-box"><b>입력/적재 조건을 확인해 주세요.</b><br>${errors.map(esc).join('<br>')}</div>`}
+function faceText(p){if(!p.faces.size)return '없음';const names={L:'왼쪽',R:'오른쪽',T:'위쪽',B:'아래쪽'};return [...p.faces].map(f=>`${names[f]} ${Number(p.over[f]||0).toFixed(1)}cm`).join(' · ')}
+function countsText(p,boxes){const m=new Map();for(const l of p.layers)for(const [i,c] of l.counts)m.set(i,(m.get(i)||0)+c);return [...m].map(([i,c])=>`${boxes[i].name} ${c}박스`).join(' · ')}
+function renderResult(r){
+  const std=r.pallets.filter(p=>p.status==='standard').length,ov=r.pallets.filter(p=>p.status==='over').length;
+  let html=`<div class="summary"><div class="summary-card good"><b>총 팔레트</b><strong>${r.pallets.length}</strong></div><div class="summary-card good"><b>규격 팔레트</b><strong>${std}</strong></div><div class="summary-card over"><b>오버팔레트</b><strong>${ov}</strong></div><div class="summary-card ${r.unplaced?'bad':'good'}"><b>적재 박스</b><strong>${r.placed.toLocaleString()}</strong></div></div>`;
+  if(r.unplaced)html+=`<div class="error-box">적재 불가 ${r.unplaced.toLocaleString()}박스가 있습니다.</div>`;
+  html+='<div class="result-list">';
+  r.pallets.forEach(p=>{const maxLayer=Math.max(...p.layers.map(l=>l.z+l.height),PALLET.palletH);html+=`<div class="pallet-card" id="pallet-${p.no}">
+    <div class="pallet-title"><strong>팔레트 ${p.no} · ${esc(p.type)}</strong><span class="badge ${p.status}">${p.status==='standard'?'규격 팔레트':'오버팔레트'}</span></div>
+    <div class="pallet-meta"><span><b>총 박스</b> ${p.boxes}</span><span><b>총높이</b> ${p.totalH.toFixed(1)} / 170cm</span><span><b>적재층</b> ${p.layers.length}</span><span><b>오버</b> ${faceText(p)}</span><span><b>구성</b> ${esc(countsText(p,r.boxes))}</span></div>
+    <div class="view-tabs"><button class="view-tab active" data-p="${p.no}" data-v="3d">전체 3D</button>${p.layers.map((l,i)=>`<button class="view-tab" data-p="${p.no}" data-v="${i}">${i+1}층 · ${l.height}cm</button>`).join('')}</div>
+    <div class="view-box"><div class="viz-wrap"><div class="viz" id="viz-${p.no}">${render3D(p,r.boxes)}</div><div class="height-gauge"><div class="gauge-170">170cm</div><div class="gauge-track"><div class="gauge-fill" style="height:${Math.min(100,p.totalH/170*100)}%"></div></div><div class="gauge-value">${p.totalH.toFixed(1)}cm</div></div></div></div>
+    <div class="legend">${legendForPallet(p,r.boxes)}</div>
+  </div>`});
+  html+='</div><div class="note">※ 이 도구는 사용자가 입력한 규격을 기준으로 한 공간 배치 시뮬레이션입니다. 박스 강도, 무게중심, 실제 적재 안정성, 현장 승인 조건은 별도로 확인해야 합니다.</div>';
+  document.getElementById('resultArea').innerHTML=html;
+  document.querySelectorAll('.view-tab').forEach(b=>b.onclick=()=>switchView(Number(b.dataset.p),b.dataset.v));
+}
+function legendForPallet(p,boxes){const ids=new Set();for(const l of p.layers)for(const x of l.placements)ids.add(x.typeIndex);return [...ids].map(i=>`<span><i class="swatch" style="background:${boxes[i].color}"></i>${esc(boxes[i].name)} ${boxes[i].l}×${boxes[i].w}×${boxes[i].h}</span>`).join('')}
+function switchView(no,v){if(!lastResult)return;const p=lastResult.pallets.find(x=>x.no===no);if(!p)return;document.querySelectorAll(`#pallet-${no} .view-tab`).forEach(b=>b.classList.toggle('active',b.dataset.v===String(v)));document.getElementById(`viz-${no}`).innerHTML=v==='3d'?render3D(p,lastResult.boxes):renderLayerTop(p.layers[Number(v)],lastResult.boxes,Number(v)+1)}
+function renderLayerTop(layer,boxes,layerNo){
+  const W=130,D=130,ox=10,oy=10;let s=`<svg viewBox="-10 -10 130 135" role="img" aria-label="${layerNo}층 평면도"><rect x="-5" y="-5" width="120" height="120" fill="#fff7f0" stroke="#d98c3f" stroke-dasharray="3 2"/><rect x="0" y="0" width="110" height="110" rx="1" fill="#f3f7f4" stroke="#1f5b3b" stroke-width="1.4"/><text x="55" y="-6.5" text-anchor="middle" font-size="3.4" fill="#705743">한 면 최대 5cm · 최대 2면 오버 허용</text>`;
+  for(const p of layer.placements){const b=boxes[p.typeIndex],x=p.drawX,y=p.drawY;const label=(b.name.length>10?b.name.slice(0,9)+'…':b.name);s+=`<rect x="${x}" y="${y}" width="${p.w}" height="${p.d}" fill="${b.color}" fill-opacity=".78" stroke="#213c30" stroke-width=".55"/><text x="${x+p.w/2}" y="${y+p.d/2-1}" text-anchor="middle" dominant-baseline="middle" font-size="${Math.max(2.4,Math.min(4,p.w/10,p.d/5))}" fill="#10271e" font-weight="700">${esc(label)}</text><text x="${x+p.w/2}" y="${y+p.d/2+3}" text-anchor="middle" dominant-baseline="middle" font-size="2.5" fill="#173126">${p.rot?p.d+'×'+p.w:p.w+'×'+p.d}</text>`}
+  s+=`<text x="55" y="122" text-anchor="middle" font-size="3.7" fill="#355548">${layerNo}층 · 높이 ${layer.height}cm · ${layer.placements.length}박스</text></svg>`;return s;
+}
+function proj(x,y,z){return {x:360+(x-y)*2.15,y:310+(x+y)*.78-z*1.55}}
+function poly(points,fill,stroke='#284538',op=1){return `<polygon points="${points.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}" fill="${fill}" fill-opacity="${op}" stroke="${stroke}" stroke-width=".8"/>`}
+function cuboid(x,y,z,w,d,h,color,label=''){
+  const p000=proj(x,y,z),p100=proj(x+w,y,z),p010=proj(x,y+d,z),p110=proj(x+w,y+d,z),p001=proj(x,y,z+h),p101=proj(x+w,y,z+h),p011=proj(x,y+d,z+h),p111=proj(x+w,y+d,z+h);
+  let s=poly([p001,p101,p111,p011],hexMix(color,.15))+poly([p100,p110,p111,p101],hexMix(color,-.12))+poly([p010,p110,p111,p011],hexMix(color,-.25));
+  if(label){const c={x:(p001.x+p101.x+p111.x+p011.x)/4,y:(p001.y+p101.y+p111.y+p011.y)/4};s+=`<text x="${c.x}" y="${c.y}" text-anchor="middle" font-size="9" font-weight="800" fill="#13291f">${esc(label)}</text>`}return s;
+}
+function render3D(pallet,boxes){
+  let s='<svg viewBox="0 0 720 430" role="img" aria-label="팔레트 전체 3D 적재도">';
+  s+=cuboid(0,0,0,110,110,15,'#b7a889','110×110 PALLET');
+  const all=[];pallet.layers.forEach((l,li)=>l.placements.forEach(pl=>all.push({l,li,pl,b:boxes[pl.typeIndex]})));all.sort((a,b)=>(a.l.z-b.l.z)||((a.pl.drawX+a.pl.drawY)-(b.pl.drawX+b.pl.drawY)));
+  for(const x of all){const nm=x.b.name.length>7?x.b.name.slice(0,6)+'…':x.b.name;s+=cuboid(x.pl.drawX,x.pl.drawY,x.l.z,x.pl.w,x.pl.d,x.l.height,x.b.color,nm)}
+  const top=proj(0,0,pallet.totalH);s+=`<line x1="80" y1="55" x2="80" y2="365" stroke="#b5c4bc" stroke-dasharray="4 4"/><text x="45" y="58" font-size="11" fill="#7a4d00">170cm</text><text x="84" y="${Math.max(60,top.y)}" font-size="11" font-weight="800" fill="#1f5b3b">${pallet.totalH.toFixed(1)}cm</text>`;
+  s+=`<text x="360" y="410" text-anchor="middle" font-size="11" fill="#4f675c">${pallet.status==='standard'?'110×110 규격 내 적재':'오버팔레트 · '+faceText(pallet)}</text></svg>`;return s;
+}
+
+restoreRows();
+document.getElementById('palletType').addEventListener('change',()=>{if(lastResult)simulate()});
+</script>
+<script src="/pallet-simulator-launcher.js"></script>
+</body>
+</html>
