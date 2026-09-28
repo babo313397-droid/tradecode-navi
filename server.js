@@ -929,22 +929,12 @@ app.get(Object.keys(AUTH_HTML_PAGES_V63),(req,res,next)=>{
     const f=path.join(__dirname,name);if(!fs.existsSync(f))return next();
     let html=fs.readFileSync(f,'utf8');
     if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script></body>');
-    if(!html.includes('/pallet-simulator-launcher.js'))html=html.replace(/<\/body>/i,'<script src="/pallet-simulator-launcher.js"></script></body>');
     res.set('Cache-Control','no-store');return res.type('html').send(html);
   }catch(e){console.warn('[v63 auth html] 주입 실패:',e.message);return next()}
 });
 
 // 상세페이지 자동 제작 화면도 기존 파일을 교체하지 않고 로그인 보호 + 계정 표시 스크립트만 삽입합니다.
-app.get('/detail-maker',(req,res,next)=>{const candidates=[path.join(__dirname,'detail-maker.html'),path.join(__dirname,'detail-maker','index.html')];const f=candidates.find(x=>fs.existsSync(x));if(!f)return next();let html=fs.readFileSync(f,'utf8');if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script><script src="/detail-auth-workspace.js"></script></body>');if(!html.includes('/pallet-simulator-launcher.js'))html=html.replace(/<\/body>/i,'<script src="/pallet-simulator-launcher.js"></script></body>');res.type('html').send(html)});
-
-// v133: 모든 일반 HTML 화면에도 쿠팡 팔레트 시뮬레이션 고정 버튼을 주입합니다.
-function injectPalletSimulatorLauncherV133(html){
-  html=String(html||'');
-  if(html.includes('/pallet-simulator-launcher.js'))return html;
-  return /<\/body>/i.test(html)?html.replace(/<\/body>/i,'<script src="/pallet-simulator-launcher.js"></script></body>'):html+'<script src="/pallet-simulator-launcher.js"></script>';
-}
-app.get(['/', '/index.html'],(req,res,next)=>{try{const f=path.join(__dirname,'index.html');if(!fs.existsSync(f))return next();res.set('Cache-Control','no-store');return res.type('html').send(injectPalletSimulatorLauncherV133(fs.readFileSync(f,'utf8')))}catch(e){return next()}});
-app.get(/^\/[^?]*\.html$/,(req,res,next)=>{try{const rel=decodeURIComponent(req.path).replace(/^\/+/, '');if(!rel||rel.includes('..')||rel.includes('\\'))return next();const f=path.join(__dirname,rel);if(!fs.existsSync(f)||!fs.statSync(f).isFile())return next();res.set('Cache-Control','no-store');return res.type('html').send(injectPalletSimulatorLauncherV133(fs.readFileSync(f,'utf8')))}catch(e){return next()}});
+app.get('/detail-maker',(req,res,next)=>{const candidates=[path.join(__dirname,'detail-maker.html'),path.join(__dirname,'detail-maker','index.html')];const f=candidates.find(x=>fs.existsSync(x));if(!f)return next();let html=fs.readFileSync(f,'utf8');if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script><script src="/detail-auth-workspace.js"></script></body>');res.type('html').send(html)});
 
 app.use(express.static(path.join(__dirname)));
 
@@ -2520,7 +2510,6 @@ function renderSeoPage(req, res) {
         '</head>',
         `<script>window.TRADECODE_INITIAL_FEATURE=${JSON.stringify(config.feature)};</script>\n</head>`
       );
-    html=injectPalletSimulatorLauncherV133(html);
 
     res.type('html').send(html);
   });
