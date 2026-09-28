@@ -61,7 +61,7 @@ body{padding:20px 20px 90px 272px}.sidebar{position:fixed;left:0;top:0;bottom:0;
         <div class="card-head"><h2>박스 입력</h2><div class="controls"><label>팔레트 종류 <select id="palletType"><option value="아주 팔레트">아주 팔레트</option><option value="KPP 팔레트">KPP 팔레트</option></select></label><label class="over-toggle off" id="overToggleLabel"><input type="checkbox" id="allowOverPallet"> 오버팔레트 허용</label><button class="btn small" onclick="addRow()">＋ 박스 추가</button></div></div>
         <div class="card-body">
           <div class="table-wrap"><table class="box-table"><thead><tr><th style="width:180px">구분/상품명</th><th>가로 cm</th><th>세로 cm</th><th>높이 cm</th><th>수량</th><th>3축 회전</th><th style="width:38px"></th></tr></thead><tbody id="boxRows"></tbody></table></div>
-          <div class="hint"><b>배치 방식</b> · 박스의 가로·세로·높이를 모두 회전 후보로 검토합니다. 같은 규격은 가능한 한 한 자리에서 위로 쌓아 <b>서로 다른 높이의 컬럼</b>을 만들고, 그 컬럼들을 110×110 바닥에 끼워 맞춥니다. 그래서 45cm 박스 컬럼 옆에 25cm 박스를 더 많이 쌓아 전체 높이를 맞추는 방식도 계산합니다.<br><b>오버팔레트</b> · 기본은 사용하지 않습니다. 체크했을 때만 검토하며, 규격 팔레트와 같은 팔레트 수라면 규격 배치를 우선합니다.</div>
+          <div class="hint"><b>배치 방식</b> · 박스의 가로·세로·높이를 모두 회전 후보로 검토합니다. 같은 바닥 규격은 높이가 달라도 같은 자리에서 이어 쌓아 <b>혼합 높이 컬럼</b>을 만들고, 그 컬럼들을 110×110 바닥에 끼워 맞춥니다. 그래서 45cm 박스 컬럼 옆에 25cm 박스를 더 많이 쌓아 전체 높이를 맞추는 방식도 계산합니다.<br><b>오버팔레트</b> · 기본은 사용하지 않습니다. 체크했을 때만 검토하며, 규격 팔레트와 같은 팔레트 수라면 규격 배치를 우선합니다.</div>
         </div>
       </section>
 
@@ -118,9 +118,62 @@ function bestFloorPack(units,allowOver){const bins=allowOver?[[110,110],[115,110
 function orientationOptions(b){if(!b.rot)return [{bw:b.l,bd:b.w,bh:b.h,key:`${b.l}x${b.w}x${b.h}`,turnPenalty:0}];const raw=[{bw:b.l,bd:b.w,bh:b.h,turnPenalty:0},{bw:b.l,bd:b.h,bh:b.w,turnPenalty:1},{bw:b.w,bd:b.h,bh:b.l,turnPenalty:1}],out=[],seen=new Set();for(const o of raw){const a=Math.min(o.bw,o.bd),d=Math.max(o.bw,o.bd),k=[a,d,o.bh].map(x=>Number(x).toFixed(4)).join('|');if(seen.has(k))continue;seen.add(k);out.push({...o,key:k})}return out.filter(o=>o.bh<=PALLET.maxLoadH+1e-6)}
 function towerStats(b,o){const cap=Math.floor((PALLET.maxLoadH+1e-6)/o.bh);if(cap<1)return null;const count=Math.ceil(b.qty/cap),area=count*o.bw*o.bd;return {o,cap,count,area,eff:area/(b.qty||1)}}
 function orientationCombos(boxes,allowOver){let beam=[{choices:[],estArea:0,estTowers:0,penalty:0,turnPenalty:0}];const BEAM=100;for(const b of boxes){const opts=orientationOptions(b).map(o=>towerStats(b,o)).filter(Boolean);if(!opts.length)return [];const next=[];for(const base of beam)for(const st of opts){const maxSide=Math.max(st.o.bw,st.o.bd),minSide=Math.min(st.o.bw,st.o.bd);let bad=0;const maxAllow=allowOver?120:110;if(maxSide>maxAllow+1e-6||minSide>110+1e-6)bad=1000000;next.push({choices:[...base.choices,st],estArea:base.estArea+st.area,estTowers:base.estTowers+st.count,penalty:base.penalty+bad,turnPenalty:base.turnPenalty+(st.o.turnPenalty||0)})}next.sort((a,b)=>(a.penalty-b.penalty)||(Math.ceil(a.estArea/12100)-Math.ceil(b.estArea/12100))||(a.turnPenalty-b.turnPenalty)||(a.estArea-b.estArea)||(a.estTowers-b.estTowers));beam=next.slice(0,BEAM)}return beam}
-function makeTowers(boxes,combo){const towers=[];let tid=0;for(let i=0;i<boxes.length;i++){const b=boxes[i],st=combo.choices[i],o=st.o;let remain=b.qty;while(remain>0){const n=Math.min(st.cap,remain);towers.push({unitId:'T'+(++tid),typeIndex:i,l:o.bw,w:o.bd,rot:true,boxH:o.bh,stackCount:n,height:n*o.bh,orientation:o});remain-=n}}return towers}
+function makeTowers(boxes,combo){
+  // 같은 바닥 규격(가로×세로, 90도 회전 포함)의 박스는 높이가 달라도 같은 컬럼에 이어 쌓을 수 있다.
+  // 예: 60×50×45 12박스 + 60×50×20 4박스 => 4개 컬럼에 45+45+45+20 = 155cm씩 적재.
+  const groups=new Map();
+  for(let i=0;i<boxes.length;i++){
+    const b=boxes[i],st=combo.choices[i],o=st.o;
+    const a=Math.min(o.bw,o.bd),d=Math.max(o.bw,o.bd),key=`${a.toFixed(4)}|${d.toFixed(4)}`;
+    if(!groups.has(key))groups.set(key,{l:o.bw,w:o.bd,items:[]});
+    const g=groups.get(key);
+    for(let n=0;n<b.qty;n++)g.items.push({typeIndex:i,boxH:o.bh,orientation:o});
+  }
+  const towers=[];let tid=0;
+  for(const g of groups.values()){
+    // 높은 박스부터 넣고, 남은 높이가 가장 적게 남는 기존 컬럼을 우선 채우는 Best-Fit Decreasing.
+    // 동일 바닥 규격끼리 위아래로 섞어 쌓아 팔레트 수를 최소화한다.
+    const items=g.items.slice().sort((a,b)=>(b.boxH-a.boxH)||(a.typeIndex-b.typeIndex));
+    const bins=[];
+    for(const item of items){
+      let pick=-1,bestUsed=-1;
+      for(let j=0;j<bins.length;j++){
+        const used=bins[j].height;
+        if(used+item.boxH<=PALLET.maxLoadH+1e-6&&used>bestUsed){pick=j;bestUsed=used}
+      }
+      if(pick<0){bins.push({height:0,layers:[]});pick=bins.length-1}
+      bins[pick].layers.push(item);bins[pick].height+=item.boxH;
+    }
+    for(const bin of bins){
+      const first=bin.layers[0];
+      towers.push({unitId:'T'+(++tid),typeIndex:first.typeIndex,l:g.l,w:g.w,rot:true,boxH:first.boxH,stackCount:bin.layers.length,height:bin.height,orientation:first.orientation,layers:bin.layers});
+    }
+  }
+  return towers;
+}
 function validateTowerUnits(towers,allowOver){for(const t of towers){const canStd=(t.l<=110+1e-6&&t.w<=110+1e-6)||(t.w<=110+1e-6&&t.l<=110+1e-6);if(canStd)continue;if(!allowOver)return false;const can=faceOptionsForDims(Math.min(120,Math.max(t.l,t.w)),Math.min(120,Math.min(t.l,t.w))).length>0||[[120,110],[110,120],[115,115]].some(([W,D])=>(t.l<=W+1e-6&&t.w<=D+1e-6)||(t.w<=W+1e-6&&t.l<=D+1e-6));if(!can)return false}return true}
-function planTowers(towers,allowOver,palletType){let rem=towers.slice(),pallets=[],guard=0;while(rem.length&&guard++<5000){const p=bestFloorPack(rem,allowOver);if(!p||!p.placements.length)break;const used=new Set(p.placements.map(x=>x.unitId));const placedTowers=p.placements.map(pl=>{const t=pl.tower;return {...t,x:pl.x+p.opt.offsetX,y:pl.y+p.opt.offsetY,baseW:pl.w,baseD:pl.d,baseRot:pl.rot}});const boxes3d=[];for(const t of placedTowers)for(let k=0;k<t.stackCount;k++)boxes3d.push({typeIndex:t.typeIndex,x:t.x,y:t.y,z:PALLET.palletH+k*t.boxH,w:t.baseW,d:t.baseD,h:t.boxH,edgeX:t.baseW,edgeY:t.baseD,towerId:t.unitId,stackIndex:k});const maxLoad=Math.max(0,...placedTowers.map(t=>t.height));const faces=new Set(p.opt.faces);pallets.push({no:pallets.length+1,type:palletType,towers:placedTowers,boxes3d,boxCount:boxes3d.length,totalH:PALLET.palletH+maxLoad,loadH:maxLoad,status:faces.size?'over':'standard',faces,over:p.opt.over,usedW:p.usedW,usedD:p.usedD});rem=rem.filter(x=>!used.has(x.unitId))}return {pallets,unplacedTowers:rem}}
+function planTowers(towers,allowOver,palletType){
+  let rem=towers.slice(),pallets=[],guard=0;
+  while(rem.length&&guard++<5000){
+    const p=bestFloorPack(rem,allowOver);if(!p||!p.placements.length)break;
+    const used=new Set(p.placements.map(x=>x.unitId));
+    const placedTowers=p.placements.map(pl=>{const t=pl.tower;return {...t,x:pl.x+p.opt.offsetX,y:pl.y+p.opt.offsetY,baseW:pl.w,baseD:pl.d,baseRot:pl.rot}});
+    const boxes3d=[];
+    for(const t of placedTowers){
+      let z=PALLET.palletH;
+      const layers=Array.isArray(t.layers)&&t.layers.length?t.layers:Array.from({length:t.stackCount},()=>({typeIndex:t.typeIndex,boxH:t.boxH,orientation:t.orientation}));
+      for(let k=0;k<layers.length;k++){
+        const layer=layers[k];
+        boxes3d.push({typeIndex:layer.typeIndex,x:t.x,y:t.y,z,w:t.baseW,d:t.baseD,h:layer.boxH,edgeX:t.baseW,edgeY:t.baseD,towerId:t.unitId,stackIndex:k});
+        z+=layer.boxH;
+      }
+    }
+    const maxLoad=Math.max(0,...placedTowers.map(t=>t.height));const faces=new Set(p.opt.faces);
+    pallets.push({no:pallets.length+1,type:palletType,towers:placedTowers,boxes3d,boxCount:boxes3d.length,totalH:PALLET.palletH+maxLoad,loadH:maxLoad,status:faces.size?'over':'standard',faces,over:p.opt.over,usedW:p.usedW,usedD:p.usedD});
+    rem=rem.filter(x=>!used.has(x.unitId));
+  }
+  return {pallets,unplacedTowers:rem};
+}
 function buildSlices(pallet){const bs=pallet.boxes3d||[],zSet=new Set([PALLET.palletH]);for(const b of bs){zSet.add(Number(b.z.toFixed(6)));zSet.add(Number((b.z+b.h).toFixed(6)))}const z=[...zSet].sort((a,b)=>a-b),out=[];for(let i=0;i<z.length-1;i++){const a=z[i],b=z[i+1],mid=(a+b)/2,visible=bs.filter(x=>x.z<=mid+1e-7&&x.z+x.h>mid+1e-7);if(visible.length)out.push({start:a,end:b,visible})}return out}
 function planScore(plan,combo){const unplaced=plan.unplacedTowers.length,p=plan.pallets.length,ov=plan.pallets.filter(x=>x.status==='over').length,maxH=Math.max(0,...plan.pallets.map(x=>x.totalH)),sumH=plan.pallets.reduce((s,x)=>s+x.totalH,0),turn=Number(combo?.turnPenalty||0);return [unplaced?1:0,unplaced,p,ov,maxH,turn,sumH]}
 function scoreLess(a,b){for(let i=0;i<a.length;i++){if(Math.abs(a[i]-b[i])>1e-9)return a[i]<b[i]}return false}
