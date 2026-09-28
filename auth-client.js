@@ -23,13 +23,46 @@ function ensurePurchaseOrderNav(){
     else link.classList.remove('active');
   }catch(e){console.warn('purchase nav',e)}
 }
+function ensurePalletSimulatorNav(){
+  try{
+    const sidebar=document.querySelector('nav.sidebar,.sidebar');
+    if(!sidebar)return;
+    const nodes=[...sidebar.querySelectorAll('a,button')];
+    let link=nodes.find(el=>{
+      const href=el.getAttribute('href')||'';
+      const onclick=el.getAttribute('onclick')||'';
+      return href.includes('/coupang-pallet-simulator')||onclick.includes('/coupang-pallet-simulator');
+    });
+    const purchase=nodes.find(el=>{
+      const href=el.getAttribute('href')||'';
+      const onclick=el.getAttribute('onclick')||'';
+      return href.includes('/purchase-order.html')||onclick.includes('/purchase-order.html');
+    });
+    if(!link){
+      link=document.createElement('a');
+      link.className='nav-btn';
+      link.href='/coupang-pallet-simulator';
+      link.textContent='📦 쿠팡 팔레트 시뮬레이션';
+    }
+    if(purchase&&purchase.parentNode===sidebar&&link.previousElementSibling!==purchase){
+      purchase.insertAdjacentElement('afterend',link);
+    }else if(!link.isConnected){
+      sidebar.appendChild(link);
+    }
+    link.style.removeProperty('display');
+    if(location.pathname.startsWith('/coupang-pallet-simulator'))link.classList.add('active');
+    else link.classList.remove('active');
+  }catch(e){console.warn('pallet simulator nav',e)}
+}
 async function init(){
   ensurePurchaseOrderNav();
+  ensurePalletSimulatorNav();
   try{
     const r=await fetch('/api/auth/me',{cache:'no-store'}),j=await r.json();
     if(!j.authenticated){location.href='/login.html?next='+encodeURIComponent(location.pathname+location.search);return}
     const u=j.user;
     ensurePurchaseOrderNav();
+    ensurePalletSimulatorNav();
     if(!document.getElementById('tradecodeAccountBar')){
       const bar=document.createElement('div');
       bar.id='tradecodeAccountBar';
@@ -42,8 +75,8 @@ async function init(){
     window.dispatchEvent(new CustomEvent('tradecode-auth-ready',{detail:u}));
   }catch(e){console.warn('auth init',e)}
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensurePurchaseOrderNav,{once:true});
-else ensurePurchaseOrderNav();
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{ensurePurchaseOrderNav();ensurePalletSimulatorNav()},{once:true});
+else {ensurePurchaseOrderNav();ensurePalletSimulatorNav();}
 init();
 })();
 
