@@ -119,9 +119,11 @@
       <div id="poFileChips" class="files-chips"></div>
 
       <div class="korea-order-box" id="koreaOrderBox">
-        <div class="korea-order-head"><span class="badge">🇰🇷</span><span>한국 발주건</span><span style="font-size:9.5px;font-weight:700;color:#668071">이 파일에 들어있는 SKU만 한국 발주서에 포함합니다.</span></div>
-        <div id="koreaDrop" class="dropzone korea-drop"><div><strong>한국 발주 대상 엑셀을 여기에 끌어놓으세요</strong><small>SKU ID · 상품명 · 바코드 · CAVITY · 낱개 단가 · 동일품목 · 최소 팩킹 수량을 읽습니다. 쿠팡 PO에 다른 상품이 있어도 이 엑셀에 없는 상품은 한국 발주서에서 제외합니다.</small></div></div>
-        <div class="row" style="margin-top:8px"><button class="btn green" type="button" onclick="$('koreaFile').click()">한국 발주건 엑셀 선택</button><input id="koreaFile" class="file-input" type="file" accept=".xlsx,.xlsm"><button class="btn" type="button" onclick="resetKoreaOrder()">한국 발주건 초기화</button><span id="koreaStatus" class="status">한국 발주 대상 엑셀을 올려주세요.</span></div>
+        <div class="korea-order-head"><span class="badge">🇰🇷</span><span>한국 발주건</span><span style="font-size:9.5px;font-weight:700;color:#668071">쿠팡 PO에 실제 들어있는 상품만 한국 발주 대상으로 사용합니다.</span></div>
+        <div class="row" style="margin-bottom:8px;align-items:center"><button class="btn" type="button" onclick="$('koreaMasterFile').click()">한국 발주 기준표 등록/수정</button><input id="koreaMasterFile" class="file-input" type="file" accept=".xlsx,.xlsm"><span id="koreaMasterStatus" class="status">기준표: SKU ID · 바코드 · CAVITY · 단가 · 동일품목 · 최소 팩킹수량</span></div>
+        <div id="koreaMasterFileChip" class="files-chips"></div>
+        <div id="koreaDrop" class="dropzone korea-drop"><div><strong>쿠팡 한국 발주 PO 엑셀을 여기에 끌어놓으세요</strong><small>기존 발주건과 같은 PO 양식입니다. 상품번호 · 상품바코드 · 상품이름 · 확정수량(없으면 발주수량)을 읽고, 기준표에 등록된 상품만 한국 발주서에 포함합니다.</small></div></div>
+        <div class="row" style="margin-top:8px"><button class="btn green" type="button" onclick="$('koreaPoFiles').click()">한국 발주 PO 파일 선택</button><input id="koreaPoFiles" class="file-input" type="file" accept=".xlsx,.xlsm" multiple><button class="btn" type="button" onclick="resetKoreaPo()">한국 PO 초기화</button><span id="koreaStatus" class="status">한국 발주 PO를 올려주세요.</span></div>
         <div id="koreaFileChip" class="files-chips"></div>
         <div id="koreaEditorWrap" class="korea-edit-wrap" style="display:none"><div class="korea-subhead"><span>한국 발주 기준표 · 단가 / 동일품목 / 캐비티 / 최소 팩킹수량 수정 가능</span><span id="koreaMasterCount"></span></div><div class="korea-scroll"><table class="korea-table"><thead><tr><th>순번</th><th>구분</th><th>SKU ID</th><th>바코드</th><th>상품명</th><th>CAVITY</th><th>낱개 단가</th><th>동일품목</th><th>최소 팩킹 수량</th></tr></thead><tbody id="koreaMasterBody"></tbody></table></div></div>
         <div id="koreaResultWrap" class="korea-result-wrap" style="display:none"><div class="korea-subhead"><span>한국 발주 결과</span><button id="downloadKoreaBtn" class="btn gold" type="button" onclick="downloadKoreaOrderWorkbook()">한국 발주서 엑셀 다운로드</button></div><div class="korea-kpis"><div class="korea-kpi"><b id="koreaKItems">0</b><span>한국 발주 SKU</span></div><div class="korea-kpi"><b id="koreaKPoQty">0</b><span>쿠팡 발주수량 합계</span></div><div class="korea-kpi"><b id="koreaKPieces">0</b><span>필요 낱개수량</span></div><div class="korea-kpi"><b id="koreaKAmount">0원</b><span>재고 차감 전 예상 발주금액</span></div></div>
@@ -624,7 +626,7 @@ async function mapLimit(arr,limit,fn){const out=new Array(arr.length),workers=[]
 async function downloadOrderWorkbook(){if(!mergedOrders.length)return;if(mergedOrders.some(x=>!x.master))return alert('제품 목록에 없는 상품을 먼저 등록해 주세요.');try{setStatus('downloadStatus','발주서용 제품 사진을 준비하는 중입니다…','work');const imageData=await mapLimit(mergedOrders,8,async(x,i)=>{if(i%20===0)setStatus('downloadStatus',`제품 사진 준비 중… ${i+1}/${mergedOrders.length}`,'work');return fetchImageData(x.master)});setStatus('downloadStatus','발주서 엑셀을 만드는 중입니다…','work');const wb=new ExcelJS.Workbook();wb.creator='TradeCode Navi';wb.created=new Date();const ws=wb.addWorksheet('발주서',{properties:{defaultRowHeight:18},pageSetup:{orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0,paperSize:9,margins:{left:0.2,right:0.2,top:0.3,bottom:0.3,header:0.1,footer:0.1}}});const widths=[11.664,33.109,26.219,33.664,33.664,25,14.218,16.218,17.555,17.332,30.218,14.109,14.555,11.664,13.218,14.664,14.555,23.109,14.664];widths.forEach((w,i)=>ws.getColumn(i+1).width=w);ws.mergeCells('A1:J1');ws.mergeCells('J2:J3');ws.mergeCells('O2:S2');ws.getCell('A1').value=orderTitle();ws.getCell('A2').value='업체명';ws.getCell('B2').value=norm($('companyName').value)||'코리아원';ws.getCell('H2').value=mergedOrders.reduce((s,x)=>s+x.qty,0);ws.getCell('J2').value='실 낱개 구매수량';ws.getCell('O2').value='작업 일자 :';const headers=['순번','바코드','상품명','제품 사진','비고','업체 발송 송장번호','캐비티','', '발주수량','','','배송료','발주금액','비고','입고일자','입고수량','불량수량','원산지 작업수량','특기 사항'];headers.forEach((v,i)=>ws.getCell(3,i+1).value=v);ws.getRow(1).height=33.6;ws.getRow(2).height=18;ws.getRow(3).height=51.6;const font={name:'맑은 고딕',size:10};for(let r=1;r<=3;r++){for(let c=1;c<=19;c++){const cell=ws.getCell(r,c);cell.font={...font,bold:r<=3};cell.alignment={vertical:'middle',horizontal:r===1?'center':'center',wrapText:true};cell.border=thinBorder();if(r===3)cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE7E6E6'}}}}ws.getCell('A1').font={name:'맑은 고딕',size:18,bold:true};ws.getCell('A1').alignment={vertical:'middle',horizontal:'left'};ws.getCell('H2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'}};ws.getCell('H2').font={name:'맑은 고딕',size:11,bold:true};for(let i=0;i<mergedOrders.length;i++){const x=mergedOrders[i],r=i+4,row=ws.getRow(r);row.height=135.6;ws.getCell(r,1).value=i+1;ws.getCell(r,2).value=x.barcode;ws.getCell(r,3).value=x.productName;ws.getCell(r,7).value=x.cavity;ws.getCell(r,9).value=x.qty;ws.getCell(r,10).value={formula:`G${r}*I${r}`,result:x.pieces};for(let c=1;c<=19;c++){const cell=ws.getCell(r,c);cell.font=font;cell.border=thinBorder();cell.alignment={vertical:'middle',horizontal:[1,7,9,10,12,13,15,16,17,18].includes(c)?'center':'left',wrapText:true}}const im=imageData[i];if(im){const imageId=wb.addImage({base64:im.base64,extension:im.extension});ws.addImage(imageId,{tl:{col:3.15,row:r-1+0.12},ext:{width:185,height:150},editAs:'oneCell'})}}ws.views=[{state:'frozen',ySplit:3}];ws.pageSetup.printArea=`A1:S${mergedOrders.length+3}`;const buf=await wb.xlsx.writeBuffer();const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=orderTitle().replace(/[\\/:*?"<>|]+/g,'_')+'.xlsx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000);setStatus('downloadStatus','발주서 엑셀 다운로드 완료','ok')}catch(e){console.error(e);setStatus('downloadStatus','발주서 생성 실패: '+e.message,'bad');alert('발주서 생성 실패\n'+e.message)}}
 
 // ===== Korea purchase order v1 (isolated; existing generic PO flow remains unchanged) =====
-let koreaOrderMaster=[],koreaOrderRows=[],koreaOrderGroups=[],koreaOrderFileName='';
+let koreaOrderMaster=[],koreaOrderRows=[],koreaOrderGroups=[],koreaOrderFileName='',koreaPoFilesState=[],koreaRawPoRows=[],koreaMergedOrders=[];
 const KOREA_CATEGORY_ORDER=['때밀이 때타올','송월타올 타월','대림바스','대림 도비도스','기타'];
 function koreaCategory(name){
   const n=norm(name).toLowerCase();
@@ -660,7 +662,7 @@ async function parseKoreaOrderFile(file){
       if(rows.length)break;
     }
   }
-  if(!best?.rows?.length)throw new Error('한국 발주 엑셀에서 SKU ID / 상품명 / 바코드 헤더를 찾지 못했습니다.');
+  if(!best?.rows?.length)throw new Error('한국 발주 기준표에서 SKU ID / 상품명 / 바코드 헤더를 찾지 못했습니다.');
   return best;
 }
 function koreaSaveLocal(){try{localStorage.setItem('tradecodeKoreaOrderMasterV1',JSON.stringify({name:koreaOrderFileName,rows:koreaOrderMaster}))}catch(_){}}
@@ -670,38 +672,64 @@ function koreaLoadLocal(){
     if(x?.rows?.length){
       koreaOrderMaster=x.rows.map((r,i)=>({...r,sourceIndex:Number.isFinite(r.sourceIndex)?r.sourceIndex:i,category:koreaCategory(r.productName)}));
       koreaOrderFileName=x.name||'저장된 한국 발주 기준표';renderKoreaMaster();rebuildKoreaOrder();
-      $('koreaFileChip').innerHTML=`<span class="chip">${esc(koreaOrderFileName)} · ${koreaOrderMaster.length.toLocaleString()}개 SKU</span>`;
-      setStatus('koreaStatus',`저장된 한국 발주 기준표 ${koreaOrderMaster.length.toLocaleString()}개를 불러왔습니다.`,'ok');
+      $('koreaMasterFileChip').innerHTML=`<span class="chip">${esc(koreaOrderFileName)} · ${koreaOrderMaster.length.toLocaleString()}개 SKU</span>`;
+      setStatus('koreaMasterStatus',`저장된 한국 발주 기준표 ${koreaOrderMaster.length.toLocaleString()}개를 불러왔습니다.`,'ok');
     }
   }catch(_){ }
 }
-async function acceptKoreaOrderFile(file){
+async function acceptKoreaMasterFile(file){
   if(!file||!/\.(xlsx|xlsm)$/i.test(file.name||''))return alert('한국 발주 Excel 파일을 선택해 주세요.');
   try{
-    setStatus('koreaStatus','한국 발주 기준표를 분석하는 중입니다…','work');
+    setStatus('koreaMasterStatus','한국 발주 기준표를 분석하는 중입니다…','work');
     const parsed=await parseKoreaOrderFile(file);koreaOrderMaster=parsed.rows;koreaOrderFileName=file.name;koreaSaveLocal();renderKoreaMaster();rebuildKoreaOrder();
-    $('koreaFileChip').innerHTML=`<span class="chip">${esc(file.name)} · ${koreaOrderMaster.length.toLocaleString()}개 SKU · ${esc(parsed.sheetName)}</span>`;
-    setStatus('koreaStatus',`한국 발주 SKU ${koreaOrderMaster.length.toLocaleString()}개 분석 완료 · PO에 있는 이 SKU만 발주합니다.`,'ok');
-  }catch(e){console.error(e);setStatus('koreaStatus','한국 발주 파일 분석 실패: '+e.message,'bad');alert('한국 발주 파일 분석 실패\n'+e.message)}
+    $('koreaMasterFileChip').innerHTML=`<span class="chip">${esc(file.name)} · ${koreaOrderMaster.length.toLocaleString()}개 SKU · ${esc(parsed.sheetName)}</span>`;
+    setStatus('koreaMasterStatus',`한국 발주 기준표 ${koreaOrderMaster.length.toLocaleString()}개 분석 완료 · 한국 PO와 매칭합니다.`,'ok');
+  }catch(e){console.error(e);setStatus('koreaMasterStatus','한국 발주 기준표 분석 실패: '+e.message,'bad');alert('한국 발주 기준표 분석 실패\n'+e.message)}
 }
-function resetKoreaOrder(){
-  koreaOrderMaster=[];koreaOrderRows=[];koreaOrderGroups=[];koreaOrderFileName='';
-  try{localStorage.removeItem('tradecodeKoreaOrderMasterV1')}catch(_){}
-  $('koreaFile').value='';$('koreaFileChip').innerHTML='';$('koreaEditorWrap').style.display='none';$('koreaResultWrap').style.display='none';setStatus('koreaStatus','한국 발주 대상 엑셀을 올려주세요.');
+function resetKoreaPo(){
+  koreaPoFilesState=[];koreaRawPoRows=[];koreaMergedOrders=[];koreaOrderRows=[];koreaOrderGroups=[];
+  $('koreaPoFiles').value='';$('koreaFileChip').innerHTML='';$('koreaResultWrap').style.display='none';setStatus('koreaStatus','한국 발주 PO를 올려주세요.');
+}
+function mergeKoreaPoRows(){
+  const byKey=new Map(),rows=[];
+  for(const src of koreaRawPoRows){
+    const pn=normalizePoProductNumber(src.productNumber),bc=norm(src.barcode).replace(/\s+/g,'').toUpperCase();
+    if(!pn&&!bc)continue;const key=pn?`PN:${pn}`:`BC:${bc}`;let obj=byKey.get(key);
+    if(!obj){obj={productNumber:pn,barcode:bc,productName:src.productName||'',qty:0,firstIndex:rows.length};byKey.set(key,obj);rows.push(obj)}
+    obj.qty+=num(src.qty);if(!obj.productName&&src.productName)obj.productName=src.productName;if(!obj.barcode&&bc)obj.barcode=bc;
+  }
+  koreaMergedOrders=rows;
+}
+function renderKoreaPoFiles(){
+  $('koreaFileChip').innerHTML=koreaPoFilesState.map(x=>`<span class="chip">${esc(x.name)} · ${x.count.toLocaleString()}행 · ${esc(x.qtyHeader||'수량')} ${num(x.total).toLocaleString()}개</span>`).join('');
+}
+async function acceptKoreaPoFiles(files){
+  const arr=[...files].filter(f=>/\.(xlsx|xlsm)$/i.test(f.name||''));if(!arr.length)return alert('쿠팡 한국 발주 PO Excel 파일을 선택해 주세요.');
+  try{
+    setStatus('koreaStatus','한국 발주 PO를 분석하는 중입니다…','work');koreaPoFilesState=[];koreaRawPoRows=[];
+    for(let i=0;i<arr.length;i++){
+      const f=arr[i];setStatus('koreaStatus',`한국 PO 분석 중… ${i+1}/${arr.length} · ${f.name}`,'work');const parsed=await parsePoFile(f);
+      koreaPoFilesState.push({name:f.name,count:parsed.rows.length,total:parsed.total,qtyHeader:parsed.qtyHeader,sheetName:parsed.sheetName});
+      koreaRawPoRows.push(...parsed.rows.map(x=>({...x,sourceFile:f.name})));
+    }
+    mergeKoreaPoRows();renderKoreaPoFiles();rebuildKoreaOrder();
+    const sourceTotal=koreaRawPoRows.reduce((s,x)=>s+num(x.qty),0),matched=koreaOrderRows.length;
+    setStatus('koreaStatus',`${arr.length}개 한국 PO · 원본 ${koreaRawPoRows.length.toLocaleString()}행 · 합산 ${koreaMergedOrders.length.toLocaleString()}상품 · 기준표 매칭 ${matched.toLocaleString()}상품 · 수량 ${sourceTotal.toLocaleString()}개`,'ok');
+  }catch(e){console.error(e);setStatus('koreaStatus','한국 PO 분석 실패: '+e.message,'bad');alert('한국 발주 PO 분석 실패\n'+e.message)}
 }
 function renderKoreaMaster(){
   $('koreaEditorWrap').style.display=koreaOrderMaster.length?'block':'none';$('koreaMasterCount').textContent=`${koreaOrderMaster.length.toLocaleString()}개 SKU`;
   $('koreaMasterBody').innerHTML=koreaOrderMaster.map((x,i)=>`<tr data-kidx="${i}"><td class="center">${i+1}</td><td class="korea-cat">${esc(x.category||koreaCategory(x.productName))}</td><td class="center">${esc(x.productNumber)}</td><td class="k-barcode">${esc(x.barcode)}</td><td class="k-name">${esc(x.productName)}</td><td><input data-kfield="cavity" type="number" min="1" step="1" value="${num(x.cavity)||1}"></td><td><input data-kfield="unitPrice" type="number" min="0" step="1" value="${num(x.unitPrice)||0}"></td><td><input data-kfield="sameGroup" type="text" maxlength="12" value="${esc(x.sameGroup||'')}"></td><td><input data-kfield="minPack" type="number" min="1" step="1" value="${num(x.minPack)||1}"></td></tr>`).join('');
 }
 function buildKoreaRows(){
-  if(!koreaOrderMaster.length||!mergedOrders.length)return [];
+  if(!koreaOrderMaster.length||!koreaMergedOrders.length)return [];
   const poPN=new Map(),poBC=new Map();
-  for(const x of mergedOrders){if(x.productNumber)poPN.set(normalizePoProductNumber(x.productNumber),x);if(x.barcode)poBC.set(norm(x.barcode).replace(/\s+/g,'').toUpperCase(),x)}
+  for(const x of koreaMergedOrders){if(x.productNumber)poPN.set(normalizePoProductNumber(x.productNumber),x);if(x.barcode)poBC.set(norm(x.barcode).replace(/\s+/g,'').toUpperCase(),x)}
   const rows=[];
   for(const k of koreaOrderMaster){
     const p=(k.productNumber&&poPN.get(normalizePoProductNumber(k.productNumber)))||(k.barcode&&poBC.get(norm(k.barcode).replace(/\s+/g,'').toUpperCase()));
     if(!p||num(p.qty)<=0)continue;
-    rows.push({...k,qty:num(p.qty),pieces:num(p.qty)*Math.max(1,num(k.cavity)||1),category:koreaCategory(k.productName||p.productName),master:p.master||null});
+    rows.push({...k,qty:num(p.qty),pieces:num(p.qty)*Math.max(1,num(k.cavity)||1),category:koreaCategory(k.productName||p.productName)});
   }
   rows.sort((a,b)=>koreaSortRank(a)-koreaSortRank(b)||(a.sourceIndex??0)-(b.sourceIndex??0));return rows;
 }
@@ -769,13 +797,14 @@ async function downloadKoreaOrderWorkbook(){
     const buf=await wb.xlsx.writeBuffer(),blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=koreaExcelSafeName(orderTitle()+' 한국 발주건')+'.xlsx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000);setStatus('koreaStatus','한국 발주서 엑셀 다운로드 완료 · 노란색 보유재고 칸을 입력하면 자동 계산됩니다.','ok');
   }catch(e){console.error(e);setStatus('koreaStatus','한국 발주서 생성 실패: '+e.message,'bad');alert('한국 발주서 생성 실패\n'+e.message)}
 }
-(function initKoreaOrderV1(){
-  const f=$('koreaFile'),d=$('koreaDrop');
-  f?.addEventListener('change',e=>{if(e.target.files?.[0])acceptKoreaOrderFile(e.target.files[0]);e.target.value=''});
+(function initKoreaOrderV3(){
+  const mf=$('koreaMasterFile'),pf=$('koreaPoFiles'),d=$('koreaDrop');
+  mf?.addEventListener('change',e=>{if(e.target.files?.[0])acceptKoreaMasterFile(e.target.files[0]);e.target.value=''});
+  pf?.addEventListener('change',e=>{if(e.target.files?.length)acceptKoreaPoFiles(e.target.files);e.target.value=''});
   ['dragenter','dragover'].forEach(n=>d?.addEventListener(n,e=>{e.preventDefault();d.classList.add('drag')}));
   ['dragleave','drop'].forEach(n=>d?.addEventListener(n,e=>{e.preventDefault();d.classList.remove('drag')}));
-  d?.addEventListener('drop',e=>{const file=[...(e.dataTransfer?.files||[])].find(x=>/\.(xlsx|xlsm)$/i.test(x.name||''));if(file)acceptKoreaOrderFile(file)});
-  d?.addEventListener('click',()=>$('koreaFile').click());
+  d?.addEventListener('drop',e=>{const files=[...(e.dataTransfer?.files||[])].filter(x=>/\.(xlsx|xlsm)$/i.test(x.name||''));if(files.length)acceptKoreaPoFiles(files)});
+  d?.addEventListener('click',()=>$('koreaPoFiles').click());
   $('koreaMasterBody')?.addEventListener('change',e=>{const input=e.target.closest('[data-kfield]'),tr=e.target.closest('tr[data-kidx]');if(!input||!tr)return;updateKoreaMasterField(Number(tr.dataset.kidx),input.dataset.kfield,input.value)});
   koreaLoadLocal();
 })();
