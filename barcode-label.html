@@ -261,6 +261,7 @@
           <button class="btn-secondary" type="button" onclick="connectThermalPrinter()">🔌 감열프린터 연결</button>
           <select id="thermalPrinterSelect" onchange="saveThermalPrinterChoice()"><option value="">프린터를 연결해 주세요</option></select>
           <label style="font-size:12px;font-weight:800;">라벨 간격(mm) <input id="thermalGapMm" type="number" min="0" max="10" step="0.5" value="2" style="width:66px;padding:7px;"></label>
+          <label style="font-size:12px;font-weight:800;">인쇄 매수 <input id="thermalCopies" type="number" min="1" max="999" step="1" value="1" inputmode="numeric" style="width:70px;padding:7px;"></label>
           <span id="thermalStatus" class="thermal-status">Xprinter 직접 출력은 최초 1회 QZ Tray 설치가 필요합니다.</span>
         </div>
         <div class="help" style="margin-top:6px;">감열프린터가 연결되지 않으면 <a href="https://qz.io/download/" target="_blank" rel="noopener">QZ Tray 설치</a> 후 다시 연결을 눌러주세요.</div>
@@ -566,9 +567,11 @@
       setThermalStatus('라벨을 감열프린터용으로 변환하는 중...');
       const wMm=clampNumber(el('labelWidth').value,20,210,50);
       const hMm=clampNumber(el('labelHeight').value,20,297,60);
+      const copies=Math.max(1,Math.min(999,Math.floor(Number(el('thermalCopies')?.value)||1)));
+      if(el('thermalCopies'))el('thermalCopies').value=String(copies);
       const canvas=await makeExportCanvas();
-      await sendCanvasToThermalPrinter(canvas,wMm,hMm,1,'TradeCode '+(value('barcodeValue')||'Barcode'));
-      setThermalStatus('✓ Xprinter로 전송 완료','ok');
+      await sendCanvasToThermalPrinter(canvas,wMm,hMm,copies,'TradeCode '+(value('barcodeValue')||'Barcode'));
+      setThermalStatus(`✓ Xprinter로 ${copies.toLocaleString()}장 전송 완료`,'ok');
     }catch(err){
       console.error(err);
       setThermalStatus(err?.message||'감열프린터 출력 실패','bad');
