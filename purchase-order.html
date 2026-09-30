@@ -88,6 +88,16 @@
             <label>바코드</label><input id="productBarcode" class="input" placeholder="예: R243967040013">
             <label>상품명</label><input id="productName" class="input" placeholder="제품명">
             <label>캐비티</label><input id="productCavity" class="input" type="number" min="1" step="1" value="1">
+            <label>한국 발주 대상</label><div class="korea-product-toggle"><label><input id="productKoreaOrder" type="checkbox"> 🇰🇷 한국 발주건에 포함</label><span>체크한 제품만 아래 한국 발주 추가정보를 사용합니다.</span></div>
+          </div>
+          <div id="productKoreaFields" class="korea-product-fields" style="display:none">
+            <div class="korea-product-grid">
+              <label>낱개 단가</label><input id="productKoreaUnitPrice" class="input" type="number" min="0" step="1" value="0">
+              <label>최소 팩킹수량</label><input id="productKoreaMinPack" class="input" type="number" min="1" step="1" value="1">
+              <label>동일 상품군</label><input id="productKoreaGroup" class="input" placeholder="예: A, B, 단독제품">
+              <label>대체 상품명</label><input id="productKoreaAltName" class="input" placeholder="묶음 발주서에 표시할 명칭">
+              <label>대체 사진</label><div class="image-pick"><div id="editKoreaImagePreview" class="image-preview">사진 없음</div><div><button class="btn" type="button" onclick="$('productKoreaAltImage').click()">대체 사진 선택</button><input id="productKoreaAltImage" class="file-input" type="file" accept="image/png,image/jpeg"><button id="removeKoreaAltImageBtn" class="btn red" type="button" style="margin-left:4px;display:none" onclick="removeKoreaAltImageV140()">대체 사진 삭제</button><div style="font-size:9px;color:#71818c;margin-top:5px">동일상품 묶음 발주 요약에서 이 사진을 우선 사용합니다.</div></div></div>
+            </div>
           </div>
           <div class="row" style="margin-top:10px">
             <button id="saveProductBtn" class="btn green" type="button" onclick="saveProduct()">제품 저장</button>
@@ -102,7 +112,7 @@
             <button class="btn" type="button" onclick="loadProducts()">새로고침</button>
             <span id="productCount" class="count">0개</span>
           </div>
-          <div class="table-wrap"><table class="data-table"><thead><tr><th>사진</th><th>상품번호</th><th>바코드</th><th>상품명</th><th>캐비티</th><th>관리</th></tr></thead><tbody id="productListBody"><tr><td colspan="6" class="empty">제품을 불러오는 중입니다.</td></tr></tbody></table></div>
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>사진</th><th>상품번호</th><th>바코드</th><th>상품명</th><th>캐비티</th><th>한국발주</th><th>관리</th></tr></thead><tbody id="productListBody"><tr><td colspan="7" class="empty">제품을 불러오는 중입니다.</td></tr></tbody></table></div>
           <div class="pager"><button class="btn" onclick="changeProductPage(-1)">이전</button><span id="productPageInfo">1 / 1</span><button class="btn" onclick="changeProductPage(1)">다음</button></div>
         </div>
       </div>
@@ -167,9 +177,9 @@ function isoToday(){const d=new Date(),p=n=>String(n).padStart(2,'0');return `${
 $('orderDate').value=isoToday();
 
 async function apiJson(url,opt={}){const r=await fetch(url,{credentials:'same-origin',...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});const t=await r.text();let j={};try{j=t?JSON.parse(t):{}}catch(_){j={ok:false,error:t||`HTTP ${r.status}`}}if(!r.ok||j.ok===false)throw new Error(j.error||`HTTP ${r.status}`);return j}
-async function loadProducts(){try{setStatus('masterImportStatus','등록된 제품 목록을 불러오는 중입니다…','work');const j=await apiJson('/api/purchase-products');products=Array.isArray(j.items)?j.items:[];renderProductList();setStatus('masterImportStatus',`제품 ${products.length.toLocaleString()}개 · 영구 저장소 연결됨`,'ok');if(rawPoRows.length)rematchOrders()}catch(e){console.error(e);setStatus('masterImportStatus','제품 목록 조회 실패: '+e.message,'bad')}}
+async function loadProducts(){try{setStatus('masterImportStatus','등록된 제품 목록을 불러오는 중입니다…','work');const j=await apiJson('/api/purchase-products');products=Array.isArray(j.items)?j.items:[];if(typeof syncKoreaMasterFromProductsV140==='function')syncKoreaMasterFromProductsV140();renderProductList();setStatus('masterImportStatus',`제품 ${products.length.toLocaleString()}개 · 영구 저장소 연결됨`,'ok');if(rawPoRows.length)rematchOrders()}catch(e){console.error(e);setStatus('masterImportStatus','제품 목록 조회 실패: '+e.message,'bad')}}
 function filteredProducts(){const q=compact($('productSearch').value);if(!q)return products;return products.filter(x=>compact(`${x.productNumber} ${x.barcode} ${x.productName}`).includes(q))}
-function renderProductList(){const rows=filteredProducts(),pages=Math.max(1,Math.ceil(rows.length/productPageSize));productPage=Math.min(Math.max(productPage,1),pages);$('productCount').textContent=`검색 ${rows.length.toLocaleString()}개 / 전체 ${products.length.toLocaleString()}개`;$('productPageInfo').textContent=`${productPage} / ${pages}`;const slice=rows.slice((productPage-1)*productPageSize,productPage*productPageSize);$('productListBody').innerHTML=slice.length?slice.map(x=>`<tr><td>${x.imageUrl?`<img class="thumb" loading="lazy" src="${esc(x.imageUrl)}">`:'-'}</td><td>${esc(x.productNumber)}</td><td>${esc(x.barcode)}</td><td>${esc(x.productName)}</td><td class="center">${esc(x.cavity)}</td><td class="center"><button class="btn" onclick="editProduct('${esc(x.id)}')">수정</button> <button class="btn red" onclick="deleteProduct('${esc(x.id)}')">삭제</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty">검색 결과가 없습니다.</td></tr>'}
+function renderProductList(){const rows=filteredProducts(),pages=Math.max(1,Math.ceil(rows.length/productPageSize));productPage=Math.min(Math.max(productPage,1),pages);$('productCount').textContent=`검색 ${rows.length.toLocaleString()}개 / 전체 ${products.length.toLocaleString()}개`;$('productPageInfo').textContent=`${productPage} / ${pages}`;const slice=rows.slice((productPage-1)*productPageSize,productPage*productPageSize);$('productListBody').innerHTML=slice.length?slice.map(x=>`<tr><td>${x.imageUrl?`<img class="thumb" loading="lazy" src="${esc(x.imageUrl)}">`:'-'}</td><td>${esc(x.productNumber)}</td><td>${esc(x.barcode)}</td><td>${esc(x.productName)}</td><td class="center">${esc(x.cavity)}</td><td class="center">${x.isKoreaOrder?'<span class="korea-product-badge">🇰🇷 한국</span>':'-'}</td><td class="center"><button class="btn" onclick="editProduct('${esc(x.id)}')">수정</button> <button class="btn red" onclick="deleteProduct('${esc(x.id)}')">삭제</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">검색 결과가 없습니다.</td></tr>'}
 function changeProductPage(d){productPage+=d;renderProductList()}
 function cavityNumber(v){const n=Math.floor(num(v));return n>0?n:1}
 function analyzeCavityName(productName){
@@ -1045,6 +1055,8 @@ loadProducts();renderOrderPreview();
   }
   function v7PhotoHtml(group,items){
     if(group){
+      const altUrls=[];for(const x of items||[]){const m=v7MasterFor(x);const u=norm(m?.koreaAltImageUrl||'');if(u&&!altUrls.includes(u))altUrls.push(u);if(altUrls.length>=3)break}
+      if(altUrls.length)return `<div class="korea-v7-photo-wrap">${altUrls.map(u=>`<img src="${esc(u)}" loading="lazy">`).join('')}</div>`;
       const imgs=v7GroupMasterImages(items);
       return imgs.length?`<div class="korea-v7-photo-wrap">${imgs.map(im=>`<img src="${esc(im.base64)}">`).join('')}</div>`:'-';
     }
@@ -1065,7 +1077,10 @@ loadProducts();renderOrderPreview();
   window.rebuildKoreaOrder=rebuildKoreaOrder;
 
   async function v7WorkbookPhotoRefs(grouped,items,detailImageData){
-    if(grouped)return v7GroupMasterImages(items); // grouped: ONLY I-column replacement photo
+    if(grouped){
+      const out=[];for(const x of items||[]){const m=v7MasterFor(x);const u=norm(m?.koreaAltImageUrl||'');if(u){const im=await fetchImageData({imageUrl:u});if(im&&!out.some(p=>p.base64===im.base64))out.push(im)}if(out.length>=3)break}if(out.length)return out;
+      return v7GroupMasterImages(items);
+    }
     const out=[];for(const x of items||[]){const idx=koreaOrderRows.indexOf(x),im=idx>=0?detailImageData[idx]:null;if(im&&!out.some(p=>p.base64===im.base64))out.push(im);if(out.length>=3)break}return out;
   }
 
@@ -1118,6 +1133,79 @@ loadProducts();renderOrderPreview();
   };
   // 현재 화면도 정확한 열 순서로 즉시 다시 그린다.
   v7RenderGroupSummary();
+})();
+</script>
+
+
+<style id="korea-product-master-v140-style">
+.korea-product-toggle{display:flex;align-items:center;gap:10px;min-height:36px}.korea-product-toggle label{font-weight:900;color:#146b3a}.korea-product-toggle span{font-size:9px;color:#71818c}.korea-product-fields{margin-top:10px;padding:12px;border:1px solid #b9d8c5;border-radius:9px;background:#f4fbf6}.korea-product-grid{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px 10px;align-items:center}.korea-product-grid>label{font-weight:900;color:#205c3a}.korea-product-badge{display:inline-block;padding:3px 7px;border-radius:999px;background:#e7f6ec;color:#166a3a;font-size:9px;font-weight:900;border:1px solid #b8dec5}@media(max-width:850px){.korea-product-grid{grid-template-columns:1fr}}
+</style>
+<script id="korea-product-master-v140">
+// ===== Korea-only product master extension v140 =====
+// 기존 일반 발주 필드는 그대로 두고, 한국 발주 체크 시에만 추가정보를 저장/사용합니다.
+(function(){
+  let koreaAltFileV140=null,koreaAltExistingV140='',koreaAltRemoveV140=false;
+  function kNormPnV140(v){return typeof normalizePoProductNumber==='function'?normalizePoProductNumber(v):norm(v).replace(/\.0$/,'')}
+  function kKeyV140(x){const pn=kNormPnV140(x?.productNumber);if(pn)return 'PN:'+pn;const bc=norm(x?.barcode).replace(/\s+/g,'').toUpperCase();return bc?'BC:'+bc:''}
+  function currentMasterForProductV140(x){const k=kKeyV140(x);return (window.koreaOrderMaster||koreaOrderMaster||[]).find(m=>kKeyV140(m)===k)||null}
+  window.toggleKoreaProductFieldsV140=function(){const on=!!$('productKoreaOrder')?.checked;const box=$('productKoreaFields');if(box)box.style.display=on?'block':'none'};
+  $('productKoreaOrder')?.addEventListener('change',toggleKoreaProductFieldsV140);
+  $('productKoreaAltImage')?.addEventListener('change',e=>{const f=e.target.files?.[0];if(!f)return;koreaAltFileV140=f;koreaAltRemoveV140=false;const url=URL.createObjectURL(f);$('editKoreaImagePreview').innerHTML=`<img src="${url}">`;$('removeKoreaAltImageBtn').style.display='inline-block';setTimeout(()=>URL.revokeObjectURL(url),30000)});
+  window.removeKoreaAltImageV140=function(){koreaAltFileV140=null;koreaAltExistingV140='';koreaAltRemoveV140=true;$('productKoreaAltImage').value='';$('editKoreaImagePreview').textContent='사진 없음';$('removeKoreaAltImageBtn').style.display='none'};
+
+  const baseEditProductV140=editProduct;
+  editProduct=function(id){
+    const x=products.find(p=>p.id===id);baseEditProductV140(id);if(!x)return;
+    const m=currentMasterForProductV140(x),configured=!!x.koreaConfigured,on=configured?!!x.isKoreaOrder:!!m;
+    $('productKoreaOrder').checked=on;
+    $('productKoreaUnitPrice').value=configured?num(x.koreaUnitPrice):num(m?.unitPrice||0);
+    $('productKoreaMinPack').value=configured?Math.max(1,num(x.koreaMinPack)||1):Math.max(1,num(m?.minPack)||1);
+    $('productKoreaGroup').value=configured?norm(x.koreaGroup||''):norm(m?.sameGroup||'');
+    $('productKoreaAltName').value=configured?norm(x.koreaAltName||''):norm(m?.altName||'');
+    koreaAltFileV140=null;koreaAltRemoveV140=false;koreaAltExistingV140=norm(x.koreaAltImageUrl||'');$('productKoreaAltImage').value='';
+    if(koreaAltExistingV140){$('editKoreaImagePreview').innerHTML=`<img src="${esc(koreaAltExistingV140)}">`;$('removeKoreaAltImageBtn').style.display='inline-block'}else{$('editKoreaImagePreview').textContent=m?'기존 기준표 사진 사용':'사진 없음';$('removeKoreaAltImageBtn').style.display='none'}
+    toggleKoreaProductFieldsV140();
+  };
+  window.editProduct=editProduct;
+
+  const baseClearProductFormV140=clearProductForm;
+  clearProductForm=function(){baseClearProductFormV140();if($('productKoreaOrder'))$('productKoreaOrder').checked=false;if($('productKoreaUnitPrice'))$('productKoreaUnitPrice').value=0;if($('productKoreaMinPack'))$('productKoreaMinPack').value=1;if($('productKoreaGroup'))$('productKoreaGroup').value='';if($('productKoreaAltName'))$('productKoreaAltName').value='';if($('productKoreaAltImage'))$('productKoreaAltImage').value='';if($('editKoreaImagePreview'))$('editKoreaImagePreview').textContent='사진 없음';if($('removeKoreaAltImageBtn'))$('removeKoreaAltImageBtn').style.display='none';koreaAltFileV140=null;koreaAltExistingV140='';koreaAltRemoveV140=false;toggleKoreaProductFieldsV140()};
+  window.clearProductForm=clearProductForm;
+
+  saveProduct=async function(){
+    try{
+      const productNumber=norm($('productNumber').value),barcode=norm($('productBarcode').value),productName=norm($('productName').value),cavity=num($('productCavity').value)||1;
+      if(!productNumber&&!barcode)return alert('상품번호 또는 바코드를 입력해 주세요.');if(!productName)return alert('상품명을 입력해 주세요.');
+      const koreaOn=!!$('productKoreaOrder')?.checked;
+      setStatus('productEditStatus','저장 중…','work');
+      const body={id:editingProductId||undefined,productNumber,barcode,productName,cavity,isKoreaOrder:koreaOn,koreaUnitPrice:Math.max(0,num($('productKoreaUnitPrice')?.value)),koreaMinPack:Math.max(1,Math.floor(num($('productKoreaMinPack')?.value)||1)),koreaGroup:norm($('productKoreaGroup')?.value).toUpperCase(),koreaAltName:norm($('productKoreaAltName')?.value),removeKoreaAltImage:koreaAltRemoveV140};
+      if(editingImageFile)body.image={ext:(editingImageFile.type.includes('png')?'png':'jpeg'),base64:await fileToBase64(editingImageFile)};
+      if(koreaAltFileV140)body.koreaAltImage={ext:(koreaAltFileV140.type.includes('png')?'png':'jpeg'),base64:await fileToBase64(koreaAltFileV140)};
+      const j=await apiJson('/api/purchase-products',{method:'POST',body:JSON.stringify(body)});
+      setStatus('productEditStatus',j.created?(koreaOn?'한국 발주 신규 제품을 추가했습니다.':'신규 제품을 추가했습니다.'):(koreaOn?'제품 + 한국 발주 정보를 수정했습니다.':'제품 정보를 수정했습니다.'),'ok');
+      clearProductForm();await loadProducts();
+    }catch(e){console.error(e);setStatus('productEditStatus','저장 실패: '+e.message,'bad')}
+  };
+  window.saveProduct=saveProduct;
+
+  window.syncKoreaMasterFromProductsV140=function(){
+    try{
+      if(!Array.isArray(products)||!Array.isArray(koreaOrderMaster))return;
+      const map=new Map(koreaOrderMaster.map(x=>[kKeyV140(x),x]));
+      for(const p of products){
+        if(!p.koreaConfigured)continue;
+        const k=kKeyV140(p);if(!k)continue;
+        if(!p.isKoreaOrder){map.delete(k);continue}
+        const old=map.get(k)||{};
+        map.set(k,{...old,productNumber:kNormPnV140(p.productNumber||old.productNumber),barcode:norm(p.barcode||old.barcode).replace(/\s+/g,'').toUpperCase(),productName:norm(p.productName||old.productName),cavity:Math.max(1,Math.floor(num(p.cavity)||1)),unitPrice:Math.max(0,num(p.koreaUnitPrice)),sameGroup:norm(p.koreaGroup||'').toUpperCase(),minPack:Math.max(1,Math.floor(num(p.koreaMinPack)||1)),altName:norm(p.koreaAltName||''),koreaAltImageUrl:norm(p.koreaAltImageUrl||''),category:typeof koreaCategory==='function'?koreaCategory(p.productName||old.productName):(old.category||'기타')});
+      }
+      koreaOrderMaster=[...map.values()].map((x,i)=>({...x,sourceIndex:i}));window.koreaOrderMaster=koreaOrderMaster;
+      if(typeof renderKoreaMaster==='function')renderKoreaMaster();if(typeof rebuildKoreaOrder==='function')rebuildKoreaOrder();
+    }catch(e){console.warn('한국 발주 제품마스터 동기화 실패',e)}
+  };
+  // 최초 페이지 진입 시 기존 33개 기준 + 서버에서 체크한 한국 신규/수정 제품을 합친다.
+  setTimeout(()=>syncKoreaMasterFromProductsV140(),700);
+  toggleKoreaProductFieldsV140();
 })();
 </script>
 
