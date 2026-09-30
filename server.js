@@ -2657,11 +2657,20 @@ function cleanCavityV62(v){const n=Number(String(v??'').replace(/,/g,''));return
 function imageExtV62(v){v=String(v||'').toLowerCase().replace(/^\./,'');if(v==='jpg')v='jpeg';return ['jpeg','png'].includes(v)?v:''}
 function safePurchaseImageNameV62(v){v=path.basename(String(v||''));return /^[A-Za-z0-9_-]+\.(?:jpeg|png)$/i.test(v)?v:''}
 function purchasePublicV62(x){
+  const koreaConfigured=Object.prototype.hasOwnProperty.call(x||{},'isKoreaOrder');
   return {
     id:String(x.id||''), productNumber:String(x.productNumber||''), barcode:String(x.barcode||''),
     productName:String(x.productName||''), cavity:cleanCavityV62(x.cavity), sortIndex:Number(x.sortIndex||0),
     imageFile:String(x.imageFile||''), imageExt:String(x.imageExt||''),
     imageUrl:x.imageFile?`/api/purchase-products/image/${encodeURIComponent(x.imageFile)}`:'',
+    koreaConfigured,
+    isKoreaOrder:koreaConfigured?!!x.isKoreaOrder:false,
+    koreaUnitPrice:Math.max(0,Number(x.koreaUnitPrice||0)||0),
+    koreaMinPack:Math.max(1,Math.floor(Number(x.koreaMinPack||1)||1)),
+    koreaGroup:String(x.koreaGroup||''),
+    koreaAltName:String(x.koreaAltName||''),
+    koreaAltImageFile:String(x.koreaAltImageFile||''),
+    koreaAltImageUrl:x.koreaAltImageFile?`/api/purchase-products/image/${encodeURIComponent(x.koreaAltImageFile)}`:'',
     createdAt:Number(x.createdAt||0), updatedAt:Number(x.updatedAt||0)
   };
 }
@@ -2687,6 +2696,33 @@ function savePurchaseImageV62(req,item,image){
   if(item.imageFile&&item.imageFile!==name){try{fs.rmSync(path.join(p.images,path.basename(item.imageFile)),{force:true})}catch(_){}}
   item.imageFile=name;item.imageExt=ext;return item;
 }
+
+function savePurchaseKoreaAltImageV140(req,item,image){
+  if(!image||!image.base64)return item;
+  const ext=imageExtV62(image.ext||image.extension||image.type);if(!ext)throw new Error('한국 발주 대체사진은 JPG/JPEG 또는 PNG만 사용할 수 있습니다.');
+  let buf;try{buf=Buffer.from(String(image.base64||'').replace(/^data:[^,]+,/,''),'base64')}catch(_){throw new Error('한국 발주 대체사진 데이터가 올바르지 않습니다.')}
+  if(!buf.length)throw new Error('빈 한국 발주 대체사진은 저장할 수 없습니다.');
+  if(buf.length>2*1024*1024)throw new Error('한국 발주 대체사진 1장은 2MB 이하로 올려주세요.');
+  const p=ensurePurchaseDirsV62(req);
+  const name=`${String(item.id).replace(/[^A-Za-z0-9_-]/g,'_')}_korea.${ext}`;
+  const dest=path.join(p.images,name),tmp=`${dest}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp,buf);fs.renameSync(tmp,dest);
+  if(item.koreaAltImageFile&&item.koreaAltImageFile!==name){try{fs.rmSync(path.join(p.images,path.basename(item.koreaAltImageFile)),{force:true})}catch(_){}}
+  item.koreaAltImageFile=name;return item;
+}
+function applyPurchaseKoreaFieldsV140(req,item,raw,allowImage){
+  const keys=['isKoreaOrder','koreaUnitPrice','koreaMinPack','koreaGroup','koreaAltName','koreaAltImage','removeKoreaAltImage'];
+  const hasPayload=keys.some(k=>Object.prototype.hasOwnProperty.call(raw||{},k));
+  if(!hasPayload)return item;
+  if(Object.prototype.hasOwnProperty.call(raw,'isKoreaOrder'))item.isKoreaOrder=!!raw.isKoreaOrder;
+  if(Object.prototype.hasOwnProperty.call(raw,'koreaUnitPrice'))item.koreaUnitPrice=Math.max(0,Number(String(raw.koreaUnitPrice??0).replace(/,/g,''))||0);
+  if(Object.prototype.hasOwnProperty.call(raw,'koreaMinPack'))item.koreaMinPack=Math.max(1,Math.floor(Number(String(raw.koreaMinPack??1).replace(/,/g,''))||1));
+  if(Object.prototype.hasOwnProperty.call(raw,'koreaGroup'))item.koreaGroup=cleanTextV62(raw.koreaGroup,60).toUpperCase();
+  if(Object.prototype.hasOwnProperty.call(raw,'koreaAltName'))item.koreaAltName=cleanTextV62(raw.koreaAltName,500);
+  if(raw.removeKoreaAltImage&&item.koreaAltImageFile){const p=ensurePurchaseDirsV62(req);try{fs.rmSync(path.join(p.images,path.basename(item.koreaAltImageFile)),{force:true})}catch(_){};item.koreaAltImageFile=''}
+  if(allowImage&&raw?.koreaAltImage?.base64)savePurchaseKoreaAltImageV140(req,item,raw.koreaAltImage);
+  return item;
+}
 function upsertPurchaseProductV62(req,items,raw,{allowImage=true}={}){
   const now=Date.now(),pn=cleanProductNoV62(raw?.productNumber),bc=cleanBarcodeV62(raw?.barcode),name=cleanTextV62(raw?.productName,500);
   if(!pn&&!bc)throw new Error('상품번호 또는 바코드가 필요합니다.');
@@ -2696,10 +2732,12 @@ function upsertPurchaseProductV62(req,items,raw,{allowImage=true}={}){
     item={...items[idx],productNumber:pn||items[idx].productNumber||'',barcode:bc||items[idx].barcode||'',productName:name,cavity:cleanCavityV62(raw?.cavity??items[idx].cavity),updatedAt:now};
     if(Number(raw?.sortIndex)>0)item.sortIndex=Number(raw.sortIndex);
     if(allowImage&&raw?.image?.base64)savePurchaseImageV62(req,item,raw.image);
+    applyPurchaseKoreaFieldsV140(req,item,raw,allowImage);
     items[idx]=item;
   }else{
     item={id:`prd_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`,productNumber:pn,barcode:bc,productName:name,cavity:cleanCavityV62(raw?.cavity),sortIndex:Number(raw?.sortIndex)>0?Number(raw.sortIndex):nextPurchaseSortV62(items),imageFile:'',imageExt:'',createdAt:now,updatedAt:now};
     if(allowImage&&raw?.image?.base64)savePurchaseImageV62(req,item,raw.image);
+    applyPurchaseKoreaFieldsV140(req,item,raw,allowImage);
     items.push(item);idx=items.length-1;
   }
   return {item,index:idx};
@@ -2732,7 +2770,7 @@ app.post('/api/purchase-products',requireLoginApiV48,(req,res)=>{
   catch(e){res.status(400).json({ok:false,error:e.message})}
 });
 app.delete('/api/purchase-products/:id',requireLoginApiV48,(req,res)=>{
-  try{const p=purchasePathsV63(req),items=purchaseReadV62(req),idx=items.findIndex(x=>String(x.id||'')===String(req.params.id||''));if(idx<0)return res.status(404).json({ok:false,error:'제품을 찾지 못했습니다.'});const [item]=items.splice(idx,1);if(item.imageFile)try{fs.rmSync(path.join(p.images,path.basename(item.imageFile)),{force:true})}catch(_){};purchaseWriteV62(req,items);res.json({ok:true,count:items.length,accountScoped:true})}catch(e){res.status(500).json({ok:false,error:e.message})}
+  try{const p=purchasePathsV63(req),items=purchaseReadV62(req),idx=items.findIndex(x=>String(x.id||'')===String(req.params.id||''));if(idx<0)return res.status(404).json({ok:false,error:'제품을 찾지 못했습니다.'});const [item]=items.splice(idx,1);if(item.imageFile)try{fs.rmSync(path.join(p.images,path.basename(item.imageFile)),{force:true})}catch(_){};if(item.koreaAltImageFile)try{fs.rmSync(path.join(p.images,path.basename(item.koreaAltImageFile)),{force:true})}catch(_){};purchaseWriteV62(req,items);res.json({ok:true,count:items.length,accountScoped:true})}catch(e){res.status(500).json({ok:false,error:e.message})}
 });
 
 
