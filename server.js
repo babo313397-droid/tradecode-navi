@@ -941,9 +941,14 @@ app.get(['/barcode-label','/barcode-label.html'],(req,res,next)=>{
     const f=path.join(__dirname,'barcode-label.html');if(!fs.existsSync(f))return next();
     let html=fs.readFileSync(f,'utf8');
     html=html.replace(/<script[^>]+src=["']\/auth-client\.js["'][^>]*><\/script>/ig,'');
+    // v146: 비로그인 공개 모드에서는 과거 공용 작업상태 스크립트만 제거합니다.
+    // 이 스크립트는 /api/shared-workspace 401에서 암호 prompt를 띄워 공개 프린트 모드를 방해할 수 있습니다.
+    if(!authUserV48(req)){
+      html=html.replace(/<script\s+id=["']v46-shared-barcode-working-state["'][^>]*>[\s\S]*?<\/script>/i,'');
+    }
     if(!html.includes('/public-access.js'))html=html.replace(/<\/body>/i,'<script src="/public-access.js"></script></body>');
     res.set('Cache-Control','no-store');return res.type('html').send(html);
-  }catch(e){console.warn('[v145 public barcode label] 전송 실패:',e.message);return next()}
+  }catch(e){console.warn('[v146 public barcode label] 전송 실패:',e.message);return next()}
 });
 
 app.get(Object.keys(AUTH_HTML_PAGES_V63),(req,res,next)=>{
