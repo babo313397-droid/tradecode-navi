@@ -928,16 +928,20 @@ const AUTH_HTML_PAGES_V63={
 app.get(['/coupang-pallet-simulator','/coupang-pallet-simulator.html'],(req,res,next)=>{
   try{
     const f=path.join(__dirname,'coupang-pallet-simulator.html');if(!fs.existsSync(f))return next();
-    res.set('Cache-Control','no-store');return res.type('html').sendFile(f);
-  }catch(e){console.warn('[v142 public pallet simulator] 전송 실패:',e.message);return next()}
+    let html=fs.readFileSync(f,'utf8');
+    if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script></body>');
+    res.set('Cache-Control','no-store');return res.type('html').send(html);
+  }catch(e){console.warn('[v144 public pallet simulator] 전송 실패:',e.message);return next()}
 });
 
 // v143: 바코드 라벨 생성기는 로그인 없이 공개 사용합니다. 공용 저장 API는 위에서 로그인 보호합니다.
 app.get(['/barcode-label','/barcode-label.html'],(req,res,next)=>{
   try{
     const f=path.join(__dirname,'barcode-label.html');if(!fs.existsSync(f))return next();
-    res.set('Cache-Control','no-store');return res.type('html').sendFile(f);
-  }catch(e){console.warn('[v143 public barcode label] 전송 실패:',e.message);return next()}
+    let html=fs.readFileSync(f,'utf8');
+    if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script></body>');
+    res.set('Cache-Control','no-store');return res.type('html').send(html);
+  }catch(e){console.warn('[v144 public barcode label] 전송 실패:',e.message);return next()}
 });
 
 app.get(Object.keys(AUTH_HTML_PAGES_V63),(req,res,next)=>{
