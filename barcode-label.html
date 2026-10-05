@@ -167,9 +167,15 @@
       🚚 물류비 계산기
     </button>
 
+    <button type="button" class="nav-btn" onclick="window.location.href='/coupang-pallet-simulator'">
+      📦 쿠팡 팔레트 시뮬레이션
+    </button>
+
     <button type="button" class="nav-btn active" onclick="window.location.href='/barcode-label.html?v=39'">
       🏷️ 바코드 라벨 생성기
     </button>
+
+    <div class="nav-section-label" style="margin-top:10px;color:#f6cf74;line-height:1.35">🔒 아래 메뉴는 로그인 후 사용</div>
 
     <button type="button" class="nav-btn" onclick="window.location.href='/order-barcode.html'">
       📦 발주 바코드 출력
@@ -185,12 +191,17 @@
     <button type="button" class="nav-btn" onclick="window.location.href='/coupang-inbound-work.html?v=39'">
       📦 쿠팡 입고 작업
     </button>
+
+    <button type="button" class="nav-btn" onclick="window.location.href='/purchase-order.html'">
+      📝 발주서 작성
+    </button>
   </nav>
 
   <div class="barcode-main">
     <header><div class="header-inner"><div class="brand">TradeCode Navi</div><div class="header-sub">바코드 라벨 생성기 · CODE128 · 실제 라벨 크기 PDF 저장</div></div></header>
     <main>
   <div class="page-title"><h1>바코드 라벨 생성기</h1><p>라벨 크기를 mm로 입력하면 같은 비율로 미리보기하고, PDF도 입력한 실제 크기로 저장합니다.</p></div>
+  <div id="barcodePublicNoticeV143" style="display:none;margin:-2px 0 12px;padding:9px 12px;border:1px solid #e6bf68;border-radius:9px;background:#fff8df;color:#6d5200;font-size:11px;font-weight:800;line-height:1.45">🔓 비로그인 이용: 라벨 작성·미리보기·프린트는 바로 사용할 수 있습니다. 공용 라벨 저장/불러오기/삭제/백업과 서버 작업 저장은 로그인 후 사용할 수 있습니다.</div>
   <div class="layout">
     <section class="panel">
       <h2>라벨 내용 입력</h2>
@@ -234,7 +245,7 @@
         <button class="btn-secondary" type="button" onclick="showSavedLibrary()">📚 공용 라벨 보기</button>
         <button class="btn-ghost" type="button" onclick="deleteSavedLabel()">🗑 공용 라벨 삭제</button>
         <button class="btn-secondary" type="button" onclick="migrateLegacyLabels()">⬆ 이 PC 기존 라벨 공용으로 옮기기</button>
-        <button class="btn-ghost" type="button" onclick="window.location.href='/api/shared-labels-backup'">⬇ 공용 라벨 백업</button>
+        <button class="btn-ghost" type="button" onclick="downloadSharedBackupV143()">⬇ 공용 라벨 백업</button>
         <button class="btn-ghost" type="button" onclick="el('sharedBackupFile').click()">⬆ 공용 라벨 백업 복원</button>
         <button class="btn-ghost" type="button" onclick="checkSharedLabelStorageV32()">🔎 저장소 상태 확인</button>
         <input id="sharedBackupFile" type="file" accept=".json,application/json" style="display:none" onchange="restoreSharedBackup(this.files?.[0]);this.value=''">
@@ -799,6 +810,32 @@
   let sharedLabelTotalCount=0;
   let sharedEditKeyRequired=false;
 
+  // v143: 바코드 생성/인쇄는 공개, 공용 저장 관련 기능만 로그인 필요
+  const BARCODE_LOGIN_REQUIRED_MSG_V143='로그인이 필요한 서비스입니다.\n\n비로그인 상태에서는 라벨 작성·미리보기·프린트만 사용할 수 있습니다.';
+  const barcodeAuthV143={checked:false,authenticated:false,user:null,promise:null};window.barcodeAuthV143=barcodeAuthV143;
+  async function barcodeCheckAuthV143(force=false){
+    if(barcodeAuthV143.checked&&!force)return barcodeAuthV143.authenticated;
+    if(barcodeAuthV143.promise&&!force)return barcodeAuthV143.promise;
+    barcodeAuthV143.promise=(async()=>{try{const r=await fetch('/api/auth/me',{cache:'no-store'}),j=await r.json();barcodeAuthV143.authenticated=!!j.authenticated;barcodeAuthV143.user=j.user||null}catch(_){barcodeAuthV143.authenticated=false;barcodeAuthV143.user=null}barcodeAuthV143.checked=true;barcodeAuthV143.promise=null;const n=el('barcodePublicNoticeV143');if(n)n.style.display=barcodeAuthV143.authenticated?'none':'block';return barcodeAuthV143.authenticated})();
+    return barcodeAuthV143.promise;
+  }
+  async function barcodeRequireLoginV143(action='이 기능'){
+    const ok=await barcodeCheckAuthV143();
+    if(ok)return true;
+    alert(`${action}은 로그인 후 사용할 수 있습니다.\n\n비로그인 상태에서는 라벨 작성·미리보기·프린트만 사용할 수 있습니다.`);
+    return false;
+  }
+  async function downloadSharedBackupV143(){if(!(await barcodeRequireLoginV143('공용 라벨 백업')))return;location.href='/api/shared-labels-backup'}
+  window.downloadSharedBackupV143=downloadSharedBackupV143;
+  document.addEventListener('click',function(e){
+    const t=e.target&&e.target.closest?e.target.closest('button,a'):null;if(!t)return;
+    const txt=(t.textContent||'').trim();
+    const protectedUi=/공용 라벨|공용 저장|저장소 상태|백업 복원|지금 저장/.test(txt);
+    if(!protectedUi||barcodeAuthV143.authenticated)return;
+    e.preventDefault();e.stopImmediatePropagation();
+    barcodeRequireLoginV143(txt||'공용 라벨 기능').then(ok=>{if(ok)t.click()});
+  },true);
+
   function normalizeBarcode(v){
     return String(v||'').trim().toUpperCase();
   }
@@ -850,6 +887,7 @@
   }
 
   async function sharedFetch(url,options={}){
+    if(!(await barcodeRequireLoginV143('공용 저장 기능')))throw new Error('로그인이 필요한 서비스입니다.');
     let res=await fetch(url,{cache:'no-store',...options,headers:{...(options.headers||{}),...sharedWriteHeaders()}});
     if(res.status===403){
       const data=await res.json().catch(()=>({}));
@@ -887,6 +925,7 @@
   }
 
   async function checkSharedLabelStorageV32(){
+    if(!(await barcodeRequireLoginV143('공용 라벨 저장소 확인')))return;
     try{
       const res=await fetch('/api/shared-labels-status',{cache:'no-store'}),data=await res.json();
       if(!res.ok||!data.ok)throw new Error(data.error||'저장소 상태 조회 실패');
@@ -897,6 +936,7 @@
   }
 
   async function fetchSharedLabels(silent=false){
+    if(!(await barcodeCheckAuthV143())){sharedLabelCache=[];sharedLabelTotalCount=0;if(!silent)setSaveStatus('🔒 공용 라벨 보관함은 로그인 후 사용할 수 있습니다.',false);return false;}
     try{
       const localProtected=collectExactLocalLabelsV32();
       const res=await fetch('/api/shared-labels',{cache:'no-store'});
@@ -929,6 +969,7 @@
   }
 
   async function migrateLegacyLabels(){
+    if(!(await barcodeRequireLoginV143('기존 라벨 공용 이동')))return;
     const legacy=collectExactLocalLabelsV32();
     if(!legacy.length){
       alert('이 PC 브라우저에 남아 있는 실제 저장 라벨이 없습니다.');
@@ -959,6 +1000,7 @@
 
   async function restoreSharedBackup(file){
     if(!file)return;
+    if(!(await barcodeRequireLoginV143('공용 라벨 백업 복원')))return;
     if(!confirm(`"${file.name}" 백업 파일의 라벨을 공용 보관함에 복원할까요?\n같은 바코드/상품번호가 있으면 기존 라벨을 갱신합니다.`))return;
 
     try{
@@ -1933,6 +1975,7 @@
   }
 
   async function saveCurrentLabel(){
+    if(!(await barcodeRequireLoginV143('공용 라벨 저장')))return;
     const cfg=currentLabelConfig();
     if(!cfg.barcode && !cfg.productNumber){
       alert('라벨을 저장하려면 바코드 번호 또는 상품번호를 입력해 주세요.');
@@ -1969,6 +2012,7 @@
   }
 
   async function loadSavedLabel(){
+    if(!(await barcodeRequireLoginV143('공용 라벨 불러오기')))return;
     let cfg=findSavedLabel(value('barcodeValue'),value('productNumber'));
     if(!cfg){
       await fetchSharedLabels(true);
@@ -1984,6 +2028,7 @@
   }
 
   async function deleteSavedLabel(){
+    if(!(await barcodeRequireLoginV143('공용 라벨 삭제')))return;
     const cfg=findSavedLabel(value('barcodeValue'),value('productNumber'));
     if(!cfg){
       setSaveStatus('삭제할 공용 라벨을 찾지 못했습니다.',false);
@@ -2016,6 +2061,7 @@
   }
 
   async function refreshSavedLibraryFromServer(){
+    if(!(await barcodeRequireLoginV143('공용 라벨 목록 새로고침')))return;
     const ok=await fetchSharedLabels(false);
     renderSavedLibrary();
     if(ok)setSaveStatus(`✓ 라벨 목록 새로고침 완료 · 실제 저장 ${Math.max(sharedLabelTotalCount,getLabelLibrary().length).toLocaleString()}개`);
@@ -2052,7 +2098,8 @@
       </tr>`).join('');
   }
 
-  function showSavedLibrary(){
+  async function showSavedLibrary(){
+    if(!(await barcodeRequireLoginV143('공용 라벨 보기')))return;
     renderSavedLibrary();
     el('savedLibraryPanel')?.scrollIntoView({behavior:'smooth',block:'start'});
   }
@@ -2239,8 +2286,8 @@
     updateLabel();
     updateUndoButton();
 
-    loadCachedSharedLabels();
-    await fetchSharedLabels(true);
+    const loggedInV143=await barcodeCheckAuthV143();
+    if(loggedInV143){loadCachedSharedLabels();await fetchSharedLabels(true)}else{sharedLabelCache=[];sharedLabelTotalCount=0;setSaveStatus('🔓 비로그인 모드 · 라벨 작성/프린트 사용 가능 · 공용 라벨 기능은 로그인 필요',true)}
 
     // URL로 특정 상품을 넘겨받은 경우에는 그 상품 정보가 마지막 작업보다 우선합니다.
     applyUrlPrefill();
@@ -2281,14 +2328,13 @@
   window.saveBarcodeServerNowV46=()=>saveNow(true);
   function queue(delay=250){clearTimeout(timer);timer=setTimeout(()=>{timer=null;saveNow(false)},delay)}
   async function load(){try{const r=await sf({});if(r.status===404){const local=typeof getWorkingState==='function'?getWorkingState():null;if(local){workingStateEnabled=true;await saveNow(false)}else status('☁ 서버 저장 대기');return}if(!r.ok)throw new Error('서버 조회 '+r.status);const j=await r.json(),st=j.state||{};lastAt=Number(j.updatedAt||0);if(st.defaults){try{localStorage.setItem(LABEL_DEFAULTS_KEY,JSON.stringify(st.defaults))}catch(_){}}if(st.working&&typeof restoreFormState==='function'){workingStateEnabled=true;restoreFormState(st.working);try{localStorage.setItem(LABEL_WORKING_STATE_KEY,JSON.stringify({...st.working,__savedAt:new Date(lastAt||Date.now()).toISOString()}))}catch(_){};status(`☁ 서버 작업 불러옴 · ${fmt(lastAt)}`)}}catch(e){console.warn('barcode shared work load',e);status('⚠ 서버 연결 실패 · 이 PC 저장본 사용',true)}}
-  function install(){const old=document.getElementById('workingStateStatus');if(old){old.textContent='☁ 공용 서버 작업 상태 확인 중…';const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;margin:-2px 0 10px;flex-wrap:wrap';const b=document.createElement('button');b.type='button';b.className='btn-secondary';b.style.cssText='padding:6px 10px;font-size:11px';b.textContent='☁ 지금 저장';b.onclick=()=>saveNow(true);const st=document.createElement('span');st.id='barcodeServerStatusV46';st.className='help';st.style.cssText='color:#157347;font-weight:800';st.textContent='☁ 서버 확인 중…';row.append(b,st);old.replaceWith(row)}
+  async function install(){const ok=typeof barcodeCheckAuthV143==='function'?await barcodeCheckAuthV143():false;const old=document.getElementById('workingStateStatus');if(!ok){if(old)old.textContent='🔓 비로그인 · 서버 작업 저장 비활성 (프린트 사용 가능)';return}if(old){old.textContent='☁ 공용 서버 작업 상태 확인 중…';const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;margin:-2px 0 10px;flex-wrap:wrap';const b=document.createElement('button');b.type='button';b.className='btn-secondary';b.style.cssText='padding:6px 10px;font-size:11px';b.textContent='☁ 지금 저장';b.onclick=()=>saveNow(true);const st=document.createElement('span');st.id='barcodeServerStatusV46';st.className='help';st.style.cssText='color:#157347;font-weight:800';st.textContent='☁ 서버 확인 중…';row.append(b,st);old.replaceWith(row)}
     try{formIds.forEach(id=>{const n=el(id);if(n){n.addEventListener('input',()=>queue(300));n.addEventListener('change',()=>queue(100))}})}catch(_){}
     load();
   }
-  window.addEventListener('pagehide',()=>saveNow(false,true));document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveNow(false,true)});setTimeout(install,0);
+  window.addEventListener('pagehide',()=>{if(window.barcodeAuthV143?.authenticated)saveNow(false,true)});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&window.barcodeAuthV143?.authenticated)saveNow(false,true)});setTimeout(install,0);
 })();
 // ===== /v46 =====
 </script>
-<script src="/auth-client.js"></script>
 </body>
 </html>
