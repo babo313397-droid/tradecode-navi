@@ -49,14 +49,26 @@
     b.innerHTML='<span>👤 '+esc(u.displayName||u.username)+'</span>'+(u.role==='admin'?'<a href="/account-admin.html" style="color:#ffd66b;text-decoration:none">계정관리</a>':'')+'<button type="button" id="tcPublicLogout" style="border:1px solid #ffffff55;background:#ffffff14;color:#fff;border-radius:7px;padding:4px 7px;cursor:pointer">로그아웃</button>';
     document.body.appendChild(b);document.getElementById('tcPublicLogout').onclick=async()=>{await fetch('/api/auth/logout',{method:'POST'});location.href='/';};
   }
+  function isBarcodeProtectedAction(el){
+    const p=location.pathname||'';
+    if(!(p==='/barcode-label'||p==='/barcode-label.html'))return false;
+    const txt=(el?.textContent||'').replace(/\s+/g,' ').trim();
+    if(/공용 라벨 저장|공용 라벨 불러오기|공용 라벨 보기|공용 라벨 삭제|기존 라벨 공용|공용 라벨 백업|백업 복원|저장소 상태|목록 새로고침|지금 저장/.test(txt))return true;
+    const href=String(el?.getAttribute?.('href')||'');
+    return /\/api\/shared-labels(?:-|\/|$)|\/api\/shared-workspace\/barcode-label/.test(href);
+  }
   function guard(){
     document.addEventListener('click',e=>{
       const el=e.target&&e.target.closest?e.target.closest('a,button'):null;if(!el||el.closest('#tcPublicAccessChoice'))return;
-      const target=targetOf(el);if(!target||!isRestricted(target))return;
+      const barcodeProtected=isBarcodeProtectedAction(el);
+      const target=targetOf(el);
+      const restrictedNav=!!(target&&isRestricted(target));
+      if(!barcodeProtected&&!restrictedNav)return;
       if(auth.checked&&auth.authenticated)return;
       e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-      if(auth.checked){show(target);return;}
-      check().then(st=>{if(st.authenticated)location.href=target;else show(target);});
+      const next=restrictedNav?target:location.pathname+location.search;
+      if(auth.checked){show(next);return;}
+      check().then(st=>{if(st.authenticated){if(restrictedNav)location.href=target;else el.click();}else show(next);});
     },true);
   }
   async function init(){
