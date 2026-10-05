@@ -586,9 +586,17 @@ app.get('/api/system/deploy-heartbeat',async(req,res)=>{
 
 const PROTECTED_PAGE_PREFIXES_V48=['/order-barcode','/shipment-list-builder','/coupang-inbound-work','/purchase-order','/detail-maker','/account-admin'];
 app.use((req,res,next)=>{if(PROTECTED_PAGE_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'.')||req.path.startsWith(p+'/')))return requireLoginPageV48(req,res,next);next()});
-const PRIVATE_API_PREFIXES_V48=['/api/shared-labels','/api/shared-workspace','/api/shipment-list-vault','/api/coupang-shared'];
+const PRIVATE_API_PREFIXES_V48=['/api/shared-workspace','/api/shipment-list-vault','/api/coupang-shared'];
 app.use((req,res,next)=>{if(PRIVATE_API_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'/')))return requireLoginApiV48(req,res,next);next()});
-// v143: 바코드 라벨 화면은 공개지만 공용 라벨 관리/백업 계열 API는 로그인 필수입니다.
+// v147: 공용 라벨은 비로그인에서도 조회(GET)만 허용합니다. 저장/수정/삭제는 로그인 필수입니다.
+app.use((req,res,next)=>{
+  const p=req.path||'';
+  const isSharedLabels=p==='/api/shared-labels'||p.startsWith('/api/shared-labels/');
+  if(!isSharedLabels)return next();
+  if(req.method==='GET')return next();
+  return requireLoginApiV48(req,res,next);
+});
+// 저장소 상태/백업/복원은 관리성 기능이므로 로그인 필수입니다.
 const PRIVATE_LABEL_AUX_V143=new Set(['/api/shared-labels-status','/api/shared-labels-backup','/api/shared-labels-restore']);
 app.use((req,res,next)=>{if(PRIVATE_LABEL_AUX_V143.has(req.path))return requireLoginApiV48(req,res,next);next()});
 
@@ -935,20 +943,13 @@ app.get(['/coupang-pallet-simulator','/coupang-pallet-simulator.html'],(req,res,
   }catch(e){console.warn('[v145 public pallet simulator] 전송 실패:',e.message);return next()}
 });
 
-// v143: 바코드 라벨 생성기는 로그인 없이 공개 사용합니다. 공용 저장 API는 위에서 로그인 보호합니다.
+// v147: 바코드 라벨 HTML은 서버에서 변형하지 않고 원본 그대로 전송합니다.
+// 공개/로그인 분기는 barcode-label.html + public-access.js 내부에서 처리합니다.
 app.get(['/barcode-label','/barcode-label.html'],(req,res,next)=>{
   try{
     const f=path.join(__dirname,'barcode-label.html');if(!fs.existsSync(f))return next();
-    let html=fs.readFileSync(f,'utf8');
-    html=html.replace(/<script[^>]+src=["']\/auth-client\.js["'][^>]*><\/script>/ig,'');
-    // v146: 비로그인 공개 모드에서는 과거 공용 작업상태 스크립트만 제거합니다.
-    // 이 스크립트는 /api/shared-workspace 401에서 암호 prompt를 띄워 공개 프린트 모드를 방해할 수 있습니다.
-    if(!authUserV48(req)){
-      html=html.replace(/<script\s+id=["']v46-shared-barcode-working-state["'][^>]*>[\s\S]*?<\/script>/i,'');
-    }
-    if(!html.includes('/public-access.js'))html=html.replace(/<\/body>/i,'<script src="/public-access.js"></script></body>');
-    res.set('Cache-Control','no-store');return res.type('html').send(html);
-  }catch(e){console.warn('[v146 public barcode label] 전송 실패:',e.message);return next()}
+    res.set('Cache-Control','no-store');return res.sendFile(f);
+  }catch(e){console.warn('[v147 public barcode label] 전송 실패:',e.message);return next()}
 });
 
 app.get(Object.keys(AUTH_HTML_PAGES_V63),(req,res,next)=>{
