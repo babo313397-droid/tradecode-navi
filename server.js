@@ -584,7 +584,7 @@ app.get('/api/system/deploy-heartbeat',async(req,res)=>{
   res.json({ok:true,bootId:TC_DEPLOY_BOOT_ID_V82,startedAt:TC_SERVER_STARTED_AT_V82,build:TC_DEPLOY_BUILD_V82.slice(0,16),serverTime:Date.now(),deploying:!!dep.deploying,deployStatus:dep.status||'unknown',deployId:dep.deployId||'',deployWatchConfigured:!!dep.configured,deployWatchError:dep.error?'check_failed':''});
 });
 
-const PROTECTED_PAGE_PREFIXES_V48=['/barcode-label','/order-barcode','/shipment-list-builder','/coupang-inbound-work','/purchase-order','/detail-maker','/account-admin','/coupang-pallet-simulator'];
+const PROTECTED_PAGE_PREFIXES_V48=['/barcode-label','/order-barcode','/shipment-list-builder','/coupang-inbound-work','/purchase-order','/detail-maker','/account-admin'];
 app.use((req,res,next)=>{if(PROTECTED_PAGE_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'.')||req.path.startsWith(p+'/')))return requireLoginPageV48(req,res,next);next()});
 const PRIVATE_API_PREFIXES_V48=['/api/shared-labels','/api/shared-workspace','/api/shipment-list-vault','/api/coupang-shared'];
 app.use((req,res,next)=>{if(PRIVATE_API_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'/')))return requireLoginApiV48(req,res,next);next()});
@@ -920,9 +920,16 @@ const AUTH_HTML_PAGES_V63={
   '/order-barcode':'order-barcode.html','/order-barcode.html':'order-barcode.html',
   '/shipment-list-builder':'shipment-list-builder.html','/shipment-list-builder.html':'shipment-list-builder.html',
   '/coupang-inbound-work':'coupang-inbound-work.html','/coupang-inbound-work.html':'coupang-inbound-work.html',
-  '/purchase-order':'purchase-order.html','/purchase-order.html':'purchase-order.html',
-  '/coupang-pallet-simulator':'coupang-pallet-simulator.html','/coupang-pallet-simulator.html':'coupang-pallet-simulator.html'
+  '/purchase-order':'purchase-order.html','/purchase-order.html':'purchase-order.html'
 };
+// v142: 쿠팡 팔레트 시뮬레이션은 로그인 없이 공개 사용합니다.
+app.get(['/coupang-pallet-simulator','/coupang-pallet-simulator.html'],(req,res,next)=>{
+  try{
+    const f=path.join(__dirname,'coupang-pallet-simulator.html');if(!fs.existsSync(f))return next();
+    res.set('Cache-Control','no-store');return res.type('html').sendFile(f);
+  }catch(e){console.warn('[v142 public pallet simulator] 전송 실패:',e.message);return next()}
+});
+
 app.get(Object.keys(AUTH_HTML_PAGES_V63),(req,res,next)=>{
   try{
     const name=AUTH_HTML_PAGES_V63[req.path];if(!name)return next();
