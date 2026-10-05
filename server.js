@@ -584,10 +584,13 @@ app.get('/api/system/deploy-heartbeat',async(req,res)=>{
   res.json({ok:true,bootId:TC_DEPLOY_BOOT_ID_V82,startedAt:TC_SERVER_STARTED_AT_V82,build:TC_DEPLOY_BUILD_V82.slice(0,16),serverTime:Date.now(),deploying:!!dep.deploying,deployStatus:dep.status||'unknown',deployId:dep.deployId||'',deployWatchConfigured:!!dep.configured,deployWatchError:dep.error?'check_failed':''});
 });
 
-const PROTECTED_PAGE_PREFIXES_V48=['/barcode-label','/order-barcode','/shipment-list-builder','/coupang-inbound-work','/purchase-order','/detail-maker','/account-admin'];
+const PROTECTED_PAGE_PREFIXES_V48=['/order-barcode','/shipment-list-builder','/coupang-inbound-work','/purchase-order','/detail-maker','/account-admin'];
 app.use((req,res,next)=>{if(PROTECTED_PAGE_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'.')||req.path.startsWith(p+'/')))return requireLoginPageV48(req,res,next);next()});
 const PRIVATE_API_PREFIXES_V48=['/api/shared-labels','/api/shared-workspace','/api/shipment-list-vault','/api/coupang-shared'];
 app.use((req,res,next)=>{if(PRIVATE_API_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'/')))return requireLoginApiV48(req,res,next);next()});
+// v143: 바코드 라벨 화면은 공개지만 공용 라벨 관리/백업 계열 API는 로그인 필수입니다.
+const PRIVATE_LABEL_AUX_V143=new Set(['/api/shared-labels-status','/api/shared-labels-backup','/api/shared-labels-restore']);
+app.use((req,res,next)=>{if(PRIVATE_LABEL_AUX_V143.has(req.path))return requireLoginApiV48(req,res,next);next()});
 
 // v77: 수동 팔레트 마감 서버 정본 보호
 // 늦게 도착한 예전 state PUT이 최신 수동 마감 경계를 지우지 못하게 합니다.
@@ -916,7 +919,6 @@ app.use('/api/coupang-shared',(req,res,next)=>{
 // v63: 로그인 보호 화면에서는 auth-client.js를 항상 붙여 사이드 메뉴의 "발주서 작성" 버튼과 계정 표시가 페이지마다 사라지지 않게 합니다.
 // HTML 원본 기능은 수정하지 않고 응답 직전에 스크립트 태그만 추가합니다.
 const AUTH_HTML_PAGES_V63={
-  '/barcode-label':'barcode-label.html','/barcode-label.html':'barcode-label.html',
   '/order-barcode':'order-barcode.html','/order-barcode.html':'order-barcode.html',
   '/shipment-list-builder':'shipment-list-builder.html','/shipment-list-builder.html':'shipment-list-builder.html',
   '/coupang-inbound-work':'coupang-inbound-work.html','/coupang-inbound-work.html':'coupang-inbound-work.html',
@@ -928,6 +930,14 @@ app.get(['/coupang-pallet-simulator','/coupang-pallet-simulator.html'],(req,res,
     const f=path.join(__dirname,'coupang-pallet-simulator.html');if(!fs.existsSync(f))return next();
     res.set('Cache-Control','no-store');return res.type('html').sendFile(f);
   }catch(e){console.warn('[v142 public pallet simulator] 전송 실패:',e.message);return next()}
+});
+
+// v143: 바코드 라벨 생성기는 로그인 없이 공개 사용합니다. 공용 저장 API는 위에서 로그인 보호합니다.
+app.get(['/barcode-label','/barcode-label.html'],(req,res,next)=>{
+  try{
+    const f=path.join(__dirname,'barcode-label.html');if(!fs.existsSync(f))return next();
+    res.set('Cache-Control','no-store');return res.type('html').sendFile(f);
+  }catch(e){console.warn('[v143 public barcode label] 전송 실패:',e.message);return next()}
 });
 
 app.get(Object.keys(AUTH_HTML_PAGES_V63),(req,res,next)=>{
