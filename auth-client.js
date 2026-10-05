@@ -33,10 +33,10 @@ function ensurePalletSimulatorNav(){
       const onclick=el.getAttribute('onclick')||'';
       return href.includes('/coupang-pallet-simulator')||onclick.includes('/coupang-pallet-simulator');
     });
-    const purchase=nodes.find(el=>{
+    const logistics=nodes.find(el=>{
       const href=el.getAttribute('href')||'';
       const onclick=el.getAttribute('onclick')||'';
-      return href.includes('/purchase-order.html')||onclick.includes('/purchase-order.html');
+      return href.includes('/logistics-cost')||onclick.includes("showFeature('logistics')")||(el.textContent||'').includes('물류비 계산기');
     });
     if(!link){
       link=document.createElement('a');
@@ -44,8 +44,8 @@ function ensurePalletSimulatorNav(){
       link.href='/coupang-pallet-simulator';
       link.textContent='📦 쿠팡 팔레트 시뮬레이션';
     }
-    if(purchase&&purchase.parentNode===sidebar&&link.previousElementSibling!==purchase){
-      purchase.insertAdjacentElement('afterend',link);
+    if(logistics&&logistics.parentNode===sidebar&&logistics.nextElementSibling!==link){
+      logistics.insertAdjacentElement('afterend',link);
     }else if(!link.isConnected){
       sidebar.appendChild(link);
     }
@@ -54,15 +54,39 @@ function ensurePalletSimulatorNav(){
     else link.classList.remove('active');
   }catch(e){console.warn('pallet simulator nav',e)}
 }
+function ensureLoginRequiredDivider(){
+  try{
+    const sidebar=document.querySelector('nav.sidebar,.sidebar');
+    if(!sidebar)return;
+    let divider=document.getElementById('tcLoginRequiredDivider');
+    if(!divider){
+      divider=document.createElement('div');
+      divider.id='tcLoginRequiredDivider';
+      divider.className='nav-section-label';
+      divider.textContent='🔒 아래 메뉴는 로그인 후 사용';
+      divider.style.cssText='margin-top:10px;color:#f6cf74;line-height:1.35;';
+    }
+    const nodes=[...sidebar.querySelectorAll('a,button')];
+    const barcode=nodes.find(el=>{
+      const href=el.getAttribute('href')||'';
+      const onclick=el.getAttribute('onclick')||'';
+      return href.includes('/barcode-label')||onclick.includes('/barcode-label')||(el.textContent||'').includes('바코드 라벨 생성기');
+    });
+    if(barcode&&barcode.parentNode===sidebar&&barcode.nextElementSibling!==divider)barcode.insertAdjacentElement('afterend',divider);
+    else if(!divider.isConnected)sidebar.appendChild(divider);
+  }catch(e){console.warn('login divider nav',e)}
+}
 async function init(){
   ensurePurchaseOrderNav();
   ensurePalletSimulatorNav();
+  ensureLoginRequiredDivider();
   try{
     const r=await fetch('/api/auth/me',{cache:'no-store'}),j=await r.json();
     if(!j.authenticated){location.href='/login.html?next='+encodeURIComponent(location.pathname+location.search);return}
     const u=j.user;
     ensurePurchaseOrderNav();
     ensurePalletSimulatorNav();
+    ensureLoginRequiredDivider();
     if(!document.getElementById('tradecodeAccountBar')){
       const bar=document.createElement('div');
       bar.id='tradecodeAccountBar';
@@ -75,8 +99,8 @@ async function init(){
     window.dispatchEvent(new CustomEvent('tradecode-auth-ready',{detail:u}));
   }catch(e){console.warn('auth init',e)}
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{ensurePurchaseOrderNav();ensurePalletSimulatorNav()},{once:true});
-else {ensurePurchaseOrderNav();ensurePalletSimulatorNav();}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{ensurePurchaseOrderNav();ensurePalletSimulatorNav();ensureLoginRequiredDivider()},{once:true});
+else {ensurePurchaseOrderNav();ensurePalletSimulatorNav();ensureLoginRequiredDivider();}
 init();
 })();
 
