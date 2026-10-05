@@ -500,7 +500,7 @@ function setSessionV48(req,res,u){const secure=String(req.headers['x-forwarded-p
 function clearSessionV48(req,res){const secure=String(req.headers['x-forwarded-proto']||req.protocol||'').includes('https'),sec=secure?'; Secure':'';res.setHeader('Set-Cookie',[`${SESSION_COOKIE_V48}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${sec}`,`tradecode_uid=; Path=/; SameSite=Lax; Max-Age=0${sec}`,`tradecode_legacy=; Path=/; SameSite=Lax; Max-Age=0${sec}`])}
 function publicUserV48(u){return{id:u.id,username:u.username,displayName:u.displayName||u.username,role:u.role||'user',legacyOwner:!!u.legacyOwner,approved:!!u.legacyOwner||u.approved!==false,approvalPending:!u.legacyOwner&&u.approved===false}}
 function requireLoginApiV48(req,res,next){const u=authUserV48(req);if(!u)return res.status(401).json({ok:false,code:'LOGIN_REQUIRED',error:'로그인이 필요합니다.'});req.authUser=u;next()}
-function requireLoginPageV48(req,res,next){const u=authUserV48(req);if(!u)return res.redirect('/login.html?next='+encodeURIComponent(req.originalUrl||'/'));req.authUser=u;for(const c of identityCookiesV50(req,u))res.append('Set-Cookie',c);next()}
+function requireLoginPageV48(req,res,next){const u=authUserV48(req);if(!u)return res.redirect('/?authChoice=1&next='+encodeURIComponent(req.originalUrl||'/'));req.authUser=u;for(const c of identityCookiesV50(req,u))res.append('Set-Cookie',c);next()}
 function isAdminV48(req){return req.authUser&&req.authUser.role==='admin'}
 const publicSignupLimiterV72=createRateLimiter({windowMs:60000,max:5}); // 공개 회원가입: IP당 분당 5회
 function userDataRootV48(req){const u=req.authUser;if(!u)throw new Error('login required');if(u.legacyOwner)return null;return path.join(USER_DATA_BASE_V59,'v50-private',u.id)}
@@ -929,9 +929,10 @@ app.get(['/coupang-pallet-simulator','/coupang-pallet-simulator.html'],(req,res,
   try{
     const f=path.join(__dirname,'coupang-pallet-simulator.html');if(!fs.existsSync(f))return next();
     let html=fs.readFileSync(f,'utf8');
-    if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script></body>');
+    html=html.replace(/<script[^>]+src=["']\/auth-client\.js["'][^>]*><\/script>/ig,'');
+    if(!html.includes('/public-access.js'))html=html.replace(/<\/body>/i,'<script src="/public-access.js"></script></body>');
     res.set('Cache-Control','no-store');return res.type('html').send(html);
-  }catch(e){console.warn('[v144 public pallet simulator] 전송 실패:',e.message);return next()}
+  }catch(e){console.warn('[v145 public pallet simulator] 전송 실패:',e.message);return next()}
 });
 
 // v143: 바코드 라벨 생성기는 로그인 없이 공개 사용합니다. 공용 저장 API는 위에서 로그인 보호합니다.
@@ -939,9 +940,10 @@ app.get(['/barcode-label','/barcode-label.html'],(req,res,next)=>{
   try{
     const f=path.join(__dirname,'barcode-label.html');if(!fs.existsSync(f))return next();
     let html=fs.readFileSync(f,'utf8');
-    if(!html.includes('/auth-client.js'))html=html.replace(/<\/body>/i,'<script src="/auth-client.js"></script></body>');
+    html=html.replace(/<script[^>]+src=["']\/auth-client\.js["'][^>]*><\/script>/ig,'');
+    if(!html.includes('/public-access.js'))html=html.replace(/<\/body>/i,'<script src="/public-access.js"></script></body>');
     res.set('Cache-Control','no-store');return res.type('html').send(html);
-  }catch(e){console.warn('[v144 public barcode label] 전송 실패:',e.message);return next()}
+  }catch(e){console.warn('[v145 public barcode label] 전송 실패:',e.message);return next()}
 });
 
 app.get(Object.keys(AUTH_HTML_PAGES_V63),(req,res,next)=>{
@@ -2531,6 +2533,8 @@ function renderSeoPage(req, res) {
         '</head>',
         `<script>window.TRADECODE_INITIAL_FEATURE=${JSON.stringify(config.feature)};</script>\n</head>`
       );
+    html=html.replace(/<script[^>]+src=["']\/auth-client\.js["'][^>]*><\/script>/ig,'');
+    if(!html.includes('/public-access.js'))html=html.replace(/<\/body>/i,'<script src="/public-access.js"></script></body>');
 
     res.type('html').send(html);
   });
@@ -2542,9 +2546,15 @@ app.get('/logistics-cost', renderSeoPage);
 app.get('/barcode-label', (req, res) => {
   res.sendFile(path.join(__dirname, 'barcode-label.html'));
 });
-  app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+function sendPublicIndexV145(req,res){
+  try{
+    const f=path.join(__dirname,'index.html');let html=fs.readFileSync(f,'utf8');
+    html=html.replace(/<script[^>]+src=["']\/auth-client\.js["'][^>]*><\/script>/ig,'');
+    if(!html.includes('/public-access.js'))html=html.replace(/<\/body>/i,'<script src="/public-access.js"></script></body>');
+    res.set('Cache-Control','no-store');return res.type('html').send(html);
+  }catch(e){console.warn('[v145 public index] 전송 실패:',e.message);return res.status(500).send('Server Error')}
+}
+app.get(['/', '/index.html'],sendPublicIndexV145);
 
 
 // =====================================================================
