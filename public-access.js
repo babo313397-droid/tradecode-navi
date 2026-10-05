@@ -53,7 +53,9 @@
     const p=location.pathname||'';
     if(!(p==='/barcode-label'||p==='/barcode-label.html'))return false;
     const txt=(el?.textContent||'').replace(/\s+/g,' ').trim();
-    if(/공용 라벨 저장|공용 라벨 불러오기|공용 라벨 보기|공용 라벨 삭제|기존 라벨 공용|공용 라벨 백업|백업 복원|저장소 상태|목록 새로고침|지금 저장/.test(txt))return true;
+    // v147: 비로그인은 공용 라벨을 조회/불러오기/목록 새로고침까지 할 수 있고,
+    // 저장·삭제·이관·백업/복원·서버 작업저장 같은 변경 동작만 로그인 필요.
+    if(/공용 라벨 저장|공용 라벨 삭제|기존 라벨 공용|공용 라벨 백업|백업 복원|저장소 상태|지금 저장/.test(txt))return true;
     const href=String(el?.getAttribute?.('href')||'');
     return /\/api\/shared-labels(?:-|\/|$)|\/api\/shared-workspace\/barcode-label/.test(href);
   }
