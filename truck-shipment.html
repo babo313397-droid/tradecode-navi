@@ -99,9 +99,9 @@
     <div class="panel-body">
       <div class="upload-grid">
         <label class="drop" id="parcelShipmentDrop"><input id="parcelShipmentFile" type="file" accept=".xlsx,.xlsm"><strong>① 택배 Shipment 파일</strong><small>쿠팡에서 받은 ShipmentsUpload_PARCEL Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="parcelShipmentName">파일을 선택해 주세요.</div></label>
-        <label class="drop" id="parcelSourceDrop"><input id="parcelSourceFile" type="file" accept=".xlsx,.xlsm"><strong>② 송장 입력 완료 선적건</strong><small>박스번호·출고박스번호·송장번호가 입력된 선적 Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="parcelSourceName">파일을 선택해 주세요.</div></label>
+        <label class="drop" id="parcelSourceDrop"><input id="parcelSourceFile" type="file" accept=".xlsx,.xlsm"><strong>② 송장 입력 완료 팩킹 선적건</strong><small>박스번호·출고박스번호·송장번호가 입력된 팩킹 Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="parcelSourceName">파일을 선택해 주세요.</div></label>
       </div>
-      <div class="rules"><b>택배 자동입력 기준</b> · 선적건의 <b>물류센터 + 상품번호 + 박스별 출고수량 + 송장번호</b>를 읽어 택배 Shipment의 같은 센터·SKU에 순서대로 배정합니다. 같은 SKU가 여러 PO에 나뉘어 있으면 확정수량 범위에서 PO 행 순서대로 배분합니다. 한 PO 행에 여러 송장이 들어가면 원본 행을 복제하여 새 행을 만들고 송장번호·납품수량만 입력합니다. <b>PO / 센터 / 상품번호 / 확정수량은 수정하지 않습니다.</b></div>
+      <div class="rules"><b>택배 자동입력 기준</b> · 팩킹 선적건의 <b>물류센터 + 상품번호 + 출고총수량 + 박스번호 + 송장번호</b>를 읽어 택배 Shipment의 같은 센터·SKU에 순서대로 배정합니다. 같은 SKU가 여러 PO에 나뉘어 있으면 확정수량 범위에서 PO 행 순서대로 배분합니다. 한 PO 행에 여러 송장이 들어가면 원본 행을 복제하여 새 행을 만들고 송장번호·납품수량만 입력합니다. <b>PO / 센터 / 상품번호 / 확정수량은 수정하지 않습니다.</b></div>
       <div id="parcelWorkStatus" class="statusbar" style="margin-top:14px">두 파일을 선택하면 자동으로 분석을 시작합니다.</div>
     </div>
   </section>
@@ -248,7 +248,17 @@ function pcell(ws,r,c){const cell=ws[pcol(c+1)+String(r+1)];return cell?cell.v:n
 function pcellText(ws,r,c){const cell=ws[pcol(c+1)+String(r+1)];if(!cell)return '';if(cell.w!=null&&String(cell.w).trim()!=='')return String(cell.w).trim();return pnorm(cell.v)}
 function pRows(ws,maxRows=20){const range=XLSX.utils.decode_range(ws['!ref']||'A1:A1'),out=[];for(let r=range.s.r;r<=Math.min(range.e.r,range.s.r+maxRows-1);r++){const row=[];for(let c=range.s.c;c<=range.e.c;c++)row.push(pcell(ws,r,c));out.push({r,row})}return out}
 function compactHeader(v){return pnorm(v).replace(/[\s\r\n]+/g,'').replace(/[()]/g,'').toLowerCase()}
-function centerKey(v){return pnorm(v).replace(/[\s\-_/]+/g,'').replace(/물류센터|센터/gi,'').toUpperCase()}
+function centerKey(v){
+  let s=pnorm(v).replace(/\s+/g,'');
+  // 선적 작업 파일의 센터명에는 "경기광주5 10/19입고", "인천14 밀크런"처럼
+  // 날짜/작업구분이 붙을 수 있으므로 Shipment의 순수 센터명과 비교할 때 제거합니다.
+  s=s.replace(/\d{1,2}\s*[.\/-]\s*\d{1,2}\s*(?:입고)?/gi,'')
+     .replace(/\d{1,2}월\s*\d{1,2}일\s*(?:입고)?/gi,'')
+     .replace(/밀크런|택배|쉽먼트|shipment|입고/gi,'')
+     .replace(/[\-_/]+/g,'')
+     .replace(/물류센터|센터/gi,'');
+  return s.toUpperCase();
+}
 function invoiceText(v){const s=pnorm(v).replace(/\s+/g,'');return s.replace(/\.0+$/,'')}
 function pStatus(msg,type=''){const el=p$('parcelWorkStatus');if(!el)return;el.className='statusbar'+(type?' '+type:'');el.innerHTML=(type==='work'?'<span class="spinner"></span>':'')+pesc(msg)}
 function mergedValues(ws,col){const map=new Map();for(const m of (ws['!merges']||[])){if(m.s.c<=col&&m.e.c>=col){const value=pcellText(ws,m.s.r,col);if(value!=='')for(let r=m.s.r;r<=m.e.r;r++)map.set(r,value)}}return map}
@@ -273,24 +283,68 @@ function parseParcel(buffer){
 }
 
 function findParcelSourceSheet(wb){
-  for(const name of wb.SheetNames){const ws=wb.Sheets[name];for(const x of pRows(ws,20)){const h=x.row.map(compactHeader),idx=re=>h.findIndex(v=>re.test(v));const sku=idx(/^상품번호|상품번호/),center=idx(/물류센터/),qty=idx(/출고총수량/),box=idx(/^박스번호$/),invoice=idx(/^송장번호$/);if(sku>=0&&center>=0&&qty>=0&&box>=0&&invoice>=0)return {name,ws,headerRow:x.r,skuCol:sku,centerCol:center,qtyCol:qty,boxCol:box,invoiceCol:invoice,nameCol:idx(/제품명|상품명/),outBoxCol:idx(/출고박스번호/)}}
+  // 팩킹 완료 선적 파일은 헤더가 한 줄이 아닐 수 있습니다.
+  // 예: 1행 P/Q/R = 박스번호/출고박스번호/송장번호,
+  //     2행 A~E = 상품번호/제품명/바코드/물류센터/출고총수량.
+  // 따라서 같은 한 행에서 헤더를 찾지 않고 상단 여러 행 전체에서 열 위치를 찾습니다.
+  for(const name of wb.SheetNames){
+    const ws=wb.Sheets[name],range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
+    const maxR=Math.min(range.e.r,range.s.r+11);
+    const found={};
+    for(let r=range.s.r;r<=maxR;r++){
+      for(let c=range.s.c;c<=range.e.c;c++){
+        const h=compactHeader(pcellText(ws,r,c));if(!h)continue;
+        if(!found.sku && (/^상품번호$/.test(h)||/상품번호/.test(h)||/skuid/.test(h)))found.sku={r,c};
+        if(!found.center && (/물류센터/.test(h)||/^fc$/.test(h)))found.center={r,c};
+        if(!found.qty && (/^출고총수량$/.test(h)||/출고총수량/.test(h)))found.qty={r,c};
+        if(!found.box && /^박스번호$/.test(h))found.box={r,c};
+        if(!found.outBox && /출고박스번호/.test(h))found.outBox={r,c};
+        if(!found.invoice && (/^송장번호$/.test(h)||/^invoicenumber$/.test(h)))found.invoice={r,c};
+        if(!found.name && (/^제품명$/.test(h)||/^상품명$/.test(h)))found.name={r,c};
+      }
+    }
+    if(found.sku&&found.center&&found.qty&&found.box&&found.invoice){
+      const headerEndRow=Math.max(found.sku.r,found.center.r,found.qty.r,found.box.r,found.invoice.r,found.outBox?.r??0,found.name?.r??0);
+      return {
+        name,ws,headerRow:headerEndRow,dataStartRow:headerEndRow+1,
+        skuCol:found.sku.c,centerCol:found.center.c,qtyCol:found.qty.c,
+        boxCol:found.box.c,invoiceCol:found.invoice.c,
+        nameCol:found.name?found.name.c:-1,outBoxCol:found.outBox?found.outBox.c:-1
+      };
+    }
   }
-  throw new Error('선적건에서 상품번호 / 물류센터 / 출고총수량 / 박스번호 / 송장번호 열을 찾지 못했습니다.');
+  throw new Error('팩킹 선적건에서 필요한 열을 찾지 못했습니다. 상품번호·물류센터·출고총수량과 박스번호·송장번호가 위쪽 12행 안에 있는 파일인지 확인해 주세요.');
 }
 function parseParcelSource(buffer){
   const wb=XLSX.read(buffer,{type:'array',cellFormula:true,cellStyles:false}),info=findParcelSourceSheet(wb),ws=info.ws,range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
-  const centerM=mergedValues(ws,info.centerCol),boxM=mergedValues(ws,info.boxCol),outM=info.outBoxCol>=0?mergedValues(ws,info.outBoxCol):new Map(),invM=mergedValues(ws,info.invoiceCol);const demands=[],missingInvoices=[];
-  for(let r=info.headerRow+1;r<=range.e.r;r++){
-    const sku=psku(pcell(ws,r,info.skuCol)),qty=pnum(pcell(ws,r,info.qtyCol));if(!sku||qty<=0)continue;
-    const center=pnorm(centerM.get(r)||pcellText(ws,r,info.centerCol)),boxNo=pnorm(boxM.get(r)||pcellText(ws,r,info.boxCol)),outBox=info.outBoxCol>=0?pnorm(outM.get(r)||pcellText(ws,r,info.outBoxCol)):'',invoice=invoiceText(invM.get(r)||pcellText(ws,r,info.invoiceCol)),productName=info.nameCol>=0?pnorm(pcell(ws,r,info.nameCol)):'';
-    if(!invoice){if(boxNo||outBox)missingInvoices.push({row:r+1,center,boxNo,outBox,sku,qty,productName});continue}
+  // 박스번호/출고박스번호/송장번호는 여러 상품이 한 박스에 들어가면 세로 병합됩니다.
+  // 병합된 첫 셀 값을 그 병합 구간의 모든 상품행에 내려서 사용합니다.
+  const centerM=mergedValues(ws,info.centerCol),boxM=mergedValues(ws,info.boxCol),outM=info.outBoxCol>=0?mergedValues(ws,info.outBoxCol):new Map(),invM=mergedValues(ws,info.invoiceCol);
+  const demands=[],missingInvoices=[];
+  for(let r=info.dataStartRow;r<=range.e.r;r++){
+    const sku=psku(pcell(ws,r,info.skuCol)),qty=pnum(pcell(ws,r,info.qtyCol));
+    // 중간 합계행/병합 헤더행은 상품번호가 숫자가 아니므로 제외합니다.
+    if(!sku||!/^\d+$/.test(sku)||qty<=0)continue;
+    const center=pnorm(centerM.get(r)||pcellText(ws,r,info.centerCol));
+    const boxNo=pnorm(boxM.get(r)||pcellText(ws,r,info.boxCol));
+    const outBox=info.outBoxCol>=0?pnorm(outM.get(r)||pcellText(ws,r,info.outBoxCol)):'';
+    const invoice=invoiceText(invM.get(r)||pcellText(ws,r,info.invoiceCol));
+    const productName=info.nameCol>=0?pnorm(pcellText(ws,r,info.nameCol)):'';
+    // 아직 박스 작업이 안 된 상품행(박스번호도 송장도 없음)은 택배 Shipment 입력 대상에서 제외합니다.
+    if(!boxNo&&!outBox&&!invoice)continue;
+    if(!invoice){missingInvoices.push({row:r+1,center,boxNo,outBox,sku,qty,productName});continue}
     demands.push({sourceRow:r+1,center,centerKey:centerKey(center),boxNo,outBox,invoice,sku,qty,productName});
   }
-  if(!demands.length&&missingInvoices.length)throw new Error('선적건의 박스에는 상품이 있지만 송장번호가 입력되어 있지 않습니다. 송장번호를 입력한 후 다시 올려 주세요.');
-  if(!demands.length)throw new Error('선적건에서 송장번호가 있는 박스별 상품 수량을 찾지 못했습니다.');
-  // 같은 박스/송장에 같은 SKU가 여러 줄로 기록되어도 Shipment에는 한 줄 수량으로 합쳐 배정합니다.
-  const mergedDemandMap=new Map();for(const d of demands){const dk=[d.centerKey,d.sku,d.invoice,d.boxNo,d.outBox].join('|');const old=mergedDemandMap.get(dk);if(old)old.qty+=d.qty;else mergedDemandMap.set(dk,{...d})}
-  const mergedDemands=[...mergedDemandMap.values()],byKey=new Map();for(const d of mergedDemands){const key=d.centerKey+'|'+d.sku;if(!byKey.has(key))byKey.set(key,[]);byKey.get(key).push(d)}
+  if(!demands.length&&missingInvoices.length)throw new Error('팩킹 선적건의 박스에는 상품이 있지만 송장번호가 입력되어 있지 않습니다. 송장번호를 입력한 후 다시 올려 주세요.');
+  if(!demands.length)throw new Error('팩킹 선적건에서 송장번호가 입력된 박스별 상품 수량을 찾지 못했습니다.');
+  // 같은 센터/박스/송장 안에서 동일 SKU가 여러 줄이면 한 줄로 합산합니다.
+  const mergedDemandMap=new Map();
+  for(const d of demands){
+    const dk=[d.centerKey,d.sku,d.invoice,d.boxNo,d.outBox].join('|'),old=mergedDemandMap.get(dk);
+    if(old)old.qty+=d.qty;else mergedDemandMap.set(dk,{...d});
+  }
+  const mergedDemands=[...mergedDemandMap.values()],byKey=new Map();
+  for(const d of mergedDemands){const key=d.centerKey+'|'+d.sku;if(!byKey.has(key))byKey.set(key,[]);byKey.get(key).push(d)}
   return {wb,info,demands:mergedDemands,missingInvoices,byKey};
 }
 
