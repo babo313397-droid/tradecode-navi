@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  const RESTRICTED=['/order-barcode','/shipment-list-builder','/detail-maker','/coupang-inbound-work','/purchase-order','/account-admin'];
+  const RESTRICTED=['/order-barcode','/shipment-list-builder','/detail-maker','/coupang-inbound-work','/purchase-order','/truck-shipment','/account-admin'];
   let auth={checked:false,authenticated:false,user:null};
   let authPromise=null;
   let pending='';
@@ -16,8 +16,20 @@
     const m=onclick.match(/(?:location(?:\.href)?|window\.location(?:\.href)?)\s*=\s*['"]([^'"]+)['"]/i)||onclick.match(/(?:location\.assign|location\.replace)\(\s*['"]([^'"]+)['"]\s*\)/i);
     if(m)return m[1];
     const t=(el.textContent||'').trim();
-    const map=[['발주 바코드','/order-barcode.html'],['선적 리스트','/shipment-list-builder.html'],['상세페이지','/detail-maker'],['쿠팡 입고 작업','/coupang-inbound-work.html'],['발주서 작성','/purchase-order.html'],['계정관리','/account-admin.html']];
+    const map=[['발주 바코드','/order-barcode.html'],['선적 리스트','/shipment-list-builder.html'],['상세페이지','/detail-maker'],['쿠팡 입고 작업','/coupang-inbound-work.html'],['발주서 작성','/purchase-order.html'],['트럭쉽먼트','/truck-shipment.html'],['계정관리','/account-admin.html']];
     const hit=map.find(([name])=>t.includes(name));return hit?hit[1]:'';
+  }
+  function ensureTruckShipmentNav(){
+    try{
+      const sidebar=document.querySelector('nav.sidebar,.sidebar');if(!sidebar)return;
+      const nodes=[...sidebar.querySelectorAll('a,button')];
+      let link=nodes.find(el=>{const href=el.getAttribute('href')||'',onclick=el.getAttribute('onclick')||'';return href.includes('/truck-shipment')||onclick.includes('/truck-shipment')||(el.textContent||'').includes('트럭쉽먼트')});
+      if(!link){link=document.createElement('a');link.className='nav-btn';link.href='/truck-shipment.html';link.textContent='🚛 트럭쉽먼트 자동입력';}
+      const fresh=[...sidebar.querySelectorAll('a,button')];
+      const purchase=fresh.find(el=>{const href=el.getAttribute('href')||'',onclick=el.getAttribute('onclick')||'';return href.includes('/purchase-order')||onclick.includes('/purchase-order')||(el.textContent||'').includes('발주서 작성')});
+      if(purchase&&purchase.parentNode===sidebar&&purchase.nextElementSibling!==link)purchase.insertAdjacentElement('afterend',link);else if(!link.isConnected)sidebar.appendChild(link);
+      if(location.pathname.startsWith('/truck-shipment'))link.classList.add('active');else link.classList.remove('active');
+    }catch(e){console.warn('truck shipment public nav',e)}
   }
   async function check(force=false){
     if(auth.checked&&!force)return auth;
@@ -74,7 +86,7 @@
     },true);
   }
   async function init(){
-    guard();const st=await check();accountBar();
+    ensureTruckShipmentNav();guard();const st=await check();accountBar();
     const p=new URLSearchParams(location.search);if(!st.authenticated&&p.get('authChoice')==='1'){show(p.get('next')||'/');}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
