@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>트럭쉽먼트 자동입력 | TradeCode Navi</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+:root{--navy:#10243f;--navy2:#0b2e4f;--gold:#d4aa39;--green:#217346;--bg:#f4f7f8;--line:#d7e0e6;--text:#172a3a;--muted:#6d7f8d;--warn:#a76700;--bad:#c2362b}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Malgun Gothic",sans-serif;color:var(--text);background:var(--bg)}body{overflow:auto}.app-shell{display:flex;min-height:100vh}.sidebar{width:278px;background:var(--navy);color:#fff;padding:18px;flex:0 0 278px}.side-brand{display:flex;gap:11px;align-items:center;font-weight:900;font-size:20px;cursor:pointer;margin-bottom:27px}.logo-badge{width:38px;height:38px;border-radius:10px;background:var(--gold);color:var(--navy);display:grid;place-items:center;font-weight:1000}.side-brand small{display:block;font-size:11px;font-weight:500;color:#b9c7d5;margin-top:3px}.nav-section-label{font-size:11px;color:#91a6ba;font-weight:800;margin:16px 4px 8px}.nav-btn{display:block;width:100%;text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);color:#eef4fa;border-radius:11px;padding:13px 14px;font-size:14px;font-weight:800;margin-bottom:9px;text-decoration:none;cursor:pointer}.nav-btn:hover{background:rgba(255,255,255,.11)}.nav-btn.active{background:var(--gold);border-color:var(--gold);color:#10243f}.login-divider{color:#f6cf74;line-height:1.4;margin-top:12px}
+.main{flex:1;min-width:0;padding:24px 28px 60px}.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:20px}.page-head h1{font-size:27px;margin:0 0 6px}.page-head p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}.badge{display:inline-flex;gap:6px;align-items:center;background:#e9f5ee;color:#16643a;border:1px solid #c5e4d1;border-radius:999px;padding:7px 11px;font-size:12px;font-weight:900;white-space:nowrap}.panel{background:#fff;border:1px solid var(--line);border-radius:15px;box-shadow:0 4px 16px rgba(23,42,58,.05);margin-bottom:16px}.panel-title{padding:16px 18px;border-bottom:1px solid var(--line);font-weight:1000;font-size:16px}.panel-body{padding:18px}.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px}.drop{position:relative;border:2px dashed #aabcc9;border-radius:13px;padding:24px 18px;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:#fbfdfd;cursor:pointer;transition:.18s}.drop:hover,.drop.drag{border-color:#217346;background:#f0faf4}.drop.ready{border-color:#47a36e;background:#f3fbf6}.drop strong{font-size:16px;margin-bottom:7px}.drop small{font-size:12px;line-height:1.55;color:var(--muted)}.drop .file-name{margin-top:10px;font-size:12px;font-weight:900;color:#17633a;max-width:95%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.drop input{display:none}.rules{margin-top:15px;background:#f6f9f7;border-radius:11px;padding:13px 15px;font-size:12px;line-height:1.7;color:#566a78}.rules b{color:#173b2c}.statusbar{display:flex;align-items:center;gap:9px;padding:13px 15px;border-radius:10px;background:#f1f5f8;color:#52687a;font-size:12px;font-weight:800}.statusbar.work{background:#fff6dc;color:#765100}.statusbar.ok{background:#edf9f2;color:#17633a}.statusbar.bad{background:#fff0ef;color:#a12821}.spinner{width:14px;height:14px;border:2px solid #bcc9d2;border-top-color:#217346;border-radius:50%;animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.result-card{display:none}.result-card.show{display:block}.result-layout{display:grid;grid-template-columns:minmax(360px,520px) 1fr;gap:20px}.summary-box{border-left:5px solid #c9d1d7;padding:3px 0 3px 24px}.summary-box h2{font-size:21px;margin:0 0 12px}.file-line{font-size:14px;margin:8px 0;color:#394d5c}.file-line b{color:#172a3a}.result-label{font-size:15px;margin:14px 0 8px}.pallet-list{margin:0;padding:0;list-style:none}.pallet-list li{padding:5px 0;font-size:14px}.checks{margin-top:14px;display:grid;gap:7px}.check-row{display:flex;gap:8px;align-items:center;font-size:14px}.check-row b{font-size:15px}.good{color:#1e8b4f}.warn{color:#a76700}.badc{color:#c2362b}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.btn{border:1px solid #c6d2da;background:#fff;color:#253b4a;border-radius:9px;padding:10px 14px;font-weight:900;cursor:pointer}.btn:hover{background:#f6f9fb}.btn.primary{background:#0b2e4f;color:#fff;border-color:#0b2e4f}.btn.green{background:#217346;color:#fff;border-color:#217346}.btn:disabled{opacity:.45;cursor:not-allowed}.mini-stats{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:10px}.stat{border:1px solid var(--line);border-radius:11px;padding:14px;background:#fafcfc}.stat span{display:block;font-size:11px;color:#6f818e}.stat b{display:block;font-size:22px;margin-top:5px}.notice{margin-top:12px;font-size:11px;color:#6d7f8d;line-height:1.6}
+.preview-wrap{display:none;margin-top:18px}.preview-wrap.show{display:block}.preview-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:9px}.preview-head h3{margin:0;font-size:15px}.table-box{border:1px solid var(--line);border-radius:10px;overflow:auto;max-height:430px}.data{width:100%;border-collapse:collapse;font-size:11px;min-width:900px}.data th{position:sticky;top:0;background:#edf2f5;color:#2c4556;padding:9px;border-bottom:1px solid #cdd8df;z-index:1}.data td{padding:8px;border-bottom:1px solid #e0e7eb;text-align:center}.data td.name{text-align:left;max-width:320px}.pill{display:inline-block;padding:3px 7px;border-radius:999px;font-weight:900;background:#e9f5ee;color:#17633a}.pill.clone{background:#fff1d9;color:#915f00}.issue-list{margin-top:12px;padding:11px 13px;border-radius:9px;background:#fff7e7;font-size:11px;line-height:1.6;color:#7b5908}.hidden{display:none!important}
+@media(max-width:1000px){.app-shell{display:block}.sidebar{width:100%;height:auto;padding:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}.side-brand{margin:0 10px 0 0}.nav-section-label{display:none}.nav-btn{width:auto;margin:0;padding:10px 11px}.main{padding:18px}.upload-grid,.result-layout{grid-template-columns:1fr}.mini-stats{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:620px){.main{padding:12px}.upload-grid,.mini-stats{grid-template-columns:1fr}.page-head{display:block}.badge{margin-top:10px}.summary-box{padding-left:15px}.sidebar{display:block}.nav-btn{width:100%;margin-bottom:7px}}
+</style>
+</head>
+<body>
+<div class="app-shell">
+<nav class="sidebar">
+  <div class="side-brand" onclick="location.href='/'"><div class="logo-badge">TC</div><div>TradeCode Navi<small>기능 목록</small></div></div>
+  <div class="nav-section-label">도구</div>
+  <a class="nav-btn" href="/hs-code">📊 TradeCode Navi 관세율 계산</a>
+  <a class="nav-btn" href="/coupang-margin">🚀 로켓배송 원가&amp;마진률 계산</a>
+  <a class="nav-btn" href="/logistics-cost">🚚 물류비 계산기</a>
+  <a class="nav-btn" href="/coupang-pallet-simulator">📦 쿠팡 팔레트 시뮬레이션</a>
+  <a class="nav-btn" href="/barcode-label.html">🏷️ 바코드 라벨 생성기</a>
+  <div class="nav-section-label login-divider">🔒 아래 메뉴는 로그인 후 사용</div>
+  <a class="nav-btn" href="/order-barcode.html">📦 발주 바코드 출력</a>
+  <a class="nav-btn" href="/shipment-list-builder.html">📋 선적 리스트 작성</a>
+  <a class="nav-btn" href="/detail-maker">✨ 쿠팡 상세페이지 자동 제작</a>
+  <a class="nav-btn" href="/coupang-inbound-work.html">📦 쿠팡 입고 작업</a>
+  <a class="nav-btn" href="/purchase-order.html">📝 발주서 작성</a>
+  <a class="nav-btn active" href="/truck-shipment.html">🚛 트럭쉽먼트 자동입력</a>
+</nav>
+<main class="main">
+  <div class="page-head">
+    <div><h1>🚛 트럭쉽먼트 자동입력</h1><p>선적건의 팔레트별 상품번호·수량을 TruckShipment와 자동 매칭합니다.<br>원본의 확정수량(G열)과 팔레트 생성가능 수량(H열)은 변경하지 않습니다.</p></div>
+    <div class="badge">✓ I/J열만 자동 입력 · 분할 시 새 행 생성</div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-title">파일 2개를 선택해 주세요</div>
+    <div class="panel-body">
+      <div class="upload-grid">
+        <label class="drop" id="shipmentDrop"><input id="shipmentFile" type="file" accept=".xlsx,.xlsm"><strong>① 선적건 파일</strong><small>팔레트 작업이 완료된 선적 Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="shipmentName">파일을 선택해 주세요.</div></label>
+        <label class="drop" id="truckDrop"><input id="truckFile" type="file" accept=".xlsx,.xlsm"><strong>② TruckShipment 파일</strong><small>쿠팡에서 받은 PALLET_Form Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="truckName">파일을 선택해 주세요.</div></label>
+      </div>
+      <div class="rules"><b>자동입력 기준</b> · 선적건 팔레트 1번부터 마지막 팔레트까지 순서대로 처리합니다. 동일 SKU가 여러 PO에 있으면 TruckShipment 행 순서대로 H열 가능수량 범위에서 배분합니다. 한 TruckShipment 행이 두 팔레트에 나뉘면 원본 행은 그대로 두고 필요한 새 행을 맨 아래에 복제합니다. 새 행도 기존 테두리·가운데 정렬 서식을 그대로 복사하며 I/J열은 기존 노란색 서식을 유지합니다.</div>
+      <div id="workStatus" class="statusbar" style="margin-top:14px">두 파일을 선택하면 자동으로 분석을 시작합니다.</div>
+    </div>
+  </section>
+
+  <section id="resultCard" class="panel result-card">
+    <div class="panel-title">자동입력 완료</div>
+    <div class="panel-body">
+      <div class="result-layout">
+        <div class="summary-box">
+          <h2>트럭쉽먼트 자동입력</h2>
+          <div class="file-line">선적건 파일: <b id="sumShipmentFile">-</b></div>
+          <div class="file-line">TruckShipment 파일: <b id="sumTruckFile">-</b></div>
+          <div class="result-label">분석 결과</div>
+          <ul id="palletList" class="pallet-list"></ul>
+          <div class="checks">
+            <div class="check-row good">✅ 정상 매칭 <b id="okCount">0건</b></div>
+            <div class="check-row warn">⚠️ 수량 확인 <b id="warnCount">0건</b></div>
+            <div class="check-row badc">❌ 미매칭 <b id="badCount">0건</b></div>
+          </div>
+          <div class="actions"><button class="btn" id="previewBtn">결과 미리보기</button><button class="btn green" id="downloadBtn">TruckShipment 다운로드</button></div>
+        </div>
+        <div>
+          <div class="mini-stats">
+            <div class="stat"><span>처리 팔레트</span><b id="statPallets">0</b></div>
+            <div class="stat"><span>I/J 입력 라인</span><b id="statLines">0</b></div>
+            <div class="stat"><span>새로 생성된 행</span><b id="statClones">0</b></div>
+          </div>
+          <div id="issueList" class="issue-list hidden"></div>
+          <div class="notice">※ 다운로드 파일은 원본 TruckShipment를 기준으로 I열(팔레트 선택), J열(팔레트 1개당 납품수량)만 입력합니다. 동일 행이 여러 팔레트에 걸칠 때만 원본 행 복사본을 맨 아래에 추가합니다.</div>
+        </div>
+      </div>
+      <div id="previewWrap" class="preview-wrap">
+        <div class="preview-head"><h3>변경 미리보기</h3><button class="btn" id="closePreviewBtn">접기</button></div>
+        <div class="table-box"><table class="data"><thead><tr><th>팔레트</th><th>상품번호</th><th>상품명</th><th>PO</th><th>원본 행</th><th>H 가능수량</th><th>J 입력수량</th><th>처리</th></tr></thead><tbody id="previewBody"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+<script>
+(() => {
+'use strict';
+const $=id=>document.getElementById(id);
+const state={shipmentFile:null,truckFile:null,shipment:null,truck:null,allocations:[],issues:[],blob:null,downloadName:''};
+const norm=v=>String(v??'').trim();
+function numberValue(v){if(typeof v==='number'&&Number.isFinite(v))return v;const n=Number(String(v??'').replace(/,/g,'').trim());return Number.isFinite(n)?n:0}
+function skuValue(v){if(v==null)return '';if(typeof v==='number'&&Number.isFinite(v))return String(Math.trunc(v));return norm(v).replace(/\.0+$/,'')}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function setStatus(msg,type=''){const el=$('workStatus');el.className='statusbar'+(type?' '+type:'');el.innerHTML=(type==='work'?'<span class="spinner"></span>':'')+esc(msg)}
+function colLetter(n){let s='';for(;n>0;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s}
+function parsePalletNo(v){const s=norm(v);if(!s)return 0;const m=s.match(/(?:PALLET[_\s-]*)?(\d+)/i);return m?Number(m[1]):0}
+function cellVal(ws,r,c){const a=colLetter(c+1)+String(r+1),cell=ws[a];return cell?cell.v:null}
+function sheetRows(ws,maxRows=12){const ref=ws['!ref']||'A1:A1',range=XLSX.utils.decode_range(ref),out=[];for(let r=range.s.r;r<=Math.min(range.e.r,range.s.r+maxRows-1);r++){const row=[];for(let c=range.s.c;c<=range.e.c;c++)row.push(cellVal(ws,r,c));out.push({r,row})}return out}
+function findSourceSheet(wb){
+  for(const name of wb.SheetNames){const ws=wb.Sheets[name];for(const x of sheetRows(ws,12)){const vals=x.row.map(v=>norm(v).replace(/\s+/g,''));const hasSku=vals.some(v=>v==='상품번호'||v.includes('상품번호'));const hasQty=vals.some(v=>v.includes('출고총수량'));const hasPal=vals.some(v=>/^Palette$/i.test(v)||v.toLowerCase()==='palette');if(hasSku&&hasQty&&hasPal){return {name,ws,headerRow:x.r,skuCol:vals.findIndex(v=>v==='상품번호'||v.includes('상품번호')),nameCol:vals.findIndex(v=>v==='제품명'||v.includes('제품명')),qtyCol:vals.findIndex(v=>v.includes('출고총수량')),palletCol:vals.findIndex(v=>/^Palette$/i.test(v)||v.toLowerCase()==='palette')}}}}
+  throw new Error('선적건에서 상품번호 / 출고총수량 / Palette 열을 찾지 못했습니다.');
+}
+function parseShipment(buffer){
+  const wb=XLSX.read(buffer,{type:'array',cellFormula:true,cellStyles:false});const info=findSourceSheet(wb),ws=info.ws,range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
+  const rowPallet=new Map();for(const m of (ws['!merges']||[])){if(m.s.c===info.palletCol&&m.e.c===info.palletCol){const p=parsePalletNo(cellVal(ws,m.s.r,info.palletCol));if(p)for(let r=m.s.r;r<=m.e.r;r++)rowPallet.set(r,p)}}
+  let carry=0;for(let r=info.headerRow+1;r<=range.e.r;r++){if(rowPallet.has(r)){carry=rowPallet.get(r);continue}const raw=cellVal(ws,r,info.palletCol),p=parsePalletNo(raw);if(p){carry=p;rowPallet.set(r,p);continue}if(carry&&skuValue(cellVal(ws,r,info.skuCol)))rowPallet.set(r,carry)}
+  const perPallet=new Map(),bySku=new Map();
+  for(let r=info.headerRow+1;r<=range.e.r;r++){
+    const p=rowPallet.get(r)||0,sku=skuValue(cellVal(ws,r,info.skuCol)),qty=numberValue(cellVal(ws,r,info.qtyCol));if(!p||!sku||qty<=0)continue;
+    const productName=info.nameCol>=0?norm(cellVal(ws,r,info.nameCol)):'';
+    if(!perPallet.has(p))perPallet.set(p,new Map());const pm=perPallet.get(p),old=pm.get(sku)||{sku,qty:0,productName};old.qty+=qty;if(!old.productName&&productName)old.productName=productName;pm.set(sku,old);
+  }
+  for(const [p,pm] of [...perPallet.entries()].sort((a,b)=>a[0]-b[0]))for(const x of pm.values()){if(!bySku.has(x.sku))bySku.set(x.sku,[]);bySku.get(x.sku).push({pallet:p,qty:x.qty,productName:x.productName})}
+  if(!perPallet.size)throw new Error('선적건에서 팔레트별 상품 수량을 찾지 못했습니다. Palette 셀 병합 상태를 확인해 주세요.');
+  return {wb,info,perPallet,bySku};
+}
+function findTruckSheet(wb){
+  for(const name of wb.SheetNames){const ws=wb.Sheets[name];for(const x of sheetRows(ws,10)){const vals=x.row.map(v=>norm(v).replace(/\s+/g,''));const idx=(re)=>vals.findIndex(v=>re.test(v));const sku=idx(/상품번호.*SKU|SKU.*ID|^상품번호/),cap=idx(/팔레트생성가능수량/),pal=idx(/^팔레트선택/),qty=idx(/팔레트1개당납품수량/);if(sku>=0&&cap>=0&&pal>=0&&qty>=0){return {name,ws,headerRow:x.r,skuCol:sku,capCol:cap,palCol:pal,qtyCol:qty,poCol:idx(/발주번호.*PO|PO.*ID/),nameCol:idx(/상품이름|SKUName|상품명/),confirmedCol:idx(/확정수량/)}}}}
+  throw new Error('TruckShipment에서 상품번호 / 팔레트 생성가능 수량 / 팔레트 선택 / 팔레트 1개당 납품수량 열을 찾지 못했습니다.');
+}
+function parseTruck(buffer){
+  const wb=XLSX.read(buffer,{type:'array',cellFormula:true,cellStyles:false});const info=findTruckSheet(wb),ws=info.ws,range=XLSX.utils.decode_range(ws['!ref']||'A1:A1'),bySku=new Map();let existingIJ=0;
+  for(let r=info.headerRow+1;r<=range.e.r;r++){
+    const sku=skuValue(cellVal(ws,r,info.skuCol));if(!sku)continue;const cap=numberValue(cellVal(ws,r,info.capCol));const po=info.poCol>=0?norm(cellVal(ws,r,info.poCol)):'';const productName=info.nameCol>=0?norm(cellVal(ws,r,info.nameCol)):'';const confirmed=info.confirmedCol>=0?numberValue(cellVal(ws,r,info.confirmedCol)):0;
+    if(norm(cellVal(ws,r,info.palCol))||norm(cellVal(ws,r,info.qtyCol)))existingIJ++;
+    const obj={row:r+1,sku,cap,po,productName,confirmed};if(!bySku.has(sku))bySku.set(sku,[]);bySku.get(sku).push(obj);
+  }
+  return {wb,info,bySku,maxRow:range.e.r+1,existingIJ};
+}
+function allocate(shipment,truck){
+  const allocations=[],issues=[],matchedSku=new Set(),warnSku=new Set(),badSku=new Set();
+  for(const [sku,demands] of shipment.bySku){
+    const rows=(truck.bySku.get(sku)||[]).filter(x=>x.cap>0);if(!rows.length){badSku.add(sku);issues.push({type:'bad',sku,msg:`TruckShipment에 SKU ${sku}의 사용 가능한 H열 수량이 없습니다.`});continue}
+    let ri=0,rowRemain=rows[0]?.cap||0;const rowUseCount=new Map();let shortage=0;
+    for(const d of demands){let need=d.qty;while(need>0.000001&&ri<rows.length){const row=rows[ri];if(rowRemain<=0.000001){ri++;rowRemain=rows[ri]?.cap||0;continue}const take=Math.min(need,rowRemain);const used=rowUseCount.get(row.row)||0;allocations.push({pallet:d.pallet,sku,productName:d.productName||row.productName,po:row.po,row:row.row,cap:row.cap,qty:take,isClone:used>0});rowUseCount.set(row.row,used+1);need-=take;rowRemain-=take;if(rowRemain<=0.000001){ri++;rowRemain=rows[ri]?.cap||0}}
+      if(need>0.000001)shortage+=need;
+    }
+    if(shortage>0.000001){warnSku.add(sku);issues.push({type:'warn',sku,msg:`SKU ${sku}: 선적 수량이 H열 가능수량보다 ${shortage.toLocaleString()}개 많아 미배정되었습니다.`})}else matchedSku.add(sku);
+  }
+  for(const s of warnSku)matchedSku.delete(s);for(const s of badSku)matchedSku.delete(s);
+  return {allocations,issues,okCount:matchedSku.size,warnCount:warnSku.size,badCount:badSku.size};
+}
+function xmlDoc(text){const d=new DOMParser().parseFromString(text,'application/xml');if(d.getElementsByTagName('parsererror').length)throw new Error('Excel XML을 읽는 중 오류가 발생했습니다.');return d}
+function localEls(parent,name){return [...parent.getElementsByTagNameNS('*',name)]}
+function cellCol(ref){return (String(ref).match(/^[A-Z]+/i)||[''])[0].toUpperCase()}
+function findCell(rowEl,col,rowNo){const ref=col+rowNo;return [...rowEl.getElementsByTagNameNS('*','c')].find(c=>c.getAttribute('r')===ref)||null}
+function insertCellSorted(doc,rowEl,cell,col,rowNo){const wanted=XLSX.utils.decode_col(col);const cells=[...rowEl.getElementsByTagNameNS('*','c')];const before=cells.find(c=>XLSX.utils.decode_col(cellCol(c.getAttribute('r'))) > wanted);if(before)rowEl.insertBefore(cell,before);else rowEl.appendChild(cell)}
+function ensureCell(doc,rowEl,col,rowNo,fallbackStyle=''){let c=findCell(rowEl,col,rowNo);if(c)return c;c=doc.createElementNS('http://schemas.openxmlformats.org/spreadsheetml/2006/main','c');c.setAttribute('r',col+rowNo);if(fallbackStyle!=='')c.setAttribute('s',fallbackStyle);insertCellSorted(doc,rowEl,c,col,rowNo);return c}
+function clearCell(c){while(c.firstChild)c.removeChild(c.firstChild);c.removeAttribute('t')}
+function setInline(doc,c,text){clearCell(c);c.setAttribute('t','inlineStr');const is=doc.createElementNS('http://schemas.openxmlformats.org/spreadsheetml/2006/main','is'),t=doc.createElementNS('http://schemas.openxmlformats.org/spreadsheetml/2006/main','t');t.textContent=String(text);is.appendChild(t);c.appendChild(is)}
+function setNumber(doc,c,value){clearCell(c);const v=doc.createElementNS('http://schemas.openxmlformats.org/spreadsheetml/2006/main','v');v.textContent=Number.isInteger(value)?String(value):String(Number(value.toFixed(6)));c.appendChild(v)}
+function resolveSheetPath(workbookXml,relsXml,sheetName){const wb=xmlDoc(workbookXml),rels=xmlDoc(relsXml);const sheet=localEls(wb,'sheet').find(x=>x.getAttribute('name')===sheetName);if(!sheet)throw new Error('TruckShipment 대상 시트를 찾지 못했습니다.');const rid=sheet.getAttribute('r:id')||sheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');const rel=localEls(rels,'Relationship').find(x=>x.getAttribute('Id')===rid);if(!rel)throw new Error('TruckShipment 시트 연결정보를 찾지 못했습니다.');let target=rel.getAttribute('Target').replace(/\\/g,'/');const parts=['xl'];for(const p of target.split('/')){if(!p||p==='.')continue;if(p==='..')parts.pop();else parts.push(p)}return parts.join('/')}
+async function buildOutput(truckFile,truck,allocations){
+  const buf=await truckFile.arrayBuffer(),zip=await JSZip.loadAsync(buf),wbText=await zip.file('xl/workbook.xml').async('text'),relsText=await zip.file('xl/_rels/workbook.xml.rels').async('text'),sheetPath=resolveSheetPath(wbText,relsText,truck.info.name),sheetText=await zip.file(sheetPath).async('text'),doc=xmlDoc(sheetText),sheetData=localEls(doc,'sheetData')[0];if(!sheetData)throw new Error('TruckShipment 시트 데이터 영역을 찾지 못했습니다.');
+  const rowEls=[...sheetData.getElementsByTagNameNS('*','row')],rowMap=new Map(rowEls.map(r=>[Number(r.getAttribute('r')),r]));const headerNo=truck.info.headerRow+1;const firstData=rowMap.get(headerNo+1);const palCol=colLetter(truck.info.palCol+1),qtyCol=colLetter(truck.info.qtyCol+1);const fallbackPalStyle=findCell(firstData,palCol,headerNo+1)?.getAttribute('s')||'',fallbackQtyStyle=findCell(firstData,qtyCol,headerNo+1)?.getAttribute('s')||fallbackPalStyle;
+  // 새 결과의 기준은 업로드한 선적건이므로 기존 I/J 값은 작업 사본에서만 비웁니다.
+  for(const [rn,rowEl] of rowMap){if(rn<=headerNo)continue;const a=findCell(rowEl,palCol,rn),b=findCell(rowEl,qtyCol,rn);if(a)clearCell(a);if(b)clearCell(b)}
+  let maxRow=Math.max(...rowMap.keys()),cloneCount=0;const grouped=new Map();for(const a of allocations){if(!grouped.has(a.row))grouped.set(a.row,[]);grouped.get(a.row).push(a)}
+  const newRows=[];
+  for(const [originalRow,parts] of grouped){const src=rowMap.get(originalRow);if(!src)throw new Error(`TruckShipment ${originalRow}행을 찾지 못했습니다.`);parts.forEach((a,idx)=>{let rowEl,rowNo;if(idx===0){rowEl=src;rowNo=originalRow}else{rowNo=++maxRow;rowEl=src.cloneNode(true);rowEl.setAttribute('r',String(rowNo));for(const c of [...rowEl.getElementsByTagNameNS('*','c')]){const col=cellCol(c.getAttribute('r'));c.setAttribute('r',col+rowNo)}newRows.push(rowEl);cloneCount++}const pc=ensureCell(doc,rowEl,palCol,rowNo,fallbackPalStyle),qc=ensureCell(doc,rowEl,qtyCol,rowNo,fallbackQtyStyle);setInline(doc,pc,'PALLET_'+a.pallet);setNumber(doc,qc,a.qty);a.outputRow=rowNo})}
+  for(const r of newRows)sheetData.appendChild(r);
+  const dim=localEls(doc,'dimension')[0];if(dim){const ref=dim.getAttribute('ref')||'A1';const m=ref.match(/^([^:]+):([A-Z]+)(\d+)$/i);if(m)dim.setAttribute('ref',m[1]+':'+m[2]+maxRow);else dim.setAttribute('ref','A1:'+qtyCol+maxRow)}
+  const dvs=localEls(doc,'dataValidation');for(const dv of dvs){const sq=norm(dv.getAttribute('sqref'));if(sq&&newRows.length)dv.setAttribute('sqref',(sq+' '+newRows.map(r=>palCol+r.getAttribute('r')).join(' ')).trim())}
+  zip.file(sheetPath,new XMLSerializer().serializeToString(doc));const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});return {blob,cloneCount};
+}
+function renderResult(){const s=state.shipment,r=state.result;$('sumShipmentFile').textContent=state.shipmentFile.name;$('sumTruckFile').textContent=state.truckFile.name;const pals=[...s.perPallet.entries()].sort((a,b)=>a[0]-b[0]);$('palletList').innerHTML=pals.map(([p,m])=>`<li>팔레트 ${p}: <b>${m.size.toLocaleString()}상품</b> / <b>${[...m.values()].reduce((z,x)=>z+x.qty,0).toLocaleString()}개</b></li>`).join('');$('okCount').textContent=r.okCount.toLocaleString()+'건';$('warnCount').textContent=r.warnCount.toLocaleString()+'건';$('badCount').textContent=r.badCount.toLocaleString()+'건';$('statPallets').textContent=pals.length.toLocaleString();$('statLines').textContent=r.allocations.length.toLocaleString();$('statClones').textContent=r.cloneCount.toLocaleString();const issue=$('issueList');if(r.issues.length){issue.classList.remove('hidden');issue.innerHTML='<b>확인 필요한 항목</b><br>'+r.issues.map(x=>(x.type==='bad'?'❌ ':'⚠️ ')+esc(x.msg)).join('<br>')}else issue.classList.add('hidden');$('previewBody').innerHTML=r.allocations.map(a=>`<tr><td>PALLET_${a.pallet}</td><td><b>${esc(a.sku)}</b></td><td class="name">${esc(a.productName)}</td><td>${esc(a.po)}</td><td>${a.row}</td><td>${a.cap.toLocaleString()}</td><td><b>${a.qty.toLocaleString()}</b></td><td><span class="pill ${a.isClone?'clone':''}">${a.isClone?'새 행':'원본 행'}</span></td></tr>`).join('')||'<tr><td colspan="8">입력할 항목이 없습니다.</td></tr>';$('resultCard').classList.add('show');$('resultCard').scrollIntoView({behavior:'smooth',block:'start'})}
+function makeDownloadName(original,hasIssues){const base=original.replace(/\.(xlsx|xlsm)$/i,'');return base+(hasIssues?'_자동입력_확인필요':'_자동입력_완성')+'.xlsx'}
+async function run(){if(!state.shipmentFile||!state.truckFile)return;try{$('resultCard').classList.remove('show');$('previewWrap').classList.remove('show');setStatus('두 Excel 파일을 분석하는 중입니다…','work');const [sb,tb]=await Promise.all([state.shipmentFile.arrayBuffer(),state.truckFile.arrayBuffer()]);state.shipment=parseShipment(sb);state.truck=parseTruck(tb);if(state.truck.existingIJ>0){const ok=confirm(`TruckShipment에 기존 팔레트 입력값(I/J)이 ${state.truck.existingIJ.toLocaleString()}행 있습니다.\n\n현재 선적건 기준으로 작업 사본의 I/J 값을 비우고 다시 자동입력합니다. 원본 파일 자체는 변경되지 않습니다. 계속할까요?`);if(!ok){setStatus('자동입력을 취소했습니다. 원본 파일은 변경되지 않았습니다.');return}}
+  setStatus('팔레트별 수량을 TruckShipment H열 범위에 맞춰 배분하는 중입니다…','work');const result=allocate(state.shipment,state.truck);const built=await buildOutput(state.truckFile,state.truck,result.allocations);state.blob=built.blob;state.result={...result,cloneCount:built.cloneCount};state.downloadName=makeDownloadName(state.truckFile.name,result.warnCount+result.badCount>0);setStatus(result.warnCount+result.badCount?`자동입력 완료 · 확인 필요 ${result.warnCount+result.badCount}건이 있습니다.`:'자동입력 완료 · 모든 선적 수량이 정상 매칭되었습니다.','ok');renderResult()
+  }catch(e){console.error(e);state.blob=null;state.result=null;setStatus(e.message||'자동입력 중 오류가 발생했습니다.','bad');alert('트럭쉽먼트 자동입력 실패\n\n'+(e.message||e))}}
+function setupDrop(dropId,inputId,nameId,key){const drop=$(dropId),input=$(inputId);const choose=f=>{if(!f)return;if(!/\.(xlsx|xlsm)$/i.test(f.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}state[key]=f;$(nameId).textContent=f.name;drop.classList.add('ready');if(state.shipmentFile&&state.truckFile)setTimeout(run,80)};input.addEventListener('change',()=>choose(input.files?.[0]));['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>choose(e.dataTransfer.files?.[0]))}
+setupDrop('shipmentDrop','shipmentFile','shipmentName','shipmentFile');setupDrop('truckDrop','truckFile','truckName','truckFile');$('previewBtn').onclick=()=>{$('previewWrap').classList.toggle('show');if($('previewWrap').classList.contains('show'))$('previewWrap').scrollIntoView({behavior:'smooth',block:'start'})};$('closePreviewBtn').onclick=()=>$('previewWrap').classList.remove('show');$('downloadBtn').onclick=()=>{if(!state.blob)return alert('먼저 파일 2개를 선택해 자동입력을 완료해 주세요.');const a=document.createElement('a');a.href=URL.createObjectURL(state.blob);a.download=state.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};
+})();
+</script>
+<script src="/auth-client.js"></script>
+</body>
+</html>
