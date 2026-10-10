@@ -259,7 +259,28 @@ function centerKey(v){
      .replace(/물류센터|센터/gi,'');
   return s.toUpperCase();
 }
-function invoiceText(v){const s=pnorm(v).replace(/\s+/g,'');return s.replace(/\.0+$/,'')}
+function invoiceText(v){
+  // 송장번호는 Excel에서 숫자로 저장되어도 표시값(cell.w)이 5.37695E+11처럼
+  // 과학적 표기법으로 바뀔 수 있습니다. 반드시 원시값(cell.v)을 우선 사용합니다.
+  if(typeof v==='number'&&Number.isFinite(v))return String(Math.trunc(v));
+  let s=pnorm(v).replace(/\s+/g,'');
+  if(!s)return '';
+  // 문자열이 과학적 표기법으로 넘어온 경우에도 가능한 범위에서는 원래 정수 문자열로 복원합니다.
+  if(/^[+-]?\d+(?:\.\d+)?e[+-]?\d+$/i.test(s)){
+    const n=Number(s);if(Number.isFinite(n)&&Number.isSafeInteger(n))s=String(Math.trunc(n));
+  }
+  return s.replace(/\.0+$/,'');
+}
+function mergedRawValues(ws,col){
+  const map=new Map();
+  for(const m of (ws['!merges']||[])){
+    if(m.s.c<=col&&m.e.c>=col){
+      const raw=pcell(ws,m.s.r,col);
+      if(raw!==null&&raw!==undefined&&String(raw).trim()!=='')for(let r=m.s.r;r<=m.e.r;r++)map.set(r,raw);
+    }
+  }
+  return map;
+}
 function pStatus(msg,type=''){const el=p$('parcelWorkStatus');if(!el)return;el.className='statusbar'+(type?' '+type:'');el.innerHTML=(type==='work'?'<span class="spinner"></span>':'')+pesc(msg)}
 function mergedValues(ws,col){const map=new Map();for(const m of (ws['!merges']||[])){if(m.s.c<=col&&m.e.c>=col){const value=pcellText(ws,m.s.r,col);if(value!=='')for(let r=m.s.r;r<=m.e.r;r++)map.set(r,value)}}return map}
 
@@ -279,7 +300,16 @@ function parseParcel(buffer){
     if(pnorm(pcell(ws,r,info.invoiceCol))||pnorm(pcell(ws,r,info.shippedCol))||(info.subInvoiceCol>=0&&pnorm(pcell(ws,r,info.subInvoiceCol))))existing++;
     const key=row.centerKey+'|'+sku;if(!byKey.has(key))byKey.set(key,[]);byKey.get(key).push(row);if(!bySku.has(sku))bySku.set(sku,[]);bySku.get(sku).push(row);
   }
-  const inputSheet=findInvoiceInputSheet(wb);return {wb,info,byKey,bySku,inputSheet,existing};
+  const inputSheet=findInvoiceInputSheet(wb);
+  const inputInvoices=[];
+  if(inputSheet){
+    const irange=XLSX.utils.decode_range(inputSheet.ws['!ref']||'A1:A1');
+    for(let r=inputSheet.headerRow+1;r<=irange.e.r;r++){
+      const inv=invoiceText(pcell(inputSheet.ws,r,inputSheet.col));
+      if(inv)inputInvoices.push(inv);
+    }
+  }
+  return {wb,info,byKey,bySku,inputSheet,inputInvoices,existing};
 }
 
 function findParcelSourceSheet(wb){
@@ -319,7 +349,7 @@ function parseParcelSource(buffer){
   const wb=XLSX.read(buffer,{type:'array',cellFormula:true,cellStyles:false}),info=findParcelSourceSheet(wb),ws=info.ws,range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
   // 박스번호/출고박스번호/송장번호는 여러 상품이 한 박스에 들어가면 세로 병합됩니다.
   // 병합된 첫 셀 값을 그 병합 구간의 모든 상품행에 내려서 사용합니다.
-  const centerM=mergedValues(ws,info.centerCol),boxM=mergedValues(ws,info.boxCol),outM=info.outBoxCol>=0?mergedValues(ws,info.outBoxCol):new Map(),invM=mergedValues(ws,info.invoiceCol);
+  const centerM=mergedValues(ws,info.centerCol),boxM=mergedValues(ws,info.boxCol),outM=info.outBoxCol>=0?mergedValues(ws,info.outBoxCol):new Map(),invM=mergedRawValues(ws,info.invoiceCol);
   const demands=[],missingInvoices=[];
   for(let r=info.dataStartRow;r<=range.e.r;r++){
     const sku=psku(pcell(ws,r,info.skuCol)),qty=pnum(pcell(ws,r,info.qtyCol));
@@ -328,7 +358,7 @@ function parseParcelSource(buffer){
     const center=pnorm(centerM.get(r)||pcellText(ws,r,info.centerCol));
     const boxNo=pnorm(boxM.get(r)||pcellText(ws,r,info.boxCol));
     const outBox=info.outBoxCol>=0?pnorm(outM.get(r)||pcellText(ws,r,info.outBoxCol)):'';
-    const invoice=invoiceText(invM.get(r)||pcellText(ws,r,info.invoiceCol));
+    const invoice=invoiceText(invM.has(r)?invM.get(r):pcell(ws,r,info.invoiceCol));
     const productName=info.nameCol>=0?pnorm(pcellText(ws,r,info.nameCol)):'';
     // 아직 박스 작업이 안 된 상품행(박스번호도 송장도 없음)은 택배 Shipment 입력 대상에서 제외합니다.
     if(!boxNo&&!outBox&&!invoice)continue;
@@ -345,7 +375,38 @@ function parseParcelSource(buffer){
   }
   const mergedDemands=[...mergedDemandMap.values()],byKey=new Map();
   for(const d of mergedDemands){const key=d.centerKey+'|'+d.sku;if(!byKey.has(key))byKey.set(key,[]);byKey.get(key).push(d)}
-  return {wb,info,demands:mergedDemands,missingInvoices,byKey};
+  return {wb,info,demands:mergedDemands,missingInvoices,byKey,invoiceIssues:[]};
+}
+
+function rebuildParcelSourceKeys(source){
+  const byKey=new Map();
+  for(const d of source.demands){const key=d.centerKey+'|'+d.sku;if(!byKey.has(key))byKey.set(key,[]);byKey.get(key).push(d)}
+  source.byKey=byKey;
+}
+function applyShipmentInvoiceList(source,parcel){
+  const list=Array.isArray(parcel.inputInvoices)?parcel.inputInvoices.filter(Boolean):[];
+  const issues=[];
+  if(!list.length){source.invoiceIssues=issues;return source}
+  const boxes=[],seen=new Set();
+  for(const d of source.demands){
+    const key=[d.centerKey,d.boxNo||'',d.outBox||''].join('|');
+    if(seen.has(key))continue;seen.add(key);boxes.push({key,center:d.center,boxNo:d.boxNo,outBox:d.outBox,packingInvoice:d.invoice,sourceRow:d.sourceRow});
+  }
+  if(list.length!==boxes.length){
+    issues.push({type:'warn',msg:`Shipment 송장번호입력 시트에는 ${list.length.toLocaleString()}개, 팩킹 파일에는 ${boxes.length.toLocaleString()}개 박스가 있습니다. 개수가 같지 않아 팩킹 파일의 송장번호를 사용합니다.`});
+    source.invoiceIssues=issues;return source;
+  }
+  const boxInvoice=new Map();
+  boxes.forEach((b,i)=>{
+    // 송장번호입력 시트에 사용자가 미리 입력한 목록을 최종 기준으로 사용합니다.
+    // 팩킹 파일의 송장번호가 달라도 여기서는 오류로 처리하지 않습니다.
+    const inv=list[i];boxInvoice.set(b.key,inv);
+  });
+  source.demands=source.demands.map(d=>{
+    const key=[d.centerKey,d.boxNo||'',d.outBox||''].join('|');
+    return {...d,packingInvoice:d.invoice,invoice:boxInvoice.get(key)||d.invoice};
+  });
+  rebuildParcelSourceKeys(source);source.invoiceIssues=issues;return source;
 }
 
 function allocateParcel(source,parcel){
@@ -374,6 +435,12 @@ function pEnsureCell(doc,rowEl,col,rowNo,style=''){let c=pFindCell(rowEl,col,row
 function pClear(c){while(c.firstChild)c.removeChild(c.firstChild);c.removeAttribute('t')}
 function pSetText(doc,c,text){pClear(c);c.setAttribute('t','inlineStr');const is=doc.createElementNS('http://schemas.openxmlformats.org/spreadsheetml/2006/main','is'),t=doc.createElementNS('http://schemas.openxmlformats.org/spreadsheetml/2006/main','t');t.textContent=String(text);is.appendChild(t);c.appendChild(is)}
 function pSetNum(doc,c,val){pClear(c);const v=doc.createElementNS('http://schemas.openxmlformats.org/spreadsheetml/2006/main','v');v.textContent=Number.isInteger(val)?String(val):String(Number(val.toFixed(6)));c.appendChild(v)}
+function pSetInvoice(doc,c,invoice){
+  const s=invoiceText(invoice);
+  // 쿠팡 원본 양식의 송장번호는 숫자 셀입니다. 15자리 이하 숫자는 숫자로 기록해
+  // 과학적 표기 문자열이 실제 데이터로 저장되는 문제를 막습니다.
+  if(/^\d{1,15}$/.test(s))pSetNum(doc,c,Number(s));else pSetText(doc,c,s);
+}
 function pResolveSheet(workbookXml,relsXml,sheetName){const wb=pxDoc(workbookXml),rels=pxDoc(relsXml),sheet=pEls(wb,'sheet').find(x=>x.getAttribute('name')===sheetName);if(!sheet)throw new Error(`Excel 시트 '${sheetName}'을 찾지 못했습니다.`);const rid=sheet.getAttribute('r:id')||sheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id'),rel=pEls(rels,'Relationship').find(x=>x.getAttribute('Id')===rid);if(!rel)throw new Error(`시트 '${sheetName}' 연결정보를 찾지 못했습니다.`);let target=rel.getAttribute('Target').replace(/\\/g,'/'),parts=['xl'];for(const p of target.split('/')){if(!p||p==='.')continue;if(p==='..')parts.pop();else parts.push(p)}return parts.join('/')}
 function pUpdateDimension(doc,lastCol,maxRow){const dim=pEls(doc,'dimension')[0];if(!dim)return;const ref=dim.getAttribute('ref')||'A1',parts=ref.split(':'),first=parts[0]||'A1';let endCol=lastCol,endRow=maxRow;if(parts[1]){const m=parts[1].match(/^([A-Z]+)(\d+)$/i);if(m){if(XLSX.utils.decode_col(m[1])>XLSX.utils.decode_col(endCol))endCol=m[1].toUpperCase();endRow=Math.max(endRow,Number(m[2])||0)}}dim.setAttribute('ref',first+':'+endCol+endRow)}
 
@@ -382,10 +449,35 @@ async function buildParcelOutput(file,parcel,allocations){
   const sheetPath=pResolveSheet(wbText,relsText,parcel.info.name),sheetText=await zip.file(sheetPath).async('text'),doc=pxDoc(sheetText),sheetData=pEls(doc,'sheetData')[0];if(!sheetData)throw new Error('택배 Shipment 상품목록 데이터 영역을 찾지 못했습니다.');
   const rowEls=[...sheetData.getElementsByTagNameNS('*','row')],rowMap=new Map(rowEls.map(r=>[Number(r.getAttribute('r')),r])),headerNo=parcel.info.headerRow+1,firstData=rowMap.get(headerNo+1);const invCol=pcol(parcel.info.invoiceCol+1),qtyCol=pcol(parcel.info.shippedCol+1),subCol=parcel.info.subInvoiceCol>=0?pcol(parcel.info.subInvoiceCol+1):null;const invStyle=pFindCell(firstData,invCol,headerNo+1)?.getAttribute('s')||'',qtyStyle=pFindCell(firstData,qtyCol,headerNo+1)?.getAttribute('s')||invStyle,subStyle=subCol?(pFindCell(firstData,subCol,headerNo+1)?.getAttribute('s')||invStyle):'';
   for(const [rn,rowEl] of rowMap){if(rn<=headerNo)continue;for(const col of [invCol,qtyCol,subCol].filter(Boolean)){const c=pFindCell(rowEl,col,rn);if(c)pClear(c)}}
-  let maxRow=Math.max(...rowMap.keys()),cloneCount=0;const grouped=new Map();for(const a of allocations){if(!grouped.has(a.parcelRow))grouped.set(a.parcelRow,[]);grouped.get(a.parcelRow).push(a)}const newRows=[];
-  for(const [originalRow,parts] of grouped){const src=rowMap.get(originalRow);if(!src)throw new Error(`택배 Shipment ${originalRow}행을 찾지 못했습니다.`);parts.forEach((a,idx)=>{let rowEl,rowNo;if(idx===0){rowEl=src;rowNo=originalRow}else{rowNo=++maxRow;rowEl=src.cloneNode(true);rowEl.setAttribute('r',String(rowNo));for(const c of [...rowEl.getElementsByTagNameNS('*','c')]){const col=pCellCol(c.getAttribute('r'));c.setAttribute('r',col+rowNo)}newRows.push(rowEl);cloneCount++}const ic=pEnsureCell(doc,rowEl,invCol,rowNo,invStyle),qc=pEnsureCell(doc,rowEl,qtyCol,rowNo,qtyStyle);pSetText(doc,ic,a.invoice);pSetNum(doc,qc,a.assignedQty);if(subCol){const sc=pEnsureCell(doc,rowEl,subCol,rowNo,subStyle);pClear(sc)}a.outputRow=rowNo})}
-  for(const r of newRows)sheetData.appendChild(r);const lastCol=pcol(Math.max(parcel.info.invoiceCol,parcel.info.shippedCol,parcel.info.subInvoiceCol,10)+1);pUpdateDimension(doc,lastCol,maxRow);zip.file(sheetPath,new XMLSerializer().serializeToString(doc));
-  if(parcel.inputSheet){const ipath=pResolveSheet(wbText,relsText,parcel.inputSheet.name),itext=await zip.file(ipath).async('text'),idoc=pxDoc(itext),idata=pEls(idoc,'sheetData')[0];if(idata){const rows=[...idata.getElementsByTagNameNS('*','row')],imap=new Map(rows.map(r=>[Number(r.getAttribute('r')),r])),ih=parcel.inputSheet.headerRow+1,icol=pcol(parcel.inputSheet.col+1),template=imap.get(ih+1),style=template?(pFindCell(template,icol,ih+1)?.getAttribute('s')||''):'';for(const [rn,rowEl] of imap){if(rn<=ih)continue;const c=pFindCell(rowEl,icol,rn);if(c)pClear(c)}const unique=[...new Set(allocations.map(a=>a.invoice).filter(Boolean))];let imax=Math.max(...imap.keys());unique.forEach((invoice,i)=>{const rn=ih+1+i;let rowEl=imap.get(rn);if(!rowEl){rowEl=template?template.cloneNode(true):idoc.createElementNS('http://schemas.openxmlformats.org/spreadsheetml/2006/main','row');rowEl.setAttribute('r',String(rn));for(const c of [...rowEl.getElementsByTagNameNS('*','c')]){const col=pCellCol(c.getAttribute('r'));c.setAttribute('r',col+rn);pClear(c)}idata.appendChild(rowEl);imap.set(rn,rowEl);imax=Math.max(imax,rn)}const c=pEnsureCell(idoc,rowEl,icol,rn,style);pSetText(idoc,c,invoice)});pUpdateDimension(idoc,pcol(Math.max(parcel.inputSheet.col+1,6)),Math.max(imax,ih+unique.length));zip.file(ipath,new XMLSerializer().serializeToString(idoc))}}
+  const dataRows=[...parcel.byKey.values()].flat().map(x=>x.row),lastDataRow=dataRows.length?Math.max(...dataRows):headerNo,usedDataRows=new Set(dataRows);
+  let maxRow=Math.max(...rowMap.keys()),nextCloneRow=lastDataRow+1,cloneCount=0;const grouped=new Map();for(const a of allocations){if(!grouped.has(a.parcelRow))grouped.set(a.parcelRow,[]);grouped.get(a.parcelRow).push(a)}
+  for(const [originalRow,parts] of grouped){
+    const src=rowMap.get(originalRow);if(!src)throw new Error(`택배 Shipment ${originalRow}행을 찾지 못했습니다.`);
+    parts.forEach((a,idx)=>{
+      let rowEl,rowNo;
+      if(idx===0){rowEl=src;rowNo=originalRow}
+      else{
+        // 원본 양식에는 실제 상품행 아래에 미리 서식만 잡힌 빈 행이 있습니다.
+        // 새 행을 시트 맨 끝(예: 12행)에 붙이지 않고, 마지막 실제 상품 바로 다음 빈 행부터 연속으로 사용합니다.
+        while(usedDataRows.has(nextCloneRow))nextCloneRow++;
+        rowNo=nextCloneRow++;rowEl=src.cloneNode(true);rowEl.setAttribute('r',String(rowNo));
+        for(const c of [...rowEl.getElementsByTagNameNS('*','c')]){const col=pCellCol(c.getAttribute('r'));c.setAttribute('r',col+rowNo)}
+        const oldBlank=rowMap.get(rowNo);
+        if(oldBlank&&!usedDataRows.has(rowNo))sheetData.replaceChild(rowEl,oldBlank);else{
+          const after=[...sheetData.getElementsByTagNameNS('*','row')].find(x=>Number(x.getAttribute('r'))>rowNo);
+          if(after)sheetData.insertBefore(rowEl,after);else sheetData.appendChild(rowEl);
+        }
+        rowMap.set(rowNo,rowEl);usedDataRows.add(rowNo);maxRow=Math.max(maxRow,rowNo);cloneCount++;
+      }
+      const ic=pEnsureCell(doc,rowEl,invCol,rowNo,invStyle),qc=pEnsureCell(doc,rowEl,qtyCol,rowNo,qtyStyle);pSetInvoice(doc,ic,a.invoice);pSetNum(doc,qc,a.assignedQty);if(subCol){const sc=pEnsureCell(doc,rowEl,subCol,rowNo,subStyle);pClear(sc)}a.outputRow=rowNo
+    })
+  }
+  const lastCol=pcol(Math.max(parcel.info.invoiceCol,parcel.info.shippedCol,parcel.info.subInvoiceCol,10)+1);pUpdateDimension(doc,lastCol,maxRow);zip.file(sheetPath,new XMLSerializer().serializeToString(doc));
+  if(parcel.inputSheet&&!(parcel.inputInvoices&&parcel.inputInvoices.length)){
+    // 사용자가 송장번호입력 시트에 미리 넣어 둔 값은 절대 지우거나 다시 작성하지 않습니다.
+    // 입력 목록이 비어 있을 때만 팩킹 파일에서 읽은 송장번호를 자동 채웁니다.
+    const ipath=pResolveSheet(wbText,relsText,parcel.inputSheet.name),itext=await zip.file(ipath).async('text'),idoc=pxDoc(itext),idata=pEls(idoc,'sheetData')[0];if(idata){const rows=[...idata.getElementsByTagNameNS('*','row')],imap=new Map(rows.map(r=>[Number(r.getAttribute('r')),r])),ih=parcel.inputSheet.headerRow+1,icol=pcol(parcel.inputSheet.col+1),template=imap.get(ih+1),style=template?(pFindCell(template,icol,ih+1)?.getAttribute('s')||''):'';const unique=[...new Set(allocations.map(a=>invoiceText(a.invoice)).filter(Boolean))];let imax=Math.max(...imap.keys());unique.forEach((invoice,i)=>{const rn=ih+1+i;let rowEl=imap.get(rn);if(!rowEl){rowEl=template?template.cloneNode(true):idoc.createElementNS('http://schemas.openxmlformats.org/spreadsheetml/2006/main','row');rowEl.setAttribute('r',String(rn));for(const c of [...rowEl.getElementsByTagNameNS('*','c')]){const col=pCellCol(c.getAttribute('r'));c.setAttribute('r',col+rn);pClear(c)}idata.appendChild(rowEl);imap.set(rn,rowEl);imax=Math.max(imax,rn)}const c=pEnsureCell(idoc,rowEl,icol,rn,style);pSetInvoice(idoc,c,invoice)});pUpdateDimension(idoc,pcol(Math.max(parcel.inputSheet.col+1,6)),Math.max(imax,ih+unique.length));zip.file(ipath,new XMLSerializer().serializeToString(idoc))}}
+
   const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});return {blob,cloneCount};
 }
 
@@ -395,12 +487,12 @@ function renderParcelResult(){
   p$('parcelCenterList').innerHTML=[...centerStats.values()].map(x=>`<li>${pesc(x.name)}: <b>${x.skus.size.toLocaleString()}상품</b> / <b>${x.qty.toLocaleString()}개</b> / 송장 <b>${x.invoices.size.toLocaleString()}개</b></li>`).join('');
   p$('parcelOkCount').textContent=r.okCount.toLocaleString()+'건';p$('parcelWarnCount').textContent=r.warnCount.toLocaleString()+'건';p$('parcelBadCount').textContent=r.badCount.toLocaleString()+'건';const missingBoxCount=new Set(s.missingInvoices.map(x=>x.boxNo||x.outBox||('row'+x.row))).size;p$('parcelMissingInvoiceCount').textContent=missingBoxCount.toLocaleString()+'박스';
   const invoices=new Set(r.allocations.map(a=>a.invoice).filter(Boolean)),boxes=new Set(s.demands.map(a=>a.boxNo||a.outBox||a.invoice).filter(Boolean));p$('parcelStatInvoices').textContent=invoices.size.toLocaleString();p$('parcelStatBoxes').textContent=boxes.size.toLocaleString();p$('parcelStatLines').textContent=r.allocations.length.toLocaleString()+' / '+r.cloneCount.toLocaleString();
-  const issue=p$('parcelIssueList'),allIssues=[...r.issues,...s.missingInvoices.map(x=>({type:'warn',msg:`${x.center||''} 박스 ${x.boxNo||x.outBox||x.row}: SKU ${x.sku} 송장번호 미입력`}))];if(allIssues.length){issue.classList.remove('hidden');issue.innerHTML='<b>확인 필요한 항목</b><br>'+allIssues.map(x=>(x.type==='bad'?'❌ ':'⚠️ ')+pesc(x.msg)).join('<br>')}else issue.classList.add('hidden');
+  const issue=p$('parcelIssueList'),allIssues=[...r.issues,...(s.invoiceIssues||[]),...s.missingInvoices.map(x=>({type:'warn',msg:`${x.center||''} 박스 ${x.boxNo||x.outBox||x.row}: SKU ${x.sku} 송장번호 미입력`}))];if(allIssues.length){issue.classList.remove('hidden');issue.innerHTML='<b>확인 필요한 항목</b><br>'+allIssues.map(x=>(x.type==='bad'?'❌ ':'⚠️ ')+pesc(x.msg)).join('<br>')}else issue.classList.add('hidden');
   p$('parcelPreviewBody').innerHTML=r.allocations.map(a=>`<tr><td>${pesc(a.center)}</td><td>${pesc(a.boxNo)}</td><td>${pesc(a.outBox)}</td><td><b>${pesc(a.invoice)}</b></td><td><b>${pesc(a.sku)}</b></td><td class="name">${pesc(a.productName)}</td><td>${a.qty.toLocaleString()}</td><td><b>${a.assignedQty.toLocaleString()}</b></td><td>${pesc(a.po)}</td><td>${a.parcelRow}</td><td><span class="pill ${a.isClone?'clone':''}">${a.isClone?'새 행':'원본 행'}</span></td></tr>`).join('')||'<tr><td colspan="11">입력할 항목이 없습니다.</td></tr>';
   p$('parcelResultCard').classList.remove('hidden');p$('parcelResultCard').classList.add('show');p$('parcelResultCard').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function parcelDownloadName(name,issues){return name.replace(/\.(xlsx|xlsm)$/i,'')+(issues?'_택배자동입력_확인필요':'_택배자동입력_완성')+'.xlsx'}
-async function runParcel(){if(!pstate.parcelFile||!pstate.sourceFile)return;try{p$('parcelResultCard').classList.add('hidden');p$('parcelPreviewWrap').classList.remove('show');pStatus('택배 Shipment와 선적건을 분석하는 중입니다…','work');const [pb,sb]=await Promise.all([pstate.parcelFile.arrayBuffer(),pstate.sourceFile.arrayBuffer()]);pstate.parcel=parseParcel(pb);pstate.source=parseParcelSource(sb);if(pstate.parcel.existing>0){const go=confirm(`택배 Shipment에 기존 송장번호/납품수량 입력값이 ${pstate.parcel.existing.toLocaleString()}행 있습니다.\n\n현재 선적건 기준으로 작업 사본의 입력값을 비우고 다시 자동입력합니다. 원본 파일은 변경되지 않습니다. 계속할까요?`);if(!go){pStatus('자동입력을 취소했습니다. 원본 파일은 변경되지 않았습니다.');return}}pStatus('센터·SKU별 박스/송장 수량을 PO 확정수량에 맞춰 배분하는 중입니다…','work');const result=allocateParcel(pstate.source,pstate.parcel),built=await buildParcelOutput(pstate.parcelFile,pstate.parcel,result.allocations);pstate.blob=built.blob;pstate.result={...result,cloneCount:built.cloneCount};const missingBoxCount=new Set(pstate.source.missingInvoices.map(x=>x.boxNo||x.outBox||('row'+x.row))).size,issueCount=result.warnCount+result.badCount+missingBoxCount;pstate.downloadName=parcelDownloadName(pstate.parcelFile.name,issueCount>0);pStatus(issueCount?`택배 자동입력 완료 · 확인 필요 ${issueCount.toLocaleString()}건이 있습니다.`:'택배 자동입력 완료 · 모든 수량과 송장번호가 정상 매칭되었습니다.','ok');renderParcelResult()}catch(e){console.error(e);pstate.blob=null;pstate.result=null;pStatus(e.message||'택배 Shipment 자동입력 중 오류가 발생했습니다.','bad');alert('택배 Shipment 자동입력 실패\n\n'+(e.message||e))}}
+async function runParcel(){if(!pstate.parcelFile||!pstate.sourceFile)return;try{p$('parcelResultCard').classList.add('hidden');p$('parcelPreviewWrap').classList.remove('show');pStatus('택배 Shipment와 선적건을 분석하는 중입니다…','work');const [pb,sb]=await Promise.all([pstate.parcelFile.arrayBuffer(),pstate.sourceFile.arrayBuffer()]);pstate.parcel=parseParcel(pb);pstate.source=applyShipmentInvoiceList(parseParcelSource(sb),pstate.parcel);if(pstate.parcel.existing>0){const go=confirm(`택배 Shipment에 기존 송장번호/납품수량 입력값이 ${pstate.parcel.existing.toLocaleString()}행 있습니다.\n\n현재 선적건 기준으로 작업 사본의 입력값을 비우고 다시 자동입력합니다. 원본 파일은 변경되지 않습니다. 계속할까요?`);if(!go){pStatus('자동입력을 취소했습니다. 원본 파일은 변경되지 않았습니다.');return}}pStatus('센터·SKU별 박스/송장 수량을 PO 확정수량에 맞춰 배분하는 중입니다…','work');const result=allocateParcel(pstate.source,pstate.parcel),built=await buildParcelOutput(pstate.parcelFile,pstate.parcel,result.allocations);pstate.blob=built.blob;pstate.result={...result,cloneCount:built.cloneCount};const missingBoxCount=new Set(pstate.source.missingInvoices.map(x=>x.boxNo||x.outBox||('row'+x.row))).size,invoiceWarnCount=(pstate.source.invoiceIssues||[]).length,issueCount=result.warnCount+result.badCount+missingBoxCount+invoiceWarnCount;pstate.downloadName=parcelDownloadName(pstate.parcelFile.name,issueCount>0);pStatus(issueCount?`택배 자동입력 완료 · 확인 필요 ${issueCount.toLocaleString()}건이 있습니다.`:'택배 자동입력 완료 · 모든 수량과 송장번호가 정상 매칭되었습니다.','ok');renderParcelResult()}catch(e){console.error(e);pstate.blob=null;pstate.result=null;pStatus(e.message||'택배 Shipment 자동입력 중 오류가 발생했습니다.','bad');alert('택배 Shipment 자동입력 실패\n\n'+(e.message||e))}}
 function setupParcelDrop(dropId,inputId,nameId,key){const drop=p$(dropId),input=p$(inputId),choose=f=>{if(!f)return;if(!/\.(xlsx|xlsm)$/i.test(f.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}pstate[key]=f;p$(nameId).textContent=f.name;drop.classList.add('ready');if(pstate.parcelFile&&pstate.sourceFile)setTimeout(runParcel,80)};input.addEventListener('change',()=>choose(input.files?.[0]));['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>choose(e.dataTransfer.files?.[0]))}
 function setShipmentMode(mode){const parcel=mode==='parcel';p$('truckModeTab').classList.toggle('active',!parcel);p$('parcelModeTab').classList.toggle('active',parcel);p$('truckUploadPanel').classList.toggle('hidden',parcel);p$('resultCard').classList.toggle('hidden',parcel);p$('parcelUploadPanel').classList.toggle('hidden',!parcel);p$('parcelResultCard').classList.toggle('hidden',!parcel||!pstate.result);p$('pageTitle').textContent=parcel?'📦 택배 Shipment 자동입력':'🚛 트럭쉽먼트 자동입력';p$('pageDesc').innerHTML=parcel?'송장번호가 입력된 선적건의 박스별 상품수량을 택배 Shipment와 자동 매칭합니다.<br>원본 PO·센터·상품번호·확정수량은 변경하지 않습니다.':'선적건의 팔레트별 상품번호·수량을 TruckShipment와 자동 매칭합니다.<br>원본의 확정수량(G열)과 팔레트 생성가능 수량(H열)은 변경하지 않습니다.';p$('pageBadge').textContent=parcel?'✓ 송장번호/납품수량 자동입력 · 송장목록 자동작성':'✓ I/J열만 자동 입력 · 분할 시 새 행 생성'}
 p$('truckModeTab').onclick=()=>setShipmentMode('truck');p$('parcelModeTab').onclick=()=>setShipmentMode('parcel');setupParcelDrop('parcelShipmentDrop','parcelShipmentFile','parcelShipmentName','parcelFile');setupParcelDrop('parcelSourceDrop','parcelSourceFile','parcelSourceName','sourceFile');p$('parcelPreviewBtn').onclick=()=>{p$('parcelPreviewWrap').classList.toggle('show');if(p$('parcelPreviewWrap').classList.contains('show'))p$('parcelPreviewWrap').scrollIntoView({behavior:'smooth',block:'start'})};p$('parcelClosePreviewBtn').onclick=()=>p$('parcelPreviewWrap').classList.remove('show');p$('parcelDownloadBtn').onclick=()=>{if(!pstate.blob)return alert('먼저 택배 Shipment 파일과 선적건 파일을 선택해 주세요.');const a=document.createElement('a');a.href=URL.createObjectURL(pstate.blob);a.download=pstate.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};
