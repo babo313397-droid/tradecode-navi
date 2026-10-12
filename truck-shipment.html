@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>쉽먼트 자동입력 | TradeCode Navi</title>
+<title>트럭쉽먼트 자동입력 | TradeCode Navi</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
@@ -15,7 +15,7 @@
 @media(max-width:1000px){.app-shell{display:block}.sidebar{width:100%;height:auto;padding:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}.side-brand{margin:0 10px 0 0}.nav-section-label{display:none}.nav-btn{width:auto;margin:0;padding:10px 11px}.main{padding:18px}.upload-grid,.result-layout{grid-template-columns:1fr}.mini-stats{grid-template-columns:1fr 1fr 1fr}}
 @media(max-width:620px){.main{padding:12px}.upload-grid,.mini-stats{grid-template-columns:1fr}.page-head{display:block}.badge{margin-top:10px}.summary-box{padding-left:15px}.sidebar{display:block}.nav-btn{width:100%;margin-bottom:7px}}
 
-.mode-tabs{display:flex;gap:8px;margin:-4px 0 16px}.mode-tab{border:1px solid #b9c8d2;background:#fff;color:#334c5d;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:1000;cursor:pointer}.mode-tab.active{background:#0b2e4f;color:#fff;border-color:#0b2e4f}.mode-tab.parcel.active{background:#217346;border-color:#217346}.parcel-center-list{margin:0;padding:0;list-style:none}.parcel-center-list li{padding:5px 0;font-size:14px}.parcel-note{background:#eef8f2;border:1px solid #cbe5d5;border-radius:10px;padding:11px 13px;margin-top:12px;color:#315d43;font-size:11px;line-height:1.6}
+.mode-tabs{display:flex;gap:8px;margin:-4px 0 16px}.mode-tab{border:1px solid #b9c8d2;background:#fff;color:#334c5d;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:1000;cursor:pointer}.mode-tab.active{background:#0b2e4f;color:#fff;border-color:#0b2e4f}.mode-tab.parcel.active{background:#217346;border-color:#217346}.parcel-center-list{margin:0;padding:0;list-style:none}.parcel-center-list li{padding:5px 0;font-size:14px}.parcel-note{background:#eef8f2;border:1px solid #cbe5d5;border-radius:10px;padding:11px 13px;margin-top:12px;color:#315d43;font-size:11px;line-height:1.6}.sheet-picker{margin-top:14px;border:1px solid #d5e0e6;border-radius:12px;background:#f8fbfc;padding:13px 14px}.sheet-picker-title{font-size:12px;font-weight:1000;color:#2c4556;margin-bottom:9px}.sheet-list{display:flex;gap:8px;flex-wrap:wrap}.sheet-btn{border:1px solid #afc1cd;background:#fff;color:#274354;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:1000;cursor:pointer}.sheet-btn:hover{background:#f0f7f4;border-color:#6fa789}.sheet-btn.active{background:#217346;border-color:#217346;color:#fff}.sheet-hint{font-size:11px;color:#6d7f8d;margin-top:8px;line-height:1.5}
 
 </style>
 </head>
@@ -55,8 +55,13 @@
         <label class="drop" id="shipmentDrop"><input id="shipmentFile" type="file" accept=".xlsx,.xlsm"><strong>① 선적건 파일</strong><small>팔레트 작업이 완료된 선적 Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="shipmentName">파일을 선택해 주세요.</div></label>
         <label class="drop" id="truckDrop"><input id="truckFile" type="file" accept=".xlsx,.xlsm"><strong>② TruckShipment 파일</strong><small>쿠팡에서 받은 PALLET_Form Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="truckName">파일을 선택해 주세요.</div></label>
       </div>
-      <div class="rules"><b>자동입력 기준</b> · 선적건 팔레트 1번부터 마지막 팔레트까지 순서대로 처리합니다. 동일 SKU가 여러 PO에 있으면 TruckShipment 행 순서대로 H열 가능수량 범위에서 배분합니다. 한 TruckShipment 행이 두 팔레트에 나뉘면 원본 행은 그대로 두고 필요한 새 행을 맨 아래에 복제합니다. 새 행도 기존 테두리·가운데 정렬 서식을 그대로 복사하며 I/J열은 기존 노란색 서식을 유지합니다.</div>
-      <div id="workStatus" class="statusbar" style="margin-top:14px">두 파일을 선택하면 자동으로 분석을 시작합니다.</div>
+      <div id="truckCenterArea" class="sheet-picker hidden">
+        <div class="sheet-picker-title">팔레트 작업 센터를 선택해 주세요</div>
+        <div id="truckCenterList" class="sheet-list"></div>
+        <div class="sheet-hint">선적건 Excel에서 시트명에 <b>‘팔레트’</b>가 들어간 탭만 표시합니다.</div>
+      </div>
+      <div class="rules"><b>자동입력 기준</b> · 선택한 팔레트 센터의 팔레트 1번부터 마지막 팔레트까지 순서대로 처리합니다. 동일 SKU가 여러 PO에 있으면 TruckShipment 행 순서대로 H열 가능수량 범위에서 배분합니다. 한 TruckShipment 행이 두 팔레트에 나뉘면 원본 행은 그대로 두고 필요한 새 행을 맨 아래에 복제합니다. 새 행도 기존 테두리·가운데 정렬 서식을 그대로 복사하며 I/J열은 기존 노란색 서식을 유지합니다.</div>
+      <div id="workStatus" class="statusbar" style="margin-top:14px">① 선적건 파일을 올리고 팔레트 센터를 선택한 뒤 ② TruckShipment 파일을 올려 주세요.</div>
     </div>
   </section>
 
@@ -67,6 +72,7 @@
         <div class="summary-box">
           <h2>트럭쉽먼트 자동입력</h2>
           <div class="file-line">선적건 파일: <b id="sumShipmentFile">-</b></div>
+          <div class="file-line">선택 센터: <b id="sumShipmentSheet">-</b></div>
           <div class="file-line">TruckShipment 파일: <b id="sumTruckFile">-</b></div>
           <div class="result-label">분석 결과</div>
           <ul id="palletList" class="pallet-list"></ul>
@@ -95,14 +101,19 @@
   </section>
 
   <section class="panel hidden" id="parcelUploadPanel">
-    <div class="panel-title">택배 Shipment 파일과 송장번호가 입력된 선적건 파일을 선택해 주세요</div>
+    <div class="panel-title">송장번호가 입력된 팩킹 선적건과 택배 Shipment 파일을 선택해 주세요</div>
     <div class="panel-body">
       <div class="upload-grid">
-        <label class="drop" id="parcelShipmentDrop"><input id="parcelShipmentFile" type="file" accept=".xlsx,.xlsm"><strong>① 택배 Shipment 파일</strong><small>쿠팡에서 받은 ShipmentsUpload_PARCEL Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="parcelShipmentName">파일을 선택해 주세요.</div></label>
-        <label class="drop" id="parcelSourceDrop"><input id="parcelSourceFile" type="file" accept=".xlsx,.xlsm"><strong>② 송장 입력 완료 팩킹 선적건</strong><small>박스번호·출고박스번호·송장번호가 입력된 팩킹 Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="parcelSourceName">파일을 선택해 주세요.</div></label>
+        <label class="drop" id="parcelSourceDrop"><input id="parcelSourceFile" type="file" accept=".xlsx,.xlsm"><strong>① 송장 입력 완료 팩킹 선적건</strong><small>박스번호·출고박스번호·송장번호가 입력된 팩킹 Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="parcelSourceName">파일을 선택해 주세요.</div></label>
+        <label class="drop" id="parcelShipmentDrop"><input id="parcelShipmentFile" type="file" accept=".xlsx,.xlsm"><strong>② 택배 Shipment 파일</strong><small>쿠팡에서 받은 ShipmentsUpload_PARCEL Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="parcelShipmentName">파일을 선택해 주세요.</div></label>
       </div>
-      <div class="rules"><b>택배 자동입력 기준</b> · 팩킹 선적건의 <b>물류센터 + 상품번호 + 출고총수량 + 박스번호 + 송장번호</b>를 읽어 택배 Shipment의 같은 센터·SKU에 순서대로 배정합니다. 같은 SKU가 여러 PO에 나뉘어 있으면 확정수량 범위에서 PO 행 순서대로 배분합니다. 한 PO 행에 여러 송장이 들어가면 원본 행을 복제하여 새 행을 만들고 송장번호·납품수량만 입력합니다. <b>PO / 센터 / 상품번호 / 확정수량은 수정하지 않습니다.</b></div>
-      <div id="parcelWorkStatus" class="statusbar" style="margin-top:14px">두 파일을 선택하면 자동으로 분석을 시작합니다.</div>
+      <div id="parcelSourceCenterArea" class="sheet-picker hidden">
+        <div class="sheet-picker-title">택배 작업 센터를 선택해 주세요</div>
+        <div id="parcelSourceCenterList" class="sheet-list"></div>
+        <div class="sheet-hint">선적건 Excel에서 <b>팔레트 · 밀크런 · 예비택배 · 발주서</b> 탭을 제외한 센터 탭을 모두 표시합니다.</div>
+      </div>
+      <div class="rules"><b>택배 자동입력 기준</b> · 선택한 센터 탭의 <b>물류센터 + 상품번호 + 출고총수량 + 박스번호 + 송장번호</b>를 읽어 택배 Shipment의 같은 센터·SKU에 순서대로 배정합니다. 같은 SKU가 여러 PO에 나뉘어 있으면 확정수량 범위에서 PO 행 순서대로 배분합니다. 한 PO 행에 여러 송장이 들어가면 원본 행을 복제하여 새 행을 만들고 송장번호·납품수량만 입력합니다. <b>PO / 센터 / 상품번호 / 확정수량은 수정하지 않습니다.</b></div>
+      <div id="parcelWorkStatus" class="statusbar" style="margin-top:14px">① 팩킹 선적건을 올리고 센터를 선택한 뒤 ② 택배 Shipment 파일을 올려 주세요.</div>
     </div>
   </section>
 
@@ -112,8 +123,9 @@
       <div class="result-layout">
         <div class="summary-box">
           <h2>택배 Shipment 자동입력</h2>
-          <div class="file-line">택배 Shipment 파일: <b id="parcelSumShipmentFile">-</b></div>
           <div class="file-line">선적건 파일: <b id="parcelSumSourceFile">-</b></div>
+          <div class="file-line">선택 센터: <b id="parcelSumSourceSheet">-</b></div>
+          <div class="file-line">택배 Shipment 파일: <b id="parcelSumShipmentFile">-</b></div>
           <div class="result-label">분석 결과</div>
           <ul id="parcelCenterList" class="parcel-center-list"></ul>
           <div class="checks">
@@ -147,7 +159,7 @@
 (() => {
 'use strict';
 const $=id=>document.getElementById(id);
-const state={shipmentFile:null,truckFile:null,shipment:null,truck:null,allocations:[],issues:[],blob:null,downloadName:''};
+const state={shipmentFile:null,truckFile:null,shipmentBuffer:null,shipmentWb:null,shipmentCenterSheets:[],selectedShipmentSheet:'',shipment:null,truck:null,allocations:[],issues:[],blob:null,downloadName:''};
 const norm=v=>String(v??'').trim();
 function numberValue(v){if(typeof v==='number'&&Number.isFinite(v))return v;const n=Number(String(v??'').replace(/,/g,'').trim());return Number.isFinite(n)?n:0}
 function skuValue(v){if(v==null)return '';if(typeof v==='number'&&Number.isFinite(v))return String(Math.trunc(v));return norm(v).replace(/\.0+$/,'')}
@@ -157,12 +169,13 @@ function colLetter(n){let s='';for(;n>0;n=Math.floor((n-1)/26))s=String.fromChar
 function parsePalletNo(v){const s=norm(v);if(!s)return 0;const m=s.match(/(?:PALLET[_\s-]*)?(\d+)/i);return m?Number(m[1]):0}
 function cellVal(ws,r,c){const a=colLetter(c+1)+String(r+1),cell=ws[a];return cell?cell.v:null}
 function sheetRows(ws,maxRows=12){const ref=ws['!ref']||'A1:A1',range=XLSX.utils.decode_range(ref),out=[];for(let r=range.s.r;r<=Math.min(range.e.r,range.s.r+maxRows-1);r++){const row=[];for(let c=range.s.c;c<=range.e.c;c++)row.push(cellVal(ws,r,c));out.push({r,row})}return out}
-function findSourceSheet(wb){
-  for(const name of wb.SheetNames){const ws=wb.Sheets[name];for(const x of sheetRows(ws,12)){const vals=x.row.map(v=>norm(v).replace(/\s+/g,''));const hasSku=vals.some(v=>v==='상품번호'||v.includes('상품번호'));const hasQty=vals.some(v=>v.includes('출고총수량'));const hasPal=vals.some(v=>/^Palette$/i.test(v)||v.toLowerCase()==='palette');if(hasSku&&hasQty&&hasPal){return {name,ws,headerRow:x.r,skuCol:vals.findIndex(v=>v==='상품번호'||v.includes('상품번호')),nameCol:vals.findIndex(v=>v==='제품명'||v.includes('제품명')),qtyCol:vals.findIndex(v=>v.includes('출고총수량')),palletCol:vals.findIndex(v=>/^Palette$/i.test(v)||v.toLowerCase()==='palette')}}}}
-  throw new Error('선적건에서 상품번호 / 출고총수량 / Palette 열을 찾지 못했습니다.');
+function findSourceSheet(wb,selectedName=''){
+  const names=selectedName?[selectedName]:wb.SheetNames;
+  for(const name of names){const ws=wb.Sheets[name];if(!ws)continue;for(const x of sheetRows(ws,12)){const vals=x.row.map(v=>norm(v).replace(/\s+/g,''));const hasSku=vals.some(v=>v==='상품번호'||v.includes('상품번호'));const hasQty=vals.some(v=>v.includes('출고총수량'));const hasPal=vals.some(v=>/^Palette$/i.test(v)||v.toLowerCase()==='palette');if(hasSku&&hasQty&&hasPal){return {name,ws,headerRow:x.r,skuCol:vals.findIndex(v=>v==='상품번호'||v.includes('상품번호')),nameCol:vals.findIndex(v=>v==='제품명'||v.includes('제품명')),qtyCol:vals.findIndex(v=>v.includes('출고총수량')),palletCol:vals.findIndex(v=>/^Palette$/i.test(v)||v.toLowerCase()==='palette')}}}}
+  throw new Error(selectedName?`선택한 '${selectedName}' 탭에서 상품번호 / 출고총수량 / Palette 열을 찾지 못했습니다.`:'선적건에서 상품번호 / 출고총수량 / Palette 열을 찾지 못했습니다.');
 }
-function parseShipment(buffer){
-  const wb=XLSX.read(buffer,{type:'array',cellFormula:true,cellStyles:false});const info=findSourceSheet(wb),ws=info.ws,range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
+function parseShipment(buffer,selectedName=''){
+  const wb=XLSX.read(buffer,{type:'array',cellFormula:true,cellStyles:false});const info=findSourceSheet(wb,selectedName),ws=info.ws,range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
   const rowPallet=new Map();for(const m of (ws['!merges']||[])){if(m.s.c===info.palletCol&&m.e.c===info.palletCol){const p=parsePalletNo(cellVal(ws,m.s.r,info.palletCol));if(p)for(let r=m.s.r;r<=m.e.r;r++)rowPallet.set(r,p)}}
   let carry=0;for(let r=info.headerRow+1;r<=range.e.r;r++){if(rowPallet.has(r)){carry=rowPallet.get(r);continue}const raw=cellVal(ws,r,info.palletCol),p=parsePalletNo(raw);if(p){carry=p;rowPallet.set(r,p);continue}if(carry&&skuValue(cellVal(ws,r,info.skuCol)))rowPallet.set(r,carry)}
   const perPallet=new Map(),bySku=new Map();
@@ -224,13 +237,16 @@ async function buildOutput(truckFile,truck,allocations){
   const dvs=localEls(doc,'dataValidation');for(const dv of dvs){const sq=norm(dv.getAttribute('sqref'));if(sq&&newRows.length)dv.setAttribute('sqref',(sq+' '+newRows.map(r=>palCol+r.getAttribute('r')).join(' ')).trim())}
   zip.file(sheetPath,new XMLSerializer().serializeToString(doc));const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});return {blob,cloneCount};
 }
-function renderResult(){const s=state.shipment,r=state.result;$('sumShipmentFile').textContent=state.shipmentFile.name;$('sumTruckFile').textContent=state.truckFile.name;const pals=[...s.perPallet.entries()].sort((a,b)=>a[0]-b[0]);$('palletList').innerHTML=pals.map(([p,m])=>`<li>팔레트 ${p}: <b>${m.size.toLocaleString()}상품</b> / <b>${[...m.values()].reduce((z,x)=>z+x.qty,0).toLocaleString()}개</b></li>`).join('');$('okCount').textContent=r.okCount.toLocaleString()+'건';$('warnCount').textContent=r.warnCount.toLocaleString()+'건';$('badCount').textContent=r.badCount.toLocaleString()+'건';$('statPallets').textContent=pals.length.toLocaleString();$('statLines').textContent=r.allocations.length.toLocaleString();$('statClones').textContent=r.cloneCount.toLocaleString();const issue=$('issueList');if(r.issues.length){issue.classList.remove('hidden');issue.innerHTML='<b>확인 필요한 항목</b><br>'+r.issues.map(x=>(x.type==='bad'?'❌ ':'⚠️ ')+esc(x.msg)).join('<br>')}else issue.classList.add('hidden');$('previewBody').innerHTML=r.allocations.map(a=>`<tr><td>PALLET_${a.pallet}</td><td><b>${esc(a.sku)}</b></td><td class="name">${esc(a.productName)}</td><td>${esc(a.po)}</td><td>${a.row}</td><td>${a.cap.toLocaleString()}</td><td><b>${a.qty.toLocaleString()}</b></td><td><span class="pill ${a.isClone?'clone':''}">${a.isClone?'새 행':'원본 행'}</span></td></tr>`).join('')||'<tr><td colspan="8">입력할 항목이 없습니다.</td></tr>';$('resultCard').classList.add('show');$('resultCard').scrollIntoView({behavior:'smooth',block:'start'})}
+function renderResult(){const s=state.shipment,r=state.result;$('sumShipmentFile').textContent=state.shipmentFile.name;$('sumShipmentSheet').textContent=state.selectedShipmentSheet||s.info?.name||'-';$('sumTruckFile').textContent=state.truckFile.name;const pals=[...s.perPallet.entries()].sort((a,b)=>a[0]-b[0]);$('palletList').innerHTML=pals.map(([p,m])=>`<li>팔레트 ${p}: <b>${m.size.toLocaleString()}상품</b> / <b>${[...m.values()].reduce((z,x)=>z+x.qty,0).toLocaleString()}개</b></li>`).join('');$('okCount').textContent=r.okCount.toLocaleString()+'건';$('warnCount').textContent=r.warnCount.toLocaleString()+'건';$('badCount').textContent=r.badCount.toLocaleString()+'건';$('statPallets').textContent=pals.length.toLocaleString();$('statLines').textContent=r.allocations.length.toLocaleString();$('statClones').textContent=r.cloneCount.toLocaleString();const issue=$('issueList');if(r.issues.length){issue.classList.remove('hidden');issue.innerHTML='<b>확인 필요한 항목</b><br>'+r.issues.map(x=>(x.type==='bad'?'❌ ':'⚠️ ')+esc(x.msg)).join('<br>')}else issue.classList.add('hidden');$('previewBody').innerHTML=r.allocations.map(a=>`<tr><td>PALLET_${a.pallet}</td><td><b>${esc(a.sku)}</b></td><td class="name">${esc(a.productName)}</td><td>${esc(a.po)}</td><td>${a.row}</td><td>${a.cap.toLocaleString()}</td><td><b>${a.qty.toLocaleString()}</b></td><td><span class="pill ${a.isClone?'clone':''}">${a.isClone?'새 행':'원본 행'}</span></td></tr>`).join('')||'<tr><td colspan="8">입력할 항목이 없습니다.</td></tr>';$('resultCard').classList.add('show');$('resultCard').scrollIntoView({behavior:'smooth',block:'start'})}
 function makeDownloadName(original,hasIssues){const base=original.replace(/\.(xlsx|xlsm)$/i,'');return base+(hasIssues?'_자동입력_확인필요':'_자동입력_완성')+'.xlsx'}
-async function run(){if(!state.shipmentFile||!state.truckFile)return;try{$('resultCard').classList.remove('show');$('previewWrap').classList.remove('show');setStatus('두 Excel 파일을 분석하는 중입니다…','work');const [sb,tb]=await Promise.all([state.shipmentFile.arrayBuffer(),state.truckFile.arrayBuffer()]);state.shipment=parseShipment(sb);state.truck=parseTruck(tb);if(state.truck.existingIJ>0){const ok=confirm(`TruckShipment에 기존 팔레트 입력값(I/J)이 ${state.truck.existingIJ.toLocaleString()}행 있습니다.\n\n현재 선적건 기준으로 작업 사본의 I/J 값을 비우고 다시 자동입력합니다. 원본 파일 자체는 변경되지 않습니다. 계속할까요?`);if(!ok){setStatus('자동입력을 취소했습니다. 원본 파일은 변경되지 않았습니다.');return}}
+async function run(){if(!state.shipmentFile||!state.truckFile||!state.selectedShipmentSheet)return;try{$('resultCard').classList.remove('show');$('previewWrap').classList.remove('show');setStatus(`'${state.selectedShipmentSheet}' 센터와 TruckShipment를 분석하는 중입니다…`,'work');const [sb,tb]=await Promise.all([state.shipmentBuffer?Promise.resolve(state.shipmentBuffer):state.shipmentFile.arrayBuffer(),state.truckFile.arrayBuffer()]);state.shipment=parseShipment(sb,state.selectedShipmentSheet);state.truck=parseTruck(tb);if(state.truck.existingIJ>0){const ok=confirm(`TruckShipment에 기존 팔레트 입력값(I/J)이 ${state.truck.existingIJ.toLocaleString()}행 있습니다.\n\n현재 선적건 기준으로 작업 사본의 I/J 값을 비우고 다시 자동입력합니다. 원본 파일 자체는 변경되지 않습니다. 계속할까요?`);if(!ok){setStatus('자동입력을 취소했습니다. 원본 파일은 변경되지 않았습니다.');return}}
   setStatus('팔레트별 수량을 TruckShipment H열 범위에 맞춰 배분하는 중입니다…','work');const result=allocate(state.shipment,state.truck);const built=await buildOutput(state.truckFile,state.truck,result.allocations);state.blob=built.blob;state.result={...result,cloneCount:built.cloneCount};state.downloadName=makeDownloadName(state.truckFile.name,result.warnCount+result.badCount>0);setStatus(result.warnCount+result.badCount?`자동입력 완료 · 확인 필요 ${result.warnCount+result.badCount}건이 있습니다.`:'자동입력 완료 · 모든 선적 수량이 정상 매칭되었습니다.','ok');renderResult()
   }catch(e){console.error(e);state.blob=null;state.result=null;setStatus(e.message||'자동입력 중 오류가 발생했습니다.','bad');alert('트럭쉽먼트 자동입력 실패\n\n'+(e.message||e))}}
-function setupDrop(dropId,inputId,nameId,key){const drop=$(dropId),input=$(inputId);const choose=f=>{if(!f)return;if(!/\.(xlsx|xlsm)$/i.test(f.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}state[key]=f;$(nameId).textContent=f.name;drop.classList.add('ready');if(state.shipmentFile&&state.truckFile)setTimeout(run,80)};input.addEventListener('change',()=>choose(input.files?.[0]));['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>choose(e.dataTransfer.files?.[0]))}
-setupDrop('shipmentDrop','shipmentFile','shipmentName','shipmentFile');setupDrop('truckDrop','truckFile','truckName','truckFile');$('previewBtn').onclick=()=>{$('previewWrap').classList.toggle('show');if($('previewWrap').classList.contains('show'))$('previewWrap').scrollIntoView({behavior:'smooth',block:'start'})};$('closePreviewBtn').onclick=()=>$('previewWrap').classList.remove('show');$('downloadBtn').onclick=()=>{if(!state.blob)return alert('먼저 파일 2개를 선택해 자동입력을 완료해 주세요.');const a=document.createElement('a');a.href=URL.createObjectURL(state.blob);a.download=state.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};
+function truckCenterCandidates(wb){return wb.SheetNames.filter(name=>/팔레트/i.test(name))}
+function renderTruckCenters(){const area=$('truckCenterArea'),list=$('truckCenterList');if(!state.shipmentCenterSheets.length){area.classList.add('hidden');list.innerHTML='';return}area.classList.remove('hidden');list.innerHTML=state.shipmentCenterSheets.map((name,i)=>`<button type="button" class="sheet-btn${state.selectedShipmentSheet===name?' active':''}" data-index="${i}">${esc(name)}</button>`).join('')}
+async function prepareTruckSourceFile(f){state.shipmentFile=f;state.shipment=null;state.shipmentBuffer=null;state.shipmentWb=null;state.selectedShipmentSheet='';state.shipmentCenterSheets=[];$('shipmentName').textContent=f.name;$('shipmentDrop').classList.add('ready');$('resultCard').classList.remove('show');try{setStatus('선적건의 팔레트 센터 탭을 찾는 중입니다…','work');const buf=await f.arrayBuffer(),wb=XLSX.read(buf,{type:'array',cellFormula:true,cellStyles:false});state.shipmentBuffer=buf;state.shipmentWb=wb;state.shipmentCenterSheets=truckCenterCandidates(wb);renderTruckCenters();if(!state.shipmentCenterSheets.length){setStatus('선적건에서 시트명에 ‘팔레트’가 들어간 센터 탭을 찾지 못했습니다.','bad');return}setStatus(`팔레트 센터 ${state.shipmentCenterSheets.length}개를 찾았습니다. 작업할 센터를 선택해 주세요.`)}catch(e){state.shipmentBuffer=null;state.shipmentWb=null;state.shipmentCenterSheets=[];renderTruckCenters();setStatus(e.message||'선적건을 읽는 중 오류가 발생했습니다.','bad')}}
+function setupDrop(dropId,inputId,nameId,key){const drop=$(dropId),input=$(inputId);const choose=async f=>{if(!f)return;if(!/\.(xlsx|xlsm)$/i.test(f.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}if(key==='shipmentFile'){await prepareTruckSourceFile(f);return}state[key]=f;$(nameId).textContent=f.name;drop.classList.add('ready');if(state.shipmentFile&&!state.selectedShipmentSheet)setStatus('선적건의 팔레트 센터를 먼저 선택해 주세요.');if(state.shipmentFile&&state.truckFile&&state.selectedShipmentSheet)setTimeout(run,80)};input.addEventListener('change',()=>choose(input.files?.[0]));['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>choose(e.dataTransfer.files?.[0]))}
+setupDrop('shipmentDrop','shipmentFile','shipmentName','shipmentFile');setupDrop('truckDrop','truckFile','truckName','truckFile');$('truckCenterList').addEventListener('click',e=>{const b=e.target.closest('.sheet-btn');if(!b)return;const name=state.shipmentCenterSheets[Number(b.dataset.index)];if(!name)return;state.selectedShipmentSheet=name;renderTruckCenters();setStatus(state.truckFile?`'${name}' 센터를 선택했습니다. 자동입력을 시작합니다…`:`'${name}' 센터를 선택했습니다. 이제 ② TruckShipment 파일을 올려 주세요.`,'ok');if(state.truckFile)setTimeout(run,80)});$('previewBtn').onclick=()=>{$('previewWrap').classList.toggle('show');if($('previewWrap').classList.contains('show'))$('previewWrap').scrollIntoView({behavior:'smooth',block:'start'})};$('closePreviewBtn').onclick=()=>$('previewWrap').classList.remove('show');$('downloadBtn').onclick=()=>{if(!state.blob)return alert('먼저 파일 2개를 선택해 자동입력을 완료해 주세요.');const a=document.createElement('a');a.href=URL.createObjectURL(state.blob);a.download=state.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};
 })();
 </script>
 
@@ -238,7 +254,7 @@ setupDrop('shipmentDrop','shipmentFile','shipmentName','shipmentFile');setupDrop
 (() => {
 'use strict';
 const p$=id=>document.getElementById(id);
-const pstate={parcelFile:null,sourceFile:null,parcel:null,source:null,result:null,blob:null,downloadName:''};
+const pstate={parcelFile:null,sourceFile:null,sourceBuffer:null,sourceWb:null,sourceCenterSheets:[],selectedSourceSheet:'',parcel:null,source:null,result:null,blob:null,downloadName:''};
 const pnorm=v=>String(v??'').trim();
 const pnum=v=>{if(typeof v==='number'&&Number.isFinite(v))return v;const n=Number(String(v??'').replace(/,/g,'').trim());return Number.isFinite(n)?n:0};
 const psku=v=>{if(v==null)return '';if(typeof v==='number'&&Number.isFinite(v))return String(Math.trunc(v));return pnorm(v).replace(/\.0+$/,'')};
@@ -312,13 +328,14 @@ function parseParcel(buffer){
   return {wb,info,byKey,bySku,inputSheet,inputInvoices,existing};
 }
 
-function findParcelSourceSheet(wb){
+function findParcelSourceSheet(wb,selectedName=''){
   // 팩킹 완료 선적 파일은 헤더가 한 줄이 아닐 수 있습니다.
   // 예: 1행 P/Q/R = 박스번호/출고박스번호/송장번호,
   //     2행 A~E = 상품번호/제품명/바코드/물류센터/출고총수량.
   // 따라서 같은 한 행에서 헤더를 찾지 않고 상단 여러 행 전체에서 열 위치를 찾습니다.
-  for(const name of wb.SheetNames){
-    const ws=wb.Sheets[name],range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
+  const names=selectedName?[selectedName]:wb.SheetNames;
+  for(const name of names){
+    const ws=wb.Sheets[name];if(!ws)continue;const range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
     const maxR=Math.min(range.e.r,range.s.r+11);
     const found={};
     for(let r=range.s.r;r<=maxR;r++){
@@ -343,10 +360,10 @@ function findParcelSourceSheet(wb){
       };
     }
   }
-  throw new Error('팩킹 선적건에서 필요한 열을 찾지 못했습니다. 상품번호·물류센터·출고총수량과 박스번호·송장번호가 위쪽 12행 안에 있는 파일인지 확인해 주세요.');
+  throw new Error(selectedName?`선택한 '${selectedName}' 탭에서 택배 작업에 필요한 열을 찾지 못했습니다.`:'팩킹 선적건에서 필요한 열을 찾지 못했습니다. 상품번호·물류센터·출고총수량과 박스번호·송장번호가 위쪽 12행 안에 있는 파일인지 확인해 주세요.');
 }
-function parseParcelSource(buffer){
-  const wb=XLSX.read(buffer,{type:'array',cellFormula:true,cellStyles:false}),info=findParcelSourceSheet(wb),ws=info.ws,range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
+function parseParcelSource(buffer,selectedName=''){
+  const wb=XLSX.read(buffer,{type:'array',cellFormula:true,cellStyles:false}),info=findParcelSourceSheet(wb,selectedName),ws=info.ws,range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
   // 박스번호/출고박스번호/송장번호는 여러 상품이 한 박스에 들어가면 세로 병합됩니다.
   // 병합된 첫 셀 값을 그 병합 구간의 모든 상품행에 내려서 사용합니다.
   const centerM=mergedValues(ws,info.centerCol),boxM=mergedValues(ws,info.boxCol),outM=info.outBoxCol>=0?mergedValues(ws,info.outBoxCol):new Map(),invM=mergedRawValues(ws,info.invoiceCol);
@@ -482,7 +499,7 @@ async function buildParcelOutput(file,parcel,allocations){
 }
 
 function renderParcelResult(){
-  const s=pstate.source,r=pstate.result;p$('parcelSumShipmentFile').textContent=pstate.parcelFile.name;p$('parcelSumSourceFile').textContent=pstate.sourceFile.name;
+  const s=pstate.source,r=pstate.result;p$('parcelSumShipmentFile').textContent=pstate.parcelFile.name;p$('parcelSumSourceFile').textContent=pstate.sourceFile.name;p$('parcelSumSourceSheet').textContent=pstate.selectedSourceSheet||s.info?.name||'-';
   const centerStats=new Map();for(const d of s.demands){if(!centerStats.has(d.centerKey))centerStats.set(d.centerKey,{name:d.center||'센터 미확인',skus:new Set(),qty:0,invoices:new Set(),boxes:new Set()});const x=centerStats.get(d.centerKey);x.skus.add(d.sku);x.qty+=d.qty;x.invoices.add(d.invoice);if(d.boxNo)x.boxes.add(d.boxNo)}
   p$('parcelCenterList').innerHTML=[...centerStats.values()].map(x=>`<li>${pesc(x.name)}: <b>${x.skus.size.toLocaleString()}상품</b> / <b>${x.qty.toLocaleString()}개</b> / 송장 <b>${x.invoices.size.toLocaleString()}개</b></li>`).join('');
   p$('parcelOkCount').textContent=r.okCount.toLocaleString()+'건';p$('parcelWarnCount').textContent=r.warnCount.toLocaleString()+'건';p$('parcelBadCount').textContent=r.badCount.toLocaleString()+'건';const missingBoxCount=new Set(s.missingInvoices.map(x=>x.boxNo||x.outBox||('row'+x.row))).size;p$('parcelMissingInvoiceCount').textContent=missingBoxCount.toLocaleString()+'박스';
@@ -492,10 +509,13 @@ function renderParcelResult(){
   p$('parcelResultCard').classList.remove('hidden');p$('parcelResultCard').classList.add('show');p$('parcelResultCard').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function parcelDownloadName(name,issues){return name.replace(/\.(xlsx|xlsm)$/i,'')+(issues?'_택배자동입력_확인필요':'_택배자동입력_완성')+'.xlsx'}
-async function runParcel(){if(!pstate.parcelFile||!pstate.sourceFile)return;try{p$('parcelResultCard').classList.add('hidden');p$('parcelPreviewWrap').classList.remove('show');pStatus('택배 Shipment와 선적건을 분석하는 중입니다…','work');const [pb,sb]=await Promise.all([pstate.parcelFile.arrayBuffer(),pstate.sourceFile.arrayBuffer()]);pstate.parcel=parseParcel(pb);pstate.source=applyShipmentInvoiceList(parseParcelSource(sb),pstate.parcel);if(pstate.parcel.existing>0){const go=confirm(`택배 Shipment에 기존 송장번호/납품수량 입력값이 ${pstate.parcel.existing.toLocaleString()}행 있습니다.\n\n현재 선적건 기준으로 작업 사본의 입력값을 비우고 다시 자동입력합니다. 원본 파일은 변경되지 않습니다. 계속할까요?`);if(!go){pStatus('자동입력을 취소했습니다. 원본 파일은 변경되지 않았습니다.');return}}pStatus('센터·SKU별 박스/송장 수량을 PO 확정수량에 맞춰 배분하는 중입니다…','work');const result=allocateParcel(pstate.source,pstate.parcel),built=await buildParcelOutput(pstate.parcelFile,pstate.parcel,result.allocations);pstate.blob=built.blob;pstate.result={...result,cloneCount:built.cloneCount};const missingBoxCount=new Set(pstate.source.missingInvoices.map(x=>x.boxNo||x.outBox||('row'+x.row))).size,invoiceWarnCount=(pstate.source.invoiceIssues||[]).length,issueCount=result.warnCount+result.badCount+missingBoxCount+invoiceWarnCount;pstate.downloadName=parcelDownloadName(pstate.parcelFile.name,issueCount>0);pStatus(issueCount?`택배 자동입력 완료 · 확인 필요 ${issueCount.toLocaleString()}건이 있습니다.`:'택배 자동입력 완료 · 모든 수량과 송장번호가 정상 매칭되었습니다.','ok');renderParcelResult()}catch(e){console.error(e);pstate.blob=null;pstate.result=null;pStatus(e.message||'택배 Shipment 자동입력 중 오류가 발생했습니다.','bad');alert('택배 Shipment 자동입력 실패\n\n'+(e.message||e))}}
-function setupParcelDrop(dropId,inputId,nameId,key){const drop=p$(dropId),input=p$(inputId),choose=f=>{if(!f)return;if(!/\.(xlsx|xlsm)$/i.test(f.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}pstate[key]=f;p$(nameId).textContent=f.name;drop.classList.add('ready');if(pstate.parcelFile&&pstate.sourceFile)setTimeout(runParcel,80)};input.addEventListener('change',()=>choose(input.files?.[0]));['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>choose(e.dataTransfer.files?.[0]))}
-function setShipmentMode(mode){const parcel=mode==='parcel';p$('truckModeTab').classList.toggle('active',!parcel);p$('parcelModeTab').classList.toggle('active',parcel);p$('truckUploadPanel').classList.toggle('hidden',parcel);p$('resultCard').classList.toggle('hidden',parcel);p$('parcelUploadPanel').classList.toggle('hidden',!parcel);p$('parcelResultCard').classList.toggle('hidden',!parcel||!pstate.result);p$('pageTitle').textContent=parcel?'📦 택배 Shipment 자동입력':'🚛 트럭쉽먼트 자동입력';p$('pageDesc').innerHTML=parcel?'송장번호가 입력된 선적건의 박스별 상품수량을 택배 Shipment와 자동 매칭합니다.<br>원본 PO·센터·상품번호·확정수량은 변경하지 않습니다.':'선적건의 팔레트별 상품번호·수량을 TruckShipment와 자동 매칭합니다.<br>원본의 확정수량(G열)과 팔레트 생성가능 수량(H열)은 변경하지 않습니다.';p$('pageBadge').textContent=parcel?'✓ 송장번호/납품수량 자동입력 · 송장목록 자동작성':'✓ I/J열만 자동 입력 · 분할 시 새 행 생성'}
-p$('truckModeTab').onclick=()=>setShipmentMode('truck');p$('parcelModeTab').onclick=()=>setShipmentMode('parcel');setupParcelDrop('parcelShipmentDrop','parcelShipmentFile','parcelShipmentName','parcelFile');setupParcelDrop('parcelSourceDrop','parcelSourceFile','parcelSourceName','sourceFile');p$('parcelPreviewBtn').onclick=()=>{p$('parcelPreviewWrap').classList.toggle('show');if(p$('parcelPreviewWrap').classList.contains('show'))p$('parcelPreviewWrap').scrollIntoView({behavior:'smooth',block:'start'})};p$('parcelClosePreviewBtn').onclick=()=>p$('parcelPreviewWrap').classList.remove('show');p$('parcelDownloadBtn').onclick=()=>{if(!pstate.blob)return alert('먼저 택배 Shipment 파일과 선적건 파일을 선택해 주세요.');const a=document.createElement('a');a.href=URL.createObjectURL(pstate.blob);a.download=pstate.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};
+async function runParcel(){if(!pstate.parcelFile||!pstate.sourceFile||!pstate.selectedSourceSheet)return;try{p$('parcelResultCard').classList.add('hidden');p$('parcelPreviewWrap').classList.remove('show');pStatus(`'${pstate.selectedSourceSheet}' 센터와 택배 Shipment를 분석하는 중입니다…`,'work');const [pb,sb]=await Promise.all([pstate.parcelFile.arrayBuffer(),pstate.sourceBuffer?Promise.resolve(pstate.sourceBuffer):pstate.sourceFile.arrayBuffer()]);pstate.parcel=parseParcel(pb);pstate.source=applyShipmentInvoiceList(parseParcelSource(sb,pstate.selectedSourceSheet),pstate.parcel);if(pstate.parcel.existing>0){const go=confirm(`택배 Shipment에 기존 송장번호/납품수량 입력값이 ${pstate.parcel.existing.toLocaleString()}행 있습니다.\n\n현재 선적건 기준으로 작업 사본의 입력값을 비우고 다시 자동입력합니다. 원본 파일은 변경되지 않습니다. 계속할까요?`);if(!go){pStatus('자동입력을 취소했습니다. 원본 파일은 변경되지 않았습니다.');return}}pStatus('센터·SKU별 박스/송장 수량을 PO 확정수량에 맞춰 배분하는 중입니다…','work');const result=allocateParcel(pstate.source,pstate.parcel),built=await buildParcelOutput(pstate.parcelFile,pstate.parcel,result.allocations);pstate.blob=built.blob;pstate.result={...result,cloneCount:built.cloneCount};const missingBoxCount=new Set(pstate.source.missingInvoices.map(x=>x.boxNo||x.outBox||('row'+x.row))).size,invoiceWarnCount=(pstate.source.invoiceIssues||[]).length,issueCount=result.warnCount+result.badCount+missingBoxCount+invoiceWarnCount;pstate.downloadName=parcelDownloadName(pstate.parcelFile.name,issueCount>0);pStatus(issueCount?`택배 자동입력 완료 · 확인 필요 ${issueCount.toLocaleString()}건이 있습니다.`:'택배 자동입력 완료 · 모든 수량과 송장번호가 정상 매칭되었습니다.','ok');renderParcelResult()}catch(e){console.error(e);pstate.blob=null;pstate.result=null;pStatus(e.message||'택배 Shipment 자동입력 중 오류가 발생했습니다.','bad');alert('택배 Shipment 자동입력 실패\n\n'+(e.message||e))}}
+function parcelSourceCandidates(wb){return wb.SheetNames.filter(name=>{const k=pnorm(name).replace(/\s+/g,'');return !/팔레트|밀크런/i.test(k)&&k!=='예비택배'&&k!=='발주서'})}
+function renderParcelSourceCenters(){const area=p$('parcelSourceCenterArea'),list=p$('parcelSourceCenterList');if(!pstate.sourceCenterSheets.length){area.classList.add('hidden');list.innerHTML='';return}area.classList.remove('hidden');list.innerHTML=pstate.sourceCenterSheets.map((name,i)=>`<button type="button" class="sheet-btn${pstate.selectedSourceSheet===name?' active':''}" data-index="${i}">${pesc(name)}</button>`).join('')}
+async function prepareParcelSourceFile(f){pstate.sourceFile=f;pstate.source=null;pstate.sourceBuffer=null;pstate.sourceWb=null;pstate.selectedSourceSheet='';pstate.sourceCenterSheets=[];p$('parcelSourceName').textContent=f.name;p$('parcelSourceDrop').classList.add('ready');p$('parcelResultCard').classList.add('hidden');try{pStatus('팩킹 선적건의 택배 센터 탭을 찾는 중입니다…','work');const buf=await f.arrayBuffer(),wb=XLSX.read(buf,{type:'array',cellFormula:true,cellStyles:false});pstate.sourceBuffer=buf;pstate.sourceWb=wb;pstate.sourceCenterSheets=parcelSourceCandidates(wb);renderParcelSourceCenters();if(!pstate.sourceCenterSheets.length){pStatus('선적건에서 택배 작업용 센터 탭을 찾지 못했습니다.','bad');return}pStatus(`택배 작업 센터 ${pstate.sourceCenterSheets.length}개를 찾았습니다. 작업할 센터를 선택해 주세요.`)}catch(e){pstate.sourceBuffer=null;pstate.sourceWb=null;pstate.sourceCenterSheets=[];renderParcelSourceCenters();pStatus(e.message||'팩킹 선적건을 읽는 중 오류가 발생했습니다.','bad')}}
+function setupParcelDrop(dropId,inputId,nameId,key){const drop=p$(dropId),input=p$(inputId),choose=async f=>{if(!f)return;if(!/\.(xlsx|xlsm)$/i.test(f.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}if(key==='sourceFile'){await prepareParcelSourceFile(f);return}pstate[key]=f;p$(nameId).textContent=f.name;drop.classList.add('ready');if(pstate.sourceFile&&!pstate.selectedSourceSheet)pStatus('팩킹 선적건의 센터를 먼저 선택해 주세요.');if(pstate.parcelFile&&pstate.sourceFile&&pstate.selectedSourceSheet)setTimeout(runParcel,80)};input.addEventListener('change',()=>choose(input.files?.[0]));['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>choose(e.dataTransfer.files?.[0]))}
+function setShipmentMode(mode){const parcel=mode==='parcel';p$('truckModeTab').classList.toggle('active',!parcel);p$('parcelModeTab').classList.toggle('active',parcel);p$('truckUploadPanel').classList.toggle('hidden',parcel);p$('resultCard').classList.toggle('hidden',parcel);p$('parcelUploadPanel').classList.toggle('hidden',!parcel);p$('parcelResultCard').classList.toggle('hidden',!parcel||!pstate.result);p$('pageTitle').textContent=parcel?'📦 택배 Shipment 자동입력':'🚛 트럭쉽먼트 자동입력';p$('pageDesc').innerHTML=parcel?'송장번호가 입력된 선적건에서 작업 센터를 선택한 뒤 박스별 상품수량을 택배 Shipment와 자동 매칭합니다.<br>원본 PO·센터·상품번호·확정수량은 변경하지 않습니다.':'선적건에서 팔레트 작업 센터를 선택한 뒤 팔레트별 상품번호·수량을 TruckShipment와 자동 매칭합니다.<br>원본의 확정수량(G열)과 팔레트 생성가능 수량(H열)은 변경하지 않습니다.';p$('pageBadge').textContent=parcel?'✓ 송장번호/납품수량 자동입력 · 송장목록 자동작성':'✓ I/J열만 자동 입력 · 분할 시 새 행 생성'}
+p$('truckModeTab').onclick=()=>setShipmentMode('truck');p$('parcelModeTab').onclick=()=>setShipmentMode('parcel');setupParcelDrop('parcelSourceDrop','parcelSourceFile','parcelSourceName','sourceFile');setupParcelDrop('parcelShipmentDrop','parcelShipmentFile','parcelShipmentName','parcelFile');p$('parcelSourceCenterList').addEventListener('click',e=>{const b=e.target.closest('.sheet-btn');if(!b)return;const name=pstate.sourceCenterSheets[Number(b.dataset.index)];if(!name)return;pstate.selectedSourceSheet=name;renderParcelSourceCenters();pStatus(pstate.parcelFile?`'${name}' 센터를 선택했습니다. 자동입력을 시작합니다…`:`'${name}' 센터를 선택했습니다. 이제 ② 택배 Shipment 파일을 올려 주세요.`,'ok');if(pstate.parcelFile)setTimeout(runParcel,80)});p$('parcelPreviewBtn').onclick=()=>{p$('parcelPreviewWrap').classList.toggle('show');if(p$('parcelPreviewWrap').classList.contains('show'))p$('parcelPreviewWrap').scrollIntoView({behavior:'smooth',block:'start'})};p$('parcelClosePreviewBtn').onclick=()=>p$('parcelPreviewWrap').classList.remove('show');p$('parcelDownloadBtn').onclick=()=>{if(!pstate.blob)return alert('먼저 택배 Shipment 파일과 선적건 파일을 선택해 주세요.');const a=document.createElement('a');a.href=URL.createObjectURL(pstate.blob);a.download=pstate.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};
 })();
 </script>
 <script src="/auth-client.js"></script>
