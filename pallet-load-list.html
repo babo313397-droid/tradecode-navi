@@ -151,8 +151,41 @@ body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:25
     const dates=[...new Set(poRows.map(x=>x.edd).filter(Boolean))];if(dates.length>1)issues.push({type:'입고일 확인',sku:'-',text:'PO 안에 입고예정일이 여러 개 있습니다: '+dates.join(', ')});
     const date=fmtDate(dates[0]||'');const allPo=[...new Set(pallets.flatMap(p=>p.poIds))];return {pallets,issues,date,allPo,skuCount:packingTotals.size,totalBoxes:pallets.reduce((s,p)=>s+p.boxes,0)}
   }
-  function pageHTML(p,seq,total,model){const company=norm($('companyInput').value)||'코리아원';const center=norm($('centerInput').value)||prettyCenter(state.selectedSheet);const minRows=10;const rows=[...p.rows];while(rows.length<minRows)rows.push(null);return `<section class="pdf-page" data-pallet="${p.pallet}"><div class="pdf-title">쿠팡 파렛트 적재리스트 (일반)</div><div class="pdf-box"><div class="pdf-meta"><div class="line"><span>${total} - ${seq} / 총 박스수량 (${p.boxes} BOX)</span></div><div class="line"><span class="label">입고예정일자 (</span><span>${esc(model.date.month)} 월&nbsp;&nbsp; ${esc(model.date.day)}일</span><span>) / 납품센터명 (${esc(center)})</span></div><div class="line"><span class="label">업체명</span><span>&nbsp;&nbsp;&nbsp;&nbsp;( ${esc(company)} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</span></div><div class="line"><span class="label">발주번호</span><span>&nbsp;&nbsp;&nbsp;(</span><span class="poids">${esc(p.poIds.join('/'))}</span><span>)</span></div></div><table class="pdf-table"><colgroup><col style="width:7%"><col style="width:14%"><col style="width:33%"><col style="width:14%"><col style="width:15%"><col style="width:17%"></colgroup><thead><tr><th>NO</th><th>SKU No</th><th>SKU NAME</th><th>BOX 수량</th><th>수량</th><th>유통(소비)기한/<br>제조일자</th></tr></thead><tbody>${rows.map((r,i)=>r?`<tr><td>${i+1}</td><td class="sku">${esc(r.sku)}</td><td class="name">${esc(r.name)}</td><td>${esc(r.boxLabel)}</td><td>${nf.format(r.qty)}</td><td>${esc(r.lifeText||'')}</td></tr>`:`<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}</tbody></table></div></section>`}
-  function renderModel(model){$('resultBlock').classList.remove('hidden');$('previewCard').classList.remove('hidden');$('kPallet').textContent=model.pallets.length;$('kBoxes').textContent=nf.format(model.totalBoxes);$('kSku').textContent=nf.format(model.skuCount);$('kPo').textContent=model.allPo.length;$('kWarn').textContent=model.issues.length;const body=$('issueBody');body.innerHTML=model.issues.map(x=>`<tr><td>${esc(x.type)}</td><td>${esc(x.sku)}</td><td>${esc(x.text)}</td></tr>`).join('');$('issues').classList.toggle('hidden',!model.issues.length);$('previewNote').textContent=`${model.pallets.length}페이지 · A4 가로 · ${model.date.month}월 ${model.date.day}일 · ${$('centerInput').value}`;$('previewWrap').innerHTML=model.pallets.map((p,i)=>pageHTML(p,i+1,model.pallets.length,model)).join('');setStatus(`✅ ${esc($('centerInput').value)} · 팔레트 ${model.pallets.length}개 · 총 ${nf.format(model.totalBoxes)}박스 · 발주번호 ${model.allPo.length}개 매칭 완료${model.issues.length?`<br>⚠ 확인 필요 ${model.issues.length}건이 있습니다.`:''}`,model.issues.length?'warn':'ok')}
+  function buildPrintPages(model){
+    const pages=[];
+    const totalPallets=model.pallets.length;
+    model.pallets.forEach((p,palletIndex)=>{
+      const chunks=[];
+      for(let i=0;i<p.rows.length;i+=10)chunks.push(p.rows.slice(i,i+10));
+      if(!chunks.length)chunks.push([]);
+      chunks.forEach((rows,chunkIndex)=>pages.push({
+        pallet:p,
+        palletSeq:palletIndex+1,
+        palletTotal:totalPallets,
+        chunkIndex,
+        chunkCount:chunks.length,
+        startNo:chunkIndex*10+1,
+        rows
+      }));
+    });
+    return pages;
+  }
+  function pageHTML(pg,model){
+    const p=pg.pallet;
+    const company=norm($('companyInput').value)||'코리아원';
+    const center=norm($('centerInput').value)||prettyCenter(state.selectedSheet);
+    const rows=[...pg.rows];while(rows.length<10)rows.push(null);
+    return `<section class="pdf-page" data-pallet="${p.pallet}" data-part="${pg.chunkIndex+1}"><div class="pdf-title">쿠팡 파렛트 적재리스트 (일반)</div><div class="pdf-box"><div class="pdf-meta"><div class="line"><span>${pg.palletTotal} - ${pg.palletSeq} / 총 박스수량 (${p.boxes} BOX)</span></div><div class="line"><span class="label">입고예정일자 (</span><span>${esc(model.date.month)} 월&nbsp;&nbsp; ${esc(model.date.day)}일</span><span>) / 납품센터명 (${esc(center)})</span></div><div class="line"><span class="label">업체명</span><span>&nbsp;&nbsp;&nbsp;&nbsp;( ${esc(company)} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</span></div><div class="line"><span class="label">발주번호</span><span>&nbsp;&nbsp;&nbsp;(</span><span class="poids">${esc(p.poIds.join('/'))}</span><span>)</span></div></div><table class="pdf-table"><colgroup><col style="width:7%"><col style="width:14%"><col style="width:33%"><col style="width:14%"><col style="width:15%"><col style="width:17%"></colgroup><thead><tr><th>NO</th><th>SKU No</th><th>SKU NAME</th><th>BOX 수량</th><th>수량</th><th>유통(소비)기한/<br>제조일자</th></tr></thead><tbody>${rows.map((r,i)=>r?`<tr><td>${pg.startNo+i}</td><td class="sku">${esc(r.sku)}</td><td class="name">${esc(r.name)}</td><td>${esc(r.boxLabel)}</td><td>${nf.format(r.qty)}</td><td>${esc(r.lifeText||'')}</td></tr>`:`<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}</tbody></table></div></section>`
+  }
+  function renderModel(model){
+    const printPages=buildPrintPages(model);
+    $('resultBlock').classList.remove('hidden');$('previewCard').classList.remove('hidden');
+    $('kPallet').textContent=printPages.length;$('kBoxes').textContent=nf.format(model.totalBoxes);$('kSku').textContent=nf.format(model.skuCount);$('kPo').textContent=model.allPo.length;$('kWarn').textContent=model.issues.length;
+    const body=$('issueBody');body.innerHTML=model.issues.map(x=>`<tr><td>${esc(x.type)}</td><td>${esc(x.sku)}</td><td>${esc(x.text)}</td></tr>`).join('');$('issues').classList.toggle('hidden',!model.issues.length);
+    $('previewNote').textContent=`${printPages.length}페이지 · A4 가로 · 팔레트 ${model.pallets.length}개 · ${model.date.month}월 ${model.date.day}일 · ${$('centerInput').value}`;
+    $('previewWrap').innerHTML=printPages.map(pg=>pageHTML(pg,model)).join('');
+    setStatus(`✅ ${esc($('centerInput').value)} · 팔레트 ${model.pallets.length}개 · 출력 ${printPages.length}페이지 · 총 ${nf.format(model.totalBoxes)}박스 · 발주번호 ${model.allPo.length}개 매칭 완료${model.issues.length?`<br>⚠ 확인 필요 ${model.issues.length}건이 있습니다.`:''}`,model.issues.length?'warn':'ok')
+  }
   async function analyse(){if(!state.shipWb||!state.selectedSheet||!state.poWb)return;showLoading('팔레트/PO를 매칭하는 중...');try{const rows=sheetRows(state.shipWb,state.selectedSheet);const groups=parsePacking(rows);const poRows=parsePO(state.poWb,state.selectedSheet);state.model=buildModel(groups,poRows);renderModel(state.model)}catch(e){console.error(e);setStatus('❌ '+esc(e.message||e),'bad');$('previewCard').classList.add('hidden')}finally{hideLoading()}}
   async function loadShip(file){showLoading('선적 엑셀에서 밀크런 센터를 찾는 중...');try{state.shipFile=file;state.shipWb=await readWorkbook(file);state.milkSheets=state.shipWb.SheetNames.filter(n=>/밀크런/.test(n)&&n!=='발주서');if(!state.milkSheets.length)throw new Error('밀크런 시트를 찾지 못했습니다.');$('shipName').textContent=file.name;$('centerArea').classList.remove('hidden');$('centerList').innerHTML=state.milkSheets.map(n=>`<button type="button" class="center-btn" data-sheet="${esc(n)}">${esc(n)}</button>`).join('');setStatus(`밀크런 ${state.milkSheets.length}개를 찾았습니다. 만들 센터를 선택해 주세요.`,'ok')}catch(e){setStatus('❌ '+esc(e.message||e),'bad')}finally{hideLoading()}}
   function selectCenter(name){state.selectedSheet=name;document.querySelectorAll('.center-btn').forEach(b=>b.classList.toggle('active',b.dataset.sheet===name));$('poPick').disabled=false;$('poName').textContent='PO 파일을 선택해 주세요';$('companyInput').value=inferCompany(name,state.shipFile?.name||'');$('centerInput').value=prettyCenter(name);setStatus(`선택: <b>${esc(name)}</b><br>이제 해당 센터의 쿠팡 PO 파일을 올려주세요.`,'ok');if(state.poWb)analyse()}
