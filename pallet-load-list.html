@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>쿠팡 팔레트 적재리스트 PDF / PowerPoint 생성기 | TradeCode Navi</title>
+<!-- v7: 팔레트 내 동일 SKU 통합(수작업 적재리스트 방식) -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -130,14 +131,47 @@ body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:25
     return groups;
   }
   function buildDisplayRows(groups){
-    const byP=new Map();for(const g of groups){if(!byP.has(g.pallet))byP.set(g.pallet,[]);byP.get(g.pallet).push(g)}
+    // v7: 수작업 적재리스트 기준으로 같은 팔레트 안의 동일 SKU는 반드시 한 줄로 합칩니다.
+    // 일반박스 + 혼합박스에 같은 SKU가 나뉘어 있어도 수량을 합산하고 BOX 표기만 결합합니다.
+    // 예) 60400184: 2박스 32개 + 1박스 8개 -> BOX 3 / 수량 40
+    //     61319283: 일반 1박스 8개 + 혼합 1-1 2개 -> BOX 1,1-1 / 수량 10
+    const byP=new Map();
+    for(const g of groups){if(!byP.has(g.pallet))byP.set(g.pallet,[]);byP.get(g.pallet).push(g)}
     const result=[];
     for(const [pallet,gs] of [...byP.entries()].sort((a,b)=>a[0]-b[0])){
-      const out=[];const simpleMap=new Map();let orderSeq=0;let boxes=0;
-      for(const g of gs){boxes+=g.boxCount;const mixed=g.boxCount===1&&g.items.length>1;if(mixed){const m=new Map();g.items.forEach((it,i)=>{if(!m.has(it.sku))m.set(it.sku,{sku:it.sku,name:it.name,qty:0,labels:[],order:orderSeq++});const x=m.get(it.sku);x.qty+=it.qty;x.labels.push('1-'+(i+1))});for(const x of m.values())out.push({kind:'mixed',sku:x.sku,name:x.name,qty:x.qty,boxLabel:x.labels.join(','),unitsPerBox:g.unitsPerBox,order:x.order})}
-        else{const it=g.items[0];const key=it.sku+'|'+g.unitsPerBox;if(!simpleMap.has(key)){const x={kind:'simple',sku:it.sku,name:it.name,qty:0,boxes:0,unitsPerBox:g.unitsPerBox,order:orderSeq++};simpleMap.set(key,x);out.push(x)}const x=simpleMap.get(key);x.qty+=it.qty;x.boxes+=g.boxCount;x.boxLabel=String(x.boxes)}
+      const skuMap=new Map();let orderSeq=0;let boxes=0;
+      const getSkuRow=(it)=>{
+        let x=skuMap.get(it.sku);
+        if(!x){
+          x={sku:it.sku,name:it.name||'',qty:0,simpleBoxes:0,mixedLabels:[],order:orderSeq++};
+          skuMap.set(it.sku,x);
+        }else if(!x.name&&it.name){x.name=it.name}
+        return x;
+      };
+      for(const g of gs){
+        boxes+=g.boxCount;
+        const mixed=g.boxCount===1&&g.items.length>1;
+        if(mixed){
+          // 한 혼합박스 안에서 같은 SKU가 여러 위치에 있으면 위치번호도 모두 보존합니다.
+          g.items.forEach((it,i)=>{
+            const x=getSkuRow(it);
+            x.qty+=it.qty;
+            x.mixedLabels.push('1-'+(i+1));
+          });
+        }else{
+          const it=g.items[0];if(!it)continue;
+          const x=getSkuRow(it);
+          x.qty+=it.qty;
+          x.simpleBoxes+=g.boxCount;
+        }
       }
-      out.sort((a,b)=>a.order-b.order);result.push({pallet,boxes,rows:out})
+      const out=[...skuMap.values()].sort((a,b)=>a.order-b.order).map(x=>{
+        const parts=[];
+        if(x.simpleBoxes>0)parts.push(String(x.simpleBoxes));
+        if(x.mixedLabels.length)parts.push(...x.mixedLabels);
+        return {kind:'merged',sku:x.sku,name:x.name,qty:x.qty,boxLabel:parts.join(','),order:x.order};
+      });
+      result.push({pallet,boxes,rows:out})
     }
     return result
   }
