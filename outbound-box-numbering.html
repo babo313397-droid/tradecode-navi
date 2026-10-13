@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>출고박스 자동넘버링 | TradeCode Navi</title>
-<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
 :root{--navy:#102744;--navy2:#0a1e35;--green:#167445;--gold:#d2aa3f;--line:#cbd6e0;--bg:#f4f7f6;--muted:#687b8e;--bad:#b42318;--warn:#9a6700}
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:#152434;background:var(--bg)}
@@ -65,7 +65,7 @@
       </div>
       <div class="table-wrap"><table class="result-table"><thead><tr><th>시트</th><th>순번 계산 구간</th><th>새 번호 박스</th><th>기존 번호 유지</th><th>상태</th></tr></thead><tbody id="resultBody"></tbody></table></div>
       <div class="actions"><button class="btn primary" id="downloadBtn" disabled>결과 Excel 다운로드</button><button class="btn" id="resetBtn">다른 파일 작업</button></div>
-      <div class="note">※ 원본 파일 자체는 변경하지 않습니다. 다운로드할 때 새 파일을 생성합니다. 기존 출고박스번호가 이미 있는 경우 그 값은 유지합니다.</div>
+      <div class="note">※ 원본 파일 자체는 변경하지 않습니다. Excel 전체를 다시 저장하지 않고 필요한 출고박스번호 셀/병합만 수정하므로 원본의 수식·서식·도형·관계정보를 그대로 보존합니다.</div>
     </div>
   </section>
 </main>
@@ -75,121 +75,111 @@
 (function(){
 'use strict';
 const $=id=>document.getElementById(id);
-const state={file:null,workbook:null,buffer:null,summary:null,downloadName:''};
+const state={file:null,buffer:null,summary:null,downloadName:''};
+const NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+const RNS='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PKG_RNS='http://schemas.openxmlformats.org/package/2006/relationships';
 function showLoading(t){$('loadingText').textContent=t||'처리 중...';$('loading').classList.add('show')}
 function hideLoading(){$('loading').classList.remove('show')}
 function setStatus(t,kind=''){$('status').className='status'+(kind?' '+kind:'');$('status').innerHTML=t}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function deepClone(v){try{return JSON.parse(JSON.stringify(v))}catch(_){return v}}
-function cellText(v){
-  if(v===null||v===undefined)return '';
-  if(typeof v==='object'){
-    if(Array.isArray(v.richText))return v.richText.map(x=>x.text||'').join('');
-    if(v.text!==undefined)return String(v.text??'');
-    if(v.result!==undefined&&v.result!==null)return String(v.result);
-    if(v.formula!==undefined&&v.result!==undefined)return String(v.result??'');
-  }
-  return String(v);
-}
-function compact(v){return cellText(v).replace(/\s+/g,'').trim()}
+function compact(v){return String(v??'').replace(/\s+/g,'').trim()}
 function parseBoxLabel(v){
-  const s=cellText(v).trim().replace(/[～–—]/g,'~');
+  const s=String(v??'').trim().replace(/[～–—]/g,'~');
   if(!s)return null;
   if(/^\d+(?:\.0+)?$/.test(s)){const n=Math.trunc(Number(s));return Number.isFinite(n)?{count:1,start:n,end:n}:null}
-  const m=s.match(/^(\d+)\s*[~\-]\s*(\d+)$/);
-  if(!m)return null;
+  const m=s.match(/^(\d+)\s*[~\-]\s*(\d+)$/);if(!m)return null;
   const a=Number(m[1]),b=Number(m[2]);if(!Number.isFinite(a)||!Number.isFinite(b)||b<a)return null;
   return {count:b-a+1,start:a,end:b};
 }
-function numberLabel(start,count){return count<=1?start:`${start}~${start+count-1}`}
-function colLetters(n){let s='';while(n>0){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26)}return s}
-function parseRangeAddress(a){const m=String(a||'').match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i);if(!m)return null;const col=n=>{let x=0;for(const c of n.toUpperCase())x=x*26+c.charCodeAt(0)-64;return x};return {c1:col(m[1]),r1:Number(m[2]),c2:col(m[3]),r2:Number(m[4])}}
-function findHeaders(ws){
-  for(let r=1;r<=Math.min(5,ws.rowCount||5);r++){
-    let boxCol=0,outCol=0;
-    for(let c=1;c<=Math.min(25,ws.columnCount||25);c++){
-      const t=compact(ws.getCell(r,c).value);
-      if(t==='박스번호')boxCol=c;
-      if(t==='출고박스번호')outCol=c;
-    }
-    if(boxCol)return {row:r,boxCol,outCol};
-  }
+function numberLabel(start,count){return count<=1?String(start):`${start}~${start+count-1}`}
+function colToNum(col){let n=0;for(const c of String(col||'').toUpperCase())n=n*26+c.charCodeAt(0)-64;return n}
+function numToCol(n){let s='';while(n>0){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26)}return s}
+function splitRef(ref){const m=String(ref||'').match(/^([A-Z]+)(\d+)$/i);return m?{col:m[1].toUpperCase(),colNum:colToNum(m[1]),row:Number(m[2])}:null}
+function parseRange(ref){const m=String(ref||'').match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i);return m?{c1:colToNum(m[1]),r1:Number(m[2]),c2:colToNum(m[3]),r2:Number(m[4])}:null}
+function parseXml(text,label){const doc=new DOMParser().parseFromString(text,'application/xml');const err=doc.querySelector('parsererror');if(err)throw new Error(`${label||'XML'}을 읽지 못했습니다.`);return doc}
+function xmlText(doc){return new XMLSerializer().serializeToString(doc)}
+function directChildren(el,name){return [...el.childNodes].filter(n=>n.nodeType===1&&n.localName===name)}
+function firstChild(el,name){return directChildren(el,name)[0]||null}
+function sharedStringsFromDoc(doc){if(!doc)return[];return [...doc.getElementsByTagNameNS(NS,'si')].map(si=>[...si.getElementsByTagNameNS(NS,'t')].map(t=>t.textContent||'').join(''))}
+function cellDisplayText(cell,shared){
+  if(!cell)return'';const t=cell.getAttribute('t')||'';
+  if(t==='inlineStr'){const is=firstChild(cell,'is');return is?[...is.getElementsByTagNameNS(NS,'t')].map(x=>x.textContent||'').join(''):''}
+  const v=firstChild(cell,'v');if(!v)return'';const raw=v.textContent||'';
+  if(t==='s'){const i=Number(raw);return Number.isInteger(i)&&shared[i]!==undefined?shared[i]:''}
+  return raw;
+}
+function sheetData(doc){return doc.getElementsByTagNameNS(NS,'sheetData')[0]||null}
+function getRow(doc,rowNo){return [...doc.getElementsByTagNameNS(NS,'row')].find(r=>Number(r.getAttribute('r'))===rowNo)||null}
+function ensureRow(doc,rowNo){
+  const sd=sheetData(doc);if(!sd)throw new Error('시트 데이터 구조를 찾지 못했습니다.');let row=getRow(doc,rowNo);if(row)return row;
+  row=doc.createElementNS(NS,'row');row.setAttribute('r',String(rowNo));
+  const rows=directChildren(sd,'row');const next=rows.find(x=>Number(x.getAttribute('r'))>rowNo);next?sd.insertBefore(row,next):sd.appendChild(row);return row;
+}
+function getCell(doc,ref){return [...doc.getElementsByTagNameNS(NS,'c')].find(c=>c.getAttribute('r')===ref)||null}
+function ensureCell(doc,ref,styleSource){
+  let c=getCell(doc,ref);if(c)return c;const p=splitRef(ref);if(!p)throw new Error('잘못된 셀 주소: '+ref);const row=ensureRow(doc,p.row);
+  c=doc.createElementNS(NS,'c');c.setAttribute('r',ref);if(styleSource&&styleSource.getAttribute('s')!==null)c.setAttribute('s',styleSource.getAttribute('s'));
+  const cells=directChildren(row,'c');const next=cells.find(x=>{const q=splitRef(x.getAttribute('r'));return q&&q.colNum>p.colNum});next?row.insertBefore(c,next):row.appendChild(c);return c;
+}
+function clearCellPayload(c){for(const n of [...c.childNodes])if(n.nodeType===1)c.removeChild(n);c.removeAttribute('t')}
+function setCellValue(doc,c,value){
+  clearCellPayload(c);const s=String(value??'');
+  if(/^\d+$/.test(s)){c.setAttribute('t','n');const v=doc.createElementNS(NS,'v');v.textContent=s;c.appendChild(v);return}
+  c.setAttribute('t','inlineStr');const is=doc.createElementNS(NS,'is'),t=doc.createElementNS(NS,'t');t.textContent=s;is.appendChild(t);c.appendChild(is);
+}
+function copyStyleOnly(src,dst){if(!src||!dst)return;const s=src.getAttribute('s');if(s!==null&&s!==undefined)dst.setAttribute('s',s)}
+function dimensionMaxRow(doc){const dim=doc.getElementsByTagNameNS(NS,'dimension')[0];if(dim){const ref=dim.getAttribute('ref')||'';const last=ref.includes(':')?ref.split(':')[1]:ref;const p=splitRef(last);if(p)return p.row}let max=0;for(const r of doc.getElementsByTagNameNS(NS,'row'))max=Math.max(max,Number(r.getAttribute('r'))||0);return max}
+function mergeRanges(doc){const mc=doc.getElementsByTagNameNS(NS,'mergeCells')[0];return mc?[...mc.getElementsByTagNameNS(NS,'mergeCell')].map(x=>x.getAttribute('ref')).filter(Boolean):[]}
+function ensureMerge(doc,ref){
+  let mc=doc.getElementsByTagNameNS(NS,'mergeCells')[0];if(!mc){mc=doc.createElementNS(NS,'mergeCells');const ws=doc.documentElement;const anchor=ws.getElementsByTagNameNS(NS,'phoneticPr')[0]||ws.getElementsByTagNameNS(NS,'conditionalFormatting')[0]||ws.getElementsByTagNameNS(NS,'dataValidations')[0]||ws.getElementsByTagNameNS(NS,'hyperlinks')[0]||ws.getElementsByTagNameNS(NS,'printOptions')[0]||ws.getElementsByTagNameNS(NS,'pageMargins')[0]||null;anchor?ws.insertBefore(mc,anchor):ws.appendChild(mc)}
+  const exists=[...mc.getElementsByTagNameNS(NS,'mergeCell')].some(x=>x.getAttribute('ref')===ref);if(!exists){const m=doc.createElementNS(NS,'mergeCell');m.setAttribute('ref',ref);mc.appendChild(m)}mc.setAttribute('count',String(mc.getElementsByTagNameNS(NS,'mergeCell').length));
+}
+function findHeaders(doc,shared){
+  for(let r=1;r<=5;r++){let boxCol=0,outCol=0;const row=getRow(doc,r);if(!row)continue;for(const c of directChildren(row,'c')){const p=splitRef(c.getAttribute('r'));if(!p)continue;const t=compact(cellDisplayText(c,shared));if(t==='박스번호')boxCol=p.colNum;if(t==='출고박스번호')outCol=p.colNum}if(boxCol)return{row:r,boxCol,outCol}}
   return null;
 }
-function ensureOutboundColumn(ws,h){
-  if(h.outCol)return h.outCol;
-  const target=h.boxCol+1,cell=ws.getCell(h.row,target);
-  if(compact(cell.value))throw new Error(`${ws.name}: 박스번호 오른쪽 열에 다른 데이터가 있어 출고박스번호 열을 자동 생성할 수 없습니다.`);
-  const src=ws.getCell(h.row,h.boxCol);
-  cell.value='출고\n박스번호';cell.style=deepClone(src.style);cell.alignment=deepClone(src.alignment||{horizontal:'center',vertical:'middle',wrapText:true});
-  try{ws.getColumn(target).width=ws.getColumn(h.boxCol).width}catch(_){}
-  h.outCol=target;return target;
+function safeTarget(target){let t=String(target||'').replace(/\\/g,'/');if(t.startsWith('/'))return t.slice(1);if(t.startsWith('xl/'))return t;return 'xl/'+t.replace(/^\.\//,'')}
+function resolveSheetPath(target){let t=String(target||'').replace(/\\/g,'/');if(t.startsWith('/'))return t.slice(1);if(t.startsWith('xl/'))return t;return 'xl/'+t.replace(/^\.\//,'')}
+function sheetDescriptors(wbDoc,relsDoc){
+  const relMap=new Map();for(const rel of relsDoc.getElementsByTagNameNS(PKG_RNS,'Relationship'))relMap.set(rel.getAttribute('Id'),rel.getAttribute('Target'));
+  const out=[];for(const sh of wbDoc.getElementsByTagNameNS(NS,'sheet')){const rid=sh.getAttributeNS(RNS,'id')||sh.getAttribute('r:id');const target=relMap.get(rid);if(target)out.push({name:sh.getAttribute('name')||'',path:resolveSheetPath(target)})}return out;
 }
-function mergeMapForBoxColumn(ws,boxCol){
-  const map=new Map();
-  const merges=(ws.model&&Array.isArray(ws.model.merges))?ws.model.merges:[];
-  for(const a of merges){const p=parseRangeAddress(a);if(!p||p.c1!==boxCol||p.c2!==boxCol)continue;map.set(p.r1,p)}
-  return map;
+function ensureOutboundHeader(doc,shared,h){
+  if(h.outCol)return h.outCol;const outCol=h.boxCol+1,boxRef=numToCol(h.boxCol)+h.row,outRef=numToCol(outCol)+h.row;const existing=getCell(doc,outRef);if(existing&&compact(cellDisplayText(existing,shared)))throw new Error('박스번호 오른쪽 열에 다른 데이터가 있어 출고박스번호를 만들 수 없습니다.');const src=getCell(doc,boxRef),dst=ensureCell(doc,outRef,src);copyStyleOnly(src,dst);setCellValue(doc,dst,'출고\n박스번호');h.outCol=outCol;return outCol;
 }
-function copyBoxCellLook(ws,row,boxCol,outCol,merge){
-  const r1=merge?merge.r1:row,r2=merge?merge.r2:row;
-  for(let r=r1;r<=r2;r++){
-    const src=ws.getCell(r,boxCol),dst=ws.getCell(r,outCol);
-    if(!dst.value){dst.style=deepClone(src.style);dst.numFmt=src.numFmt;dst.alignment=deepClone(src.alignment);dst.border=deepClone(src.border);dst.fill=deepClone(src.fill);dst.font=deepClone(src.font);}
-  }
-  if(merge&&merge.r2>merge.r1){
-    const master=ws.getCell(merge.r1,outCol);
-    if(!master.isMerged){try{ws.mergeCells(merge.r1,outCol,merge.r2,outCol)}catch(_){}}
-  }
+function cloneBoxLookForSpan(doc,boxCol,outCol,r1,r2){
+  for(let r=r1;r<=r2;r++){const src=getCell(doc,numToCol(boxCol)+r)||getCell(doc,numToCol(boxCol)+r1);const dst=ensureCell(doc,numToCol(outCol)+r,src);copyStyleOnly(src,dst)}
+  if(r2>r1)ensureMerge(doc,`${numToCol(outCol)}${r1}:${numToCol(outCol)}${r2}`);
 }
 async function processFile(file){
-  if(!file)return;
-  if(!/\.(xlsx|xlsm)$/i.test(file.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}
+  if(!file)return;if(!/\.(xlsx|xlsm)$/i.test(file.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}
+  if(typeof JSZip==='undefined'){alert('Excel 처리 모듈을 불러오지 못했습니다. 인터넷 연결 후 다시 시도해 주세요.');return}
   state.file=file;$('fileName').textContent=file.name;$('dropZone').classList.add('ready');$('resultCard').style.display='none';$('downloadBtn').disabled=true;
-  showLoading('엑셀을 읽고 출고박스번호를 계산하는 중...');setStatus('엑셀을 분석하고 있습니다.','work');
+  showLoading('원본 Excel 구조를 보존한 채 출고박스번호를 계산하는 중...');setStatus('엑셀을 분석하고 있습니다.','work');
   try{
-    const buf=await file.arrayBuffer();const wb=new ExcelJS.Workbook();await wb.xlsx.load(buf);
-    let counter=1,totalNew=0,totalKeep=0,processedSheets=0;const summary=[];
-    for(const ws of wb.worksheets){
-      if(compact(ws.name)==='발주서')continue;
-      const h=findHeaders(ws);if(!h)continue;
-      const outCol=ensureOutboundColumn(ws,h);const mergeMap=mergeMapForBoxColumn(ws,h.boxCol);const dataStart=h.row+3;
-      const sheetStart=counter;let newBoxes=0,keepBoxes=0,touchedRows=0;
-      for(let r=dataStart;r<=ws.rowCount;r++){
-        const boxCell=ws.getCell(r,h.boxCol),outCell=ws.getCell(r,outCol);
-        if(boxCell.isMerged&&boxCell.master&&boxCell.master.address!==boxCell.address)continue;
-        if(outCell.isMerged&&outCell.master&&outCell.master.address!==outCell.address)continue;
-        const boxParsed=parseBoxLabel(boxCell.isMerged&&boxCell.master?boxCell.master.value:boxCell.value);
-        const outParsed=parseBoxLabel(outCell.isMerged&&outCell.master?outCell.master.value:outCell.value);
-        if(!boxParsed&&!outParsed)continue;
-        const count=(boxParsed&&boxParsed.count)||(outParsed&&outParsed.count)||0;if(!count)continue;
-        const merge=mergeMap.get(r)||null;copyBoxCellLook(ws,r,h.boxCol,outCol,merge);
-        const currentOut=cellText(outCell.isMerged&&outCell.master?outCell.master.value:outCell.value).trim();
-        if(currentOut){keepBoxes+=count;totalKeep+=count;}
-        else if(boxParsed){
-          const v=numberLabel(counter,count);const master=ws.getCell(r,outCol);master.value=v;master.alignment={...(master.alignment||{}),horizontal:'center',vertical:'middle',wrapText:true};
-          newBoxes+=count;totalNew+=count;touchedRows++;
-        }
-        counter+=count;
+    const buf=await file.arrayBuffer();const zip=await JSZip.loadAsync(buf);const wbFile=zip.file('xl/workbook.xml'),relsFile=zip.file('xl/_rels/workbook.xml.rels');if(!wbFile||!relsFile)throw new Error('Excel 통합문서 구조를 찾지 못했습니다.');
+    const wbDoc=parseXml(await wbFile.async('text'),'workbook.xml'),relsDoc=parseXml(await relsFile.async('text'),'workbook relationships');
+    const ssFile=zip.file('xl/sharedStrings.xml');const ssDoc=ssFile?parseXml(await ssFile.async('text'),'sharedStrings.xml'):null,shared=sharedStringsFromDoc(ssDoc);
+    let counter=1,totalNew=0,totalKeep=0;const summary=[];
+    for(const info of sheetDescriptors(wbDoc,relsDoc)){
+      if(compact(info.name)==='발주서')continue;const f=zip.file(info.path);if(!f)continue;const doc=parseXml(await f.async('text'),info.name);const h=findHeaders(doc,shared);if(!h)continue;const outCol=ensureOutboundHeader(doc,shared,h);const boxLetter=numToCol(h.boxCol),outLetter=numToCol(outCol);
+      const merges=mergeRanges(doc);const boxMergeByStart=new Map(),boxMergeSubRows=new Set();for(const ref of merges){const p=parseRange(ref);if(!p||p.c1!==h.boxCol||p.c2!==h.boxCol)continue;boxMergeByStart.set(p.r1,p);for(let rr=p.r1+1;rr<=p.r2;rr++)boxMergeSubRows.add(rr)}
+      const dataStart=h.row+3,maxRow=dimensionMaxRow(doc),sheetStart=counter;let newBoxes=0,keepBoxes=0,touchedRows=0;
+      for(let r=dataStart;r<=maxRow;r++){
+        if(boxMergeSubRows.has(r))continue;const pMerge=boxMergeByStart.get(r)||null;const boxCell=getCell(doc,boxLetter+r),outCell=getCell(doc,outLetter+r);const boxParsed=parseBoxLabel(cellDisplayText(boxCell,shared)),outParsed=parseBoxLabel(cellDisplayText(outCell,shared));if(!boxParsed&&!outParsed)continue;const count=(boxParsed&&boxParsed.count)||(outParsed&&outParsed.count)||0;if(!count)continue;
+        const r2=pMerge?pMerge.r2:r;cloneBoxLookForSpan(doc,h.boxCol,outCol,r,r2);const current=cellDisplayText(getCell(doc,outLetter+r),shared).trim();if(current){keepBoxes+=count;totalKeep+=count}else if(boxParsed){setCellValue(doc,getCell(doc,outLetter+r),numberLabel(counter,count));newBoxes+=count;totalNew+=count;touchedRows++}counter+=count;
       }
-      const consumed=(newBoxes+keepBoxes);if(consumed>0){processedSheets++;summary.push({name:ws.name,start:sheetStart,end:counter-1,newBoxes,keepBoxes,touchedRows})}
+      if(newBoxes+keepBoxes>0){zip.file(info.path,xmlText(doc));summary.push({name:info.name,start:sheetStart,end:counter-1,newBoxes,keepBoxes,touchedRows})}
     }
     if(!summary.length)throw new Error('박스번호/출고박스번호 열이 있는 작업 시트를 찾지 못했습니다.');
-    try{wb.calcProperties.fullCalcOnLoad=true;wb.calcProperties.forceFullCalc=true;wb.calcProperties.calcMode='auto'}catch(_){}
-    showLoading('다운로드용 Excel을 생성하는 중...');const out=await wb.xlsx.writeBuffer();state.workbook=wb;state.buffer=out;state.summary=summary;
-    const base=file.name.replace(/\.(xlsx|xlsm)$/i,'');state.downloadName=base+'_출고박스자동넘버링.xlsx';
-    renderResult(summary,totalNew,totalKeep,counter-1);setStatus(`✅ 자동넘버링 완료 · 새로 ${totalNew.toLocaleString()}박스 번호를 입력했습니다. 기존 번호 ${totalKeep.toLocaleString()}박스는 그대로 유지했습니다.`,'ok');
-  }catch(e){console.error(e);state.buffer=null;state.summary=null;setStatus('❌ '+esc(e.message||e),'bad');alert('출고박스 자동넘버링 실패\n\n'+(e.message||e));}
-  finally{hideLoading()}
+    showLoading('원본 구조를 유지한 Excel을 생성하는 중...');const out=await zip.generateAsync({type:'arraybuffer',compression:'DEFLATE',compressionOptions:{level:6}});state.buffer=out;state.summary=summary;const base=file.name.replace(/\.(xlsx|xlsm)$/i,'');state.downloadName=base+'_출고박스자동넘버링.xlsx';renderResult(summary,totalNew,totalKeep,counter-1);setStatus(`✅ 자동넘버링 완료 · 새로 ${totalNew.toLocaleString()}박스 번호를 입력했습니다. 기존 번호 ${totalKeep.toLocaleString()}박스는 그대로 유지했습니다.<br><b>원본 Excel 내부 구조는 다시 저장하지 않고 필요한 출고박스번호 셀만 수정했습니다.</b>`,'ok');
+  }catch(e){console.error(e);state.buffer=null;state.summary=null;setStatus('❌ '+esc(e.message||e),'bad');alert('출고박스 자동넘버링 실패\n\n'+(e.message||e));}finally{hideLoading()}
 }
-function renderResult(rows,totalNew,totalKeep,last){
-  $('resultCard').style.display='block';$('statSheets').textContent=rows.length.toLocaleString();$('statNew').textContent=totalNew.toLocaleString();$('statKeep').textContent=totalKeep.toLocaleString();$('statLast').textContent=last.toLocaleString();
-  $('resultBody').innerHTML=rows.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.start===x.end?x.start:`${x.start} ~ ${x.end}`}</td><td class="new">${x.newBoxes.toLocaleString()}</td><td class="keep">${x.keepBoxes.toLocaleString()}</td><td>${x.keepBoxes?'기존 번호 유지 포함':'정상'}</td></tr>`).join('');$('downloadBtn').disabled=!state.buffer;$('resultCard').scrollIntoView({behavior:'smooth',block:'start'});
-}
+function renderResult(rows,totalNew,totalKeep,last){$('resultCard').style.display='block';$('statSheets').textContent=rows.length.toLocaleString();$('statNew').textContent=totalNew.toLocaleString();$('statKeep').textContent=totalKeep.toLocaleString();$('statLast').textContent=last.toLocaleString();$('resultBody').innerHTML=rows.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.start===x.end?x.start:`${x.start} ~ ${x.end}`}</td><td class="new">${x.newBoxes.toLocaleString()}</td><td class="keep">${x.keepBoxes.toLocaleString()}</td><td>${x.keepBoxes?'기존 번호 유지 포함':'정상'}</td></tr>`).join('');$('downloadBtn').disabled=!state.buffer;$('resultCard').scrollIntoView({behavior:'smooth',block:'start'})}
 function choose(file){processFile(file)}
 const dz=$('dropZone'),inp=$('fileInput');inp.addEventListener('change',()=>choose(inp.files?.[0]));['dragenter','dragover'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.add('drag')}));['dragleave','drop'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',e=>choose(e.dataTransfer.files?.[0]));
-$('downloadBtn').onclick=()=>{if(!state.buffer)return;const blob=new Blob([state.buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=state.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};
-$('resetBtn').onclick=()=>location.reload();
+$('downloadBtn').onclick=()=>{if(!state.buffer)return;const blob=new Blob([state.buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=state.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};$('resetBtn').onclick=()=>location.reload();
 })();
 </script>
 <script src="/auth-client.js"></script>
