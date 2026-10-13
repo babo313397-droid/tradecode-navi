@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>출고박스 자동넘버링 | TradeCode Navi</title>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<style>
+:root{--navy:#102744;--navy2:#0a1e35;--green:#167445;--gold:#d2aa3f;--line:#cbd6e0;--bg:#f4f7f6;--muted:#687b8e;--bad:#b42318;--warn:#9a6700}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:#152434;background:var(--bg)}
+.app{display:flex;min-height:100vh}.sidebar{width:258px;background:var(--navy2);color:#fff;padding:18px 12px;position:sticky;top:0;height:100vh;overflow-y:auto;flex:none}.brand{font-size:21px;font-weight:900;padding:0 4px 12px}.brand small{display:block;font-size:12px;font-weight:500;color:#aebfd1;margin-top:4px}.sec{font-size:11px;color:#8fa4bb;margin:15px 4px 7px}.nav-btn{display:block;width:100%;text-decoration:none;border:1px solid #ffffff20;background:#ffffff0c;color:#f3f6f9;border-radius:10px;padding:12px 13px;margin:7px 0;font-size:13px;font-weight:900}.nav-btn.active{background:var(--gold);border-color:var(--gold);color:#102744}.login-divider{color:#f5d174!important;margin-top:18px}
+.main{flex:1;min-width:0;padding:24px}.top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:16px}.top h1{font-size:27px;margin:0}.top p{font-size:13px;color:var(--muted);line-height:1.65;margin:6px 0 0}.badge{background:#e7f5ed;color:#17603b;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:900;white-space:nowrap}.card{background:#fff;border:1px solid #d7e0e7;border-radius:14px;box-shadow:0 2px 9px #1027440b;margin-bottom:16px;overflow:hidden}.card-title{font-weight:900;padding:14px 16px;border-bottom:1px solid #e4eaef}.card-body{padding:16px}.drop{border:2px dashed #9fb4c5;border-radius:13px;min-height:150px;padding:25px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;background:#f9fbfc;transition:.15s}.drop.drag{border-color:#167445;background:#eef8f2}.drop.ready{border-color:#167445;background:#f2faf5}.drop strong{font-size:17px}.drop small{font-size:12px;color:#718498;line-height:1.6;margin-top:7px}.file-name{margin-top:12px;font-weight:900;color:#174f36;word-break:break-all}.hidden-input{display:none}.status{margin-top:14px;border-radius:10px;padding:11px 13px;font-size:13px;font-weight:800;background:#eef3f7;color:#42586b}.status.work{background:#fff5db;color:#775400}.status.ok{background:#eaf8ef;color:#17603b}.status.bad{background:#fff0ef;color:#9b1c1c}.rules{font-size:12px;line-height:1.7;color:#556a7d;background:#f5f8fa;border-radius:10px;padding:12px 13px;margin-top:14px}.rules b{color:#263e52}.stats{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:10px;margin-bottom:14px}.stat{border:1px solid #d8e2e9;background:#f8fbfa;border-radius:11px;padding:13px}.stat span{display:block;font-size:11px;color:#718294}.stat b{display:block;margin-top:4px;font-size:25px;color:#0f6940}.table-wrap{overflow:auto;border:1px solid #dbe3e9;border-radius:10px;max-height:430px}.result-table{border-collapse:collapse;width:100%;min-width:720px;font-size:12px}.result-table th,.result-table td{border-bottom:1px solid #e2e8ed;padding:9px 10px;text-align:center}.result-table th{position:sticky;top:0;background:#edf3f6;font-weight:900;z-index:1}.result-table td:nth-child(1){text-align:left;font-weight:800}.keep{color:#986800}.new{color:#0d7242}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}.btn{border:1px solid #b9c8d3;background:white;color:#243b50;border-radius:9px;padding:10px 15px;font-weight:900;cursor:pointer}.btn.primary{background:#147346;border-color:#147346;color:#fff}.btn:disabled{opacity:.45;cursor:not-allowed}.note{font-size:11px;color:#738597;line-height:1.6;margin-top:10px}
+.loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#061b2f88;z-index:9999}.loading.show{display:flex}.loading-box{background:#fff;padding:24px 30px;border-radius:14px;font-weight:900;box-shadow:0 15px 50px #0005;text-align:center}.spin{width:32px;height:32px;border:4px solid #dce6ec;border-top-color:#147346;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:900px){.sidebar{display:none}.main{padding:14px}.top{flex-direction:column}.stats{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+<nav class="sidebar">
+  <div class="brand">TradeCode Navi<small>기능 목록</small></div>
+  <div class="sec">도구</div>
+  <a class="nav-btn" href="/">📊 TradeCode Navi 관세율 계산</a>
+  <a class="nav-btn" href="/coupang-margin">🚀 로켓배송 원가&마진률 계산</a>
+  <a class="nav-btn" href="/logistics-cost">🚚 물류비 계산기</a>
+  <a class="nav-btn" href="/coupang-pallet-simulator.html">📦 쿠팡 팔레트 시뮬레이션</a>
+  <a class="nav-btn" href="/barcode-label.html">🏷️ 바코드 라벨 생성기</a>
+  <div class="sec login-divider">🔒 아래 메뉴는 로그인 후 사용</div>
+  <a class="nav-btn" href="/order-barcode.html">📦 발주 바코드 출력</a>
+  <a class="nav-btn" href="/shipment-list-builder.html">📋 선적 리스트 작성</a>
+  <a class="nav-btn" href="/detail-maker">✨ 쿠팡 상세페이지 자동 제작</a>
+  <a class="nav-btn" href="/coupang-inbound-work.html">📦 쿠팡 입고 작업</a>
+  <a class="nav-btn" href="/purchase-order.html">📝 발주서 작성</a>
+  <a class="nav-btn" href="/truck-shipment.html">🚛 트럭쉽먼트 자동입력</a>
+  <a class="nav-btn" href="/pallet-load-list.html">📄 밀크런 팔레트 적재리스트 자동입력</a>
+  <a class="nav-btn active" href="/outbound-box-numbering.html">🔢 출고박스 자동넘버링</a>
+</nav>
+<main class="main">
+  <div class="top">
+    <div><h1>🔢 출고박스 자동넘버링</h1><p>선적/팩킹 완료 Excel 한 개만 올리면 각 시트의 <b>박스번호</b> 옆 <b>출고박스번호</b>를 1번부터 시트 순서대로 자동 입력합니다.<br>기존 상품·박스번호·수량·수식·다른 작업값은 변경하지 않습니다.</p></div>
+    <div class="badge">✓ 박스번호 옆 열만 자동 입력</div>
+  </div>
+
+  <section class="card">
+    <div class="card-title">① 선적/팩킹 Excel 파일</div>
+    <div class="card-body">
+      <label class="drop" id="dropZone">
+        <input id="fileInput" class="hidden-input" type="file" accept=".xlsx,.xlsm">
+        <strong>엑셀 파일을 여기에 끌어놓거나 클릭해 주세요</strong>
+        <small>발주서 탭은 제외하고 시트 순서대로 출고박스번호를 이어서 생성합니다.<br>예: 첫 시트 1~86 → 다음 시트 87부터 계속</small>
+        <div class="file-name" id="fileName">선택된 파일 없음</div>
+      </label>
+      <div class="rules"><b>자동넘버링 기준</b> · `박스번호`가 단일 번호면 출고박스번호도 단일 번호로 입력하고, `6~10`처럼 여러 박스 범위면 같은 개수만큼 `1~5`처럼 범위로 입력합니다. 이미 출고박스번호가 들어있는 셀은 절대 덮어쓰지 않고 그대로 유지하되, 해당 박스 개수는 전체 순번 계산에는 포함합니다.</div>
+      <div id="status" class="status">파일을 선택하면 자동으로 분석합니다.</div>
+    </div>
+  </section>
+
+  <section class="card" id="resultCard" style="display:none">
+    <div class="card-title">② 자동넘버링 결과</div>
+    <div class="card-body">
+      <div class="stats">
+        <div class="stat"><span>처리 시트</span><b id="statSheets">0</b></div>
+        <div class="stat"><span>새로 번호 매긴 박스</span><b id="statNew">0</b></div>
+        <div class="stat"><span>기존 번호 유지 박스</span><b id="statKeep">0</b></div>
+        <div class="stat"><span>최종 순번</span><b id="statLast">0</b></div>
+      </div>
+      <div class="table-wrap"><table class="result-table"><thead><tr><th>시트</th><th>순번 계산 구간</th><th>새 번호 박스</th><th>기존 번호 유지</th><th>상태</th></tr></thead><tbody id="resultBody"></tbody></table></div>
+      <div class="actions"><button class="btn primary" id="downloadBtn" disabled>결과 Excel 다운로드</button><button class="btn" id="resetBtn">다른 파일 작업</button></div>
+      <div class="note">※ 원본 파일 자체는 변경하지 않습니다. 다운로드할 때 새 파일을 생성합니다. 기존 출고박스번호가 이미 있는 경우 그 값은 유지합니다.</div>
+    </div>
+  </section>
+</main>
+</div>
+<div class="loading" id="loading"><div class="loading-box"><div class="spin"></div><div id="loadingText">엑셀을 분석하는 중...</div></div></div>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const state={file:null,workbook:null,buffer:null,summary:null,downloadName:''};
+function showLoading(t){$('loadingText').textContent=t||'처리 중...';$('loading').classList.add('show')}
+function hideLoading(){$('loading').classList.remove('show')}
+function setStatus(t,kind=''){$('status').className='status'+(kind?' '+kind:'');$('status').innerHTML=t}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function deepClone(v){try{return JSON.parse(JSON.stringify(v))}catch(_){return v}}
+function cellText(v){
+  if(v===null||v===undefined)return '';
+  if(typeof v==='object'){
+    if(Array.isArray(v.richText))return v.richText.map(x=>x.text||'').join('');
+    if(v.text!==undefined)return String(v.text??'');
+    if(v.result!==undefined&&v.result!==null)return String(v.result);
+    if(v.formula!==undefined&&v.result!==undefined)return String(v.result??'');
+  }
+  return String(v);
+}
+function compact(v){return cellText(v).replace(/\s+/g,'').trim()}
+function parseBoxLabel(v){
+  const s=cellText(v).trim().replace(/[～–—]/g,'~');
+  if(!s)return null;
+  if(/^\d+(?:\.0+)?$/.test(s)){const n=Math.trunc(Number(s));return Number.isFinite(n)?{count:1,start:n,end:n}:null}
+  const m=s.match(/^(\d+)\s*[~\-]\s*(\d+)$/);
+  if(!m)return null;
+  const a=Number(m[1]),b=Number(m[2]);if(!Number.isFinite(a)||!Number.isFinite(b)||b<a)return null;
+  return {count:b-a+1,start:a,end:b};
+}
+function numberLabel(start,count){return count<=1?start:`${start}~${start+count-1}`}
+function colLetters(n){let s='';while(n>0){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26)}return s}
+function parseRangeAddress(a){const m=String(a||'').match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i);if(!m)return null;const col=n=>{let x=0;for(const c of n.toUpperCase())x=x*26+c.charCodeAt(0)-64;return x};return {c1:col(m[1]),r1:Number(m[2]),c2:col(m[3]),r2:Number(m[4])}}
+function findHeaders(ws){
+  for(let r=1;r<=Math.min(5,ws.rowCount||5);r++){
+    let boxCol=0,outCol=0;
+    for(let c=1;c<=Math.min(25,ws.columnCount||25);c++){
+      const t=compact(ws.getCell(r,c).value);
+      if(t==='박스번호')boxCol=c;
+      if(t==='출고박스번호')outCol=c;
+    }
+    if(boxCol)return {row:r,boxCol,outCol};
+  }
+  return null;
+}
+function ensureOutboundColumn(ws,h){
+  if(h.outCol)return h.outCol;
+  const target=h.boxCol+1,cell=ws.getCell(h.row,target);
+  if(compact(cell.value))throw new Error(`${ws.name}: 박스번호 오른쪽 열에 다른 데이터가 있어 출고박스번호 열을 자동 생성할 수 없습니다.`);
+  const src=ws.getCell(h.row,h.boxCol);
+  cell.value='출고\n박스번호';cell.style=deepClone(src.style);cell.alignment=deepClone(src.alignment||{horizontal:'center',vertical:'middle',wrapText:true});
+  try{ws.getColumn(target).width=ws.getColumn(h.boxCol).width}catch(_){}
+  h.outCol=target;return target;
+}
+function mergeMapForBoxColumn(ws,boxCol){
+  const map=new Map();
+  const merges=(ws.model&&Array.isArray(ws.model.merges))?ws.model.merges:[];
+  for(const a of merges){const p=parseRangeAddress(a);if(!p||p.c1!==boxCol||p.c2!==boxCol)continue;map.set(p.r1,p)}
+  return map;
+}
+function copyBoxCellLook(ws,row,boxCol,outCol,merge){
+  const r1=merge?merge.r1:row,r2=merge?merge.r2:row;
+  for(let r=r1;r<=r2;r++){
+    const src=ws.getCell(r,boxCol),dst=ws.getCell(r,outCol);
+    if(!dst.value){dst.style=deepClone(src.style);dst.numFmt=src.numFmt;dst.alignment=deepClone(src.alignment);dst.border=deepClone(src.border);dst.fill=deepClone(src.fill);dst.font=deepClone(src.font);}
+  }
+  if(merge&&merge.r2>merge.r1){
+    const master=ws.getCell(merge.r1,outCol);
+    if(!master.isMerged){try{ws.mergeCells(merge.r1,outCol,merge.r2,outCol)}catch(_){}}
+  }
+}
+async function processFile(file){
+  if(!file)return;
+  if(!/\.(xlsx|xlsm)$/i.test(file.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}
+  state.file=file;$('fileName').textContent=file.name;$('dropZone').classList.add('ready');$('resultCard').style.display='none';$('downloadBtn').disabled=true;
+  showLoading('엑셀을 읽고 출고박스번호를 계산하는 중...');setStatus('엑셀을 분석하고 있습니다.','work');
+  try{
+    const buf=await file.arrayBuffer();const wb=new ExcelJS.Workbook();await wb.xlsx.load(buf);
+    let counter=1,totalNew=0,totalKeep=0,processedSheets=0;const summary=[];
+    for(const ws of wb.worksheets){
+      if(compact(ws.name)==='발주서')continue;
+      const h=findHeaders(ws);if(!h)continue;
+      const outCol=ensureOutboundColumn(ws,h);const mergeMap=mergeMapForBoxColumn(ws,h.boxCol);const dataStart=h.row+3;
+      const sheetStart=counter;let newBoxes=0,keepBoxes=0,touchedRows=0;
+      for(let r=dataStart;r<=ws.rowCount;r++){
+        const boxCell=ws.getCell(r,h.boxCol),outCell=ws.getCell(r,outCol);
+        if(boxCell.isMerged&&boxCell.master&&boxCell.master.address!==boxCell.address)continue;
+        if(outCell.isMerged&&outCell.master&&outCell.master.address!==outCell.address)continue;
+        const boxParsed=parseBoxLabel(boxCell.isMerged&&boxCell.master?boxCell.master.value:boxCell.value);
+        const outParsed=parseBoxLabel(outCell.isMerged&&outCell.master?outCell.master.value:outCell.value);
+        if(!boxParsed&&!outParsed)continue;
+        const count=(boxParsed&&boxParsed.count)||(outParsed&&outParsed.count)||0;if(!count)continue;
+        const merge=mergeMap.get(r)||null;copyBoxCellLook(ws,r,h.boxCol,outCol,merge);
+        const currentOut=cellText(outCell.isMerged&&outCell.master?outCell.master.value:outCell.value).trim();
+        if(currentOut){keepBoxes+=count;totalKeep+=count;}
+        else if(boxParsed){
+          const v=numberLabel(counter,count);const master=ws.getCell(r,outCol);master.value=v;master.alignment={...(master.alignment||{}),horizontal:'center',vertical:'middle',wrapText:true};
+          newBoxes+=count;totalNew+=count;touchedRows++;
+        }
+        counter+=count;
+      }
+      const consumed=(newBoxes+keepBoxes);if(consumed>0){processedSheets++;summary.push({name:ws.name,start:sheetStart,end:counter-1,newBoxes,keepBoxes,touchedRows})}
+    }
+    if(!summary.length)throw new Error('박스번호/출고박스번호 열이 있는 작업 시트를 찾지 못했습니다.');
+    try{wb.calcProperties.fullCalcOnLoad=true;wb.calcProperties.forceFullCalc=true;wb.calcProperties.calcMode='auto'}catch(_){}
+    showLoading('다운로드용 Excel을 생성하는 중...');const out=await wb.xlsx.writeBuffer();state.workbook=wb;state.buffer=out;state.summary=summary;
+    const base=file.name.replace(/\.(xlsx|xlsm)$/i,'');state.downloadName=base+'_출고박스자동넘버링.xlsx';
+    renderResult(summary,totalNew,totalKeep,counter-1);setStatus(`✅ 자동넘버링 완료 · 새로 ${totalNew.toLocaleString()}박스 번호를 입력했습니다. 기존 번호 ${totalKeep.toLocaleString()}박스는 그대로 유지했습니다.`,'ok');
+  }catch(e){console.error(e);state.buffer=null;state.summary=null;setStatus('❌ '+esc(e.message||e),'bad');alert('출고박스 자동넘버링 실패\n\n'+(e.message||e));}
+  finally{hideLoading()}
+}
+function renderResult(rows,totalNew,totalKeep,last){
+  $('resultCard').style.display='block';$('statSheets').textContent=rows.length.toLocaleString();$('statNew').textContent=totalNew.toLocaleString();$('statKeep').textContent=totalKeep.toLocaleString();$('statLast').textContent=last.toLocaleString();
+  $('resultBody').innerHTML=rows.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.start===x.end?x.start:`${x.start} ~ ${x.end}`}</td><td class="new">${x.newBoxes.toLocaleString()}</td><td class="keep">${x.keepBoxes.toLocaleString()}</td><td>${x.keepBoxes?'기존 번호 유지 포함':'정상'}</td></tr>`).join('');$('downloadBtn').disabled=!state.buffer;$('resultCard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function choose(file){processFile(file)}
+const dz=$('dropZone'),inp=$('fileInput');inp.addEventListener('change',()=>choose(inp.files?.[0]));['dragenter','dragover'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.add('drag')}));['dragleave','drop'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',e=>choose(e.dataTransfer.files?.[0]));
+$('downloadBtn').onclick=()=>{if(!state.buffer)return;const blob=new Blob([state.buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=state.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};
+$('resetBtn').onclick=()=>location.reload();
+})();
+</script>
+<script src="/auth-client.js"></script>
+</body>
+</html>
