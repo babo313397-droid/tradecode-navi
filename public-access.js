@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  const RESTRICTED=['/order-barcode','/shipment-list-builder','/detail-maker','/coupang-inbound-work','/purchase-order','/truck-shipment','/pallet-load-list','/account-admin'];
+  const RESTRICTED=['/order-barcode','/shipment-list-builder','/detail-maker','/coupang-inbound-work','/purchase-order','/truck-shipment','/pallet-load-list','/outbound-box-numbering','/account-admin'];
   let auth={checked:false,authenticated:false,user:null};
   let authPromise=null;
   let pending='';
@@ -16,7 +16,7 @@
     const m=onclick.match(/(?:location(?:\.href)?|window\.location(?:\.href)?)\s*=\s*['"]([^'"]+)['"]/i)||onclick.match(/(?:location\.assign|location\.replace)\(\s*['"]([^'"]+)['"]\s*\)/i);
     if(m)return m[1];
     const t=(el.textContent||'').trim();
-    const map=[['발주 바코드','/order-barcode.html'],['선적 리스트','/shipment-list-builder.html'],['상세페이지','/detail-maker'],['쿠팡 입고 작업','/coupang-inbound-work.html'],['발주서 작성','/purchase-order.html'],['트럭쉽먼트','/truck-shipment.html'],['밀크런 팔레트 적재리스트','/pallet-load-list.html'],['계정관리','/account-admin.html']];
+    const map=[['발주 바코드','/order-barcode.html'],['선적 리스트','/shipment-list-builder.html'],['상세페이지','/detail-maker'],['쿠팡 입고 작업','/coupang-inbound-work.html'],['발주서 작성','/purchase-order.html'],['트럭쉽먼트','/truck-shipment.html'],['밀크런 팔레트 적재리스트','/pallet-load-list.html'],['출고박스 자동넘버링','/outbound-box-numbering.html'],['계정관리','/account-admin.html']];
     const hit=map.find(([name])=>t.includes(name));return hit?hit[1]:'';
   }
   function ensureTruckShipmentNav(){
@@ -42,6 +42,19 @@
       if(truck&&truck.parentNode===sidebar&&truck.nextElementSibling!==link)truck.insertAdjacentElement('afterend',link);else if(!link.isConnected)sidebar.appendChild(link);
       if(location.pathname.startsWith('/pallet-load-list'))link.classList.add('active');else link.classList.remove('active');
     }catch(e){console.warn('pallet load list public nav',e)}
+  }
+
+  function ensureOutboundBoxNumberingNav(){
+    try{
+      const sidebar=document.querySelector('nav.sidebar,.sidebar');if(!sidebar)return;
+      const nodes=[...sidebar.querySelectorAll('a,button')];
+      let link=nodes.find(el=>{const href=el.getAttribute('href')||'',onclick=el.getAttribute('onclick')||'';return href.includes('/outbound-box-numbering')||onclick.includes('/outbound-box-numbering')||(el.textContent||'').includes('출고박스 자동넘버링')});
+      if(!link){link=document.createElement('a');link.className='nav-btn';link.href='/outbound-box-numbering.html';link.textContent='🔢 출고박스 자동넘버링';}
+      const fresh=[...sidebar.querySelectorAll('a,button')];
+      const pallet=fresh.find(el=>{const href=el.getAttribute('href')||'',onclick=el.getAttribute('onclick')||'';return href.includes('/pallet-load-list')||onclick.includes('/pallet-load-list')||(el.textContent||'').includes('밀크런 팔레트 적재리스트')});
+      if(pallet&&pallet.parentNode===sidebar&&pallet.nextElementSibling!==link)pallet.insertAdjacentElement('afterend',link);else if(!link.isConnected)sidebar.appendChild(link);
+      if(location.pathname.startsWith('/outbound-box-numbering'))link.classList.add('active');else link.classList.remove('active');
+    }catch(e){console.warn('outbound box numbering public nav',e)}
   }
   async function check(force=false){
     if(auth.checked&&!force)return auth;
@@ -98,7 +111,7 @@
     },true);
   }
   async function init(){
-    ensureTruckShipmentNav();ensurePalletLoadListNav();guard();const st=await check();accountBar();
+    ensureTruckShipmentNav();ensurePalletLoadListNav();ensureOutboundBoxNumberingNav();guard();const st=await check();accountBar();
     const p=new URLSearchParams(location.search);if(!st.authenticated&&p.get('authChoice')==='1'){show(p.get('next')||'/');}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
