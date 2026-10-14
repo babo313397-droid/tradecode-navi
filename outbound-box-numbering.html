@@ -50,7 +50,7 @@
         <div class="file-name" id="fileName">선택된 파일 없음</div>
       </label>
       <div class="rules"><b>자동넘버링 기준</b> · `박스번호`가 단일 번호면 출고박스번호도 단일 번호로 입력하고, `6~10`처럼 여러 박스 범위면 같은 개수만큼 `1~5`처럼 범위로 입력합니다. 이미 출고박스번호가 들어있는 셀은 절대 덮어쓰지 않고 그대로 유지하되, 해당 박스 개수는 전체 순번 계산에는 포함합니다.</div>
-      <div id="status" class="status">파일을 선택하면 자동으로 분석합니다.</div>
+      <label style="display:block;margin:12px 0"><input type="checkbox" id="renumberAll"> 다운로드 결과의 출고박스번호를 전체 1번부터 다시 생성 (원본 파일은 유지)</label><div id="status" class="status">파일을 선택하면 자동으로 분석합니다.</div>
     </div>
   </section>
 
@@ -152,10 +152,77 @@ function cloneBoxLookForSpan(doc,boxCol,outCol,r1,r2){
   for(let r=r1;r<=r2;r++){const src=getCell(doc,numToCol(boxCol)+r)||getCell(doc,numToCol(boxCol)+r1);const dst=ensureCell(doc,numToCol(outCol)+r,src);copyStyleOnly(src,dst)}
   if(r2>r1)ensureMerge(doc,`${numToCol(outCol)}${r1}:${numToCol(outCol)}${r2}`);
 }
+const labelState={groups:[],labels:[],total:0};
+const labelPanel=document.createElement('section');labelPanel.className='card';labelPanel.style.display='none';
+labelPanel.innerHTML=`<div class="card-title">③ 50×30mm 출고 라벨 출력</div><div class="card-body"><label>업체명 <input id="labelCompany" value="Korea One" style="padding:8px"></label><p>팔레트 분할 수량을 확인하세요. 예: 26박스를 두 팔레트로 나누려면 <b>13,13</b> 입력. 아래 설정은 라벨에만 적용되며 Excel 팔레트 배정은 변경하지 않습니다.</p><div id="labelGroups"></div><p id="labelValidation"></p><div class="actions"><select id="labelType"><option value="all">전체 라벨</option><option value="base">기본 출고 라벨</option><option value="milk">밀크런 추가 라벨</option></select><select id="labelSheet"><option value="">모든 센터</option></select><label>출고번호 <input id="labelRange" placeholder="전체 또는 1-20,25" style="width:150px"></label><button class="btn" id="labelPreviewBtn">미리보기 갱신</button><button class="btn primary" id="labelPdfBtn">PDF 다운로드</button><button class="btn primary" id="labelPrintBtn">X프린터 감열 인쇄</button></div><p>프린터 용지 50×30mm · 배율 100% · 여백 없음 · 머리글/바닥글 해제. 밀크런 추가 라벨은 박스마다 1장 더 출력됩니다.</p><div id="labelPreview" style="display:flex;flex-wrap:wrap;gap:10px;max-height:520px;overflow:auto;background:#eef2f5;padding:15px"></div></div>`;
+$('resultCard').after(labelPanel);
+async function prepareLabels(zip,wbDoc,relsDoc,shared){
+ labelPanel.style.display='none';labelState.groups=[];
+ for(const info of sheetDescriptors(wbDoc,relsDoc)){
+  if(compact(info.name)==='발주서')continue;
+  const f=zip.file(info.path);if(!f)continue;const doc=parseXml(await f.async('text')),h=findHeaders(doc,shared);if(!h)continue;
+  const cells=new Map([...doc.getElementsByTagNameNS(NS,'c')].map(c=>[c.getAttribute('r'),cellDisplayText(c,shared)]));
+  const read=(col,r)=>cells.get(numToCol(col)+r)||'';
+  let palCol=11;for(let r=1;r<=5;r++)for(const c of directChildren(getRow(doc,r)||{childNodes:[]},'c'))if(/^palette$/i.test(compact(cellDisplayText(c,shared))))palCol=splitRef(c.getAttribute('r')).colNum;
+  const merges=mergeRanges(doc).map(parseRange).filter(Boolean),palMerges=merges.filter(m=>m.c1===palCol&&m.c2===palCol),boxMerges=merges.filter(m=>m.c1===h.boxCol&&m.c2===h.boxCol);
+  const isPal=/팔레트|밀크런/.test(info.name);let current=null;
+  for(const row of [...doc.getElementsByTagNameNS(NS,'row')]){
+   const r=Number(row.getAttribute('r'));if(r<h.row+3||boxMerges.some(m=>r>m.r1&&r<=m.r2))continue;
+   const out=parseBoxLabel(read(h.outCol,r));const b=parseBoxLabel(read(h.boxCol,r))||out;if(!b)continue;
+   if(!out||out.count!==b.count)throw new Error(info.name+' '+r+'행: 박스 수와 출고번호 개수가 다릅니다.');
+   const pm=palMerges.find(m=>r>=m.r1&&r<=m.r2);const key=pm?pm.r1:(read(palCol,r)?r:current?.key??r);
+   if(!current||!isPal||current.key!==key){
+    if(!isPal&&current){}else current=null;
+    if(!current){current={sheet:info.name,key,isPal,milk:/밀크런/.test(info.name),numbers:[],sourcePal:read(palCol,pm?pm.r1:r),parts:''};labelState.groups.push(current);}
+   }
+   for(let n=out.start;n<=out.end;n++)current.numbers.push(n);
+  }
+ }
+ const consolidated=[];for(const g of labelState.groups){const prev=consolidated.find(x=>x.sheet===g.sheet);if(prev){prev.numbers.push(...g.numbers);prev.parts+=','+g.numbers.length;}else consolidated.push({...g,numbers:[...g.numbers],parts:String(g.numbers.length)});}labelState.groups=consolidated;
+ labelState.total=labelState.groups.reduce((n,g)=>n+g.numbers.length,0);
+ const numbers=labelState.groups.flatMap(g=>g.numbers);if(new Set(numbers).size!==numbers.length)throw new Error('기존 출고박스번호가 중복되어 있습니다. 위의 전체 1번부터 다시 생성 옵션을 선택하면 다운로드 파일과 라벨 번호를 함께 정리합니다.');
+ 
+ $('labelGroups').innerHTML=labelState.groups.map((g,i)=>g.isPal?`<div style="padding:6px;border-bottom:1px solid #ddd">${esc(g.sheet)} · 원본 팔레트 ${esc(g.sourcePal||'미기재')} · ${g.numbers.length}박스 <input data-group="${i}" value="${g.parts}" style="width:100px;padding:6px" aria-label="${esc(g.sheet)} 팔레트 분할 수량"></div>`:'').join('');
+ $('labelSheet').innerHTML='<option value="">모든 센터</option>'+[...new Set(labelState.groups.map(g=>g.sheet))].map(s=>`<option>${esc(s)}</option>`).join('');
+ labelPanel.style.display='block';renderLabels();
+}
+function selectedLabels(){
+ let list=labelState.labels.filter(l=>(!$('labelSheet').value||l.sheet===$('labelSheet').value)&&($('labelType').value==='all'||l.type===$('labelType').value));
+ const text=$('labelRange').value.trim();if(text){const selected=new Set();for(const part of text.split(/[,，]/)){const m=part.trim().match(/^(\d+)(?:\s*[-~]\s*(\d+))?$/);if(!m)throw new Error('출고번호는 1-20,25 형식으로 입력하세요.');const a=+m[1],b=+(m[2]||m[1]);if(a<1||b<a||b-a>100000)throw new Error('출고번호 범위를 확인하세요.');for(let n=a;n<=b;n++)selected.add(n);}list=list.filter(l=>selected.has(l.number));}return list;
+}
+function rebuildLabels(){
+ const company=$('labelCompany').value.trim();if(!company)throw new Error('업체명을 입력하세요.');labelState.labels=[];let pallet=0;const milkGroups=new Map();
+ for(let i=0;i<labelState.groups.length;i++){
+  const g=labelState.groups[i];const input=labelPanel.querySelector(`[data-group="${i}"]`);const raw=input?input.value:String(g.numbers.length);
+  if(!/^\s*\d+(\s*,\s*\d+)*\s*$/.test(raw))throw new Error(g.sheet+': 분할 수량을 숫자와 쉼표로 입력하세요.');const parts=raw.split(',').map(Number);
+  if(parts.some(n=>n<1)||parts.reduce((a,b)=>a+b,0)!==g.numbers.length)throw new Error(g.sheet+': 분할 합계가 '+g.numbers.length+'박스여야 합니다.');
+  let offset=0;for(const count of parts){if(g.isPal)pallet++;for(let j=1;j<=count;j++){const number=g.numbers[offset++];labelState.labels.push({type:'base',sheet:g.sheet,number,lines:[company,`${labelState.total}-${number}`,g.isPal?`${pallet}Palette-${count}-${j}`:'택배']});}}
+  if(g.milk){if(!milkGroups.has(g.sheet))milkGroups.set(g.sheet,[]);milkGroups.get(g.sheet).push(...g.numbers);}
+ }
+ for(const [sheet,numbers]of milkGroups){const center=sheet.replace(/밀크런/g,'').trim();numbers.forEach((number,i)=>labelState.labels.push({type:'milk',sheet,number,lines:[`Milkrun ${center}`,`${numbers.length}-${i+1}`]}));}
+}
+function renderLabels(){
+ try{rebuildLabels();const list=selectedLabels();$('labelValidation').textContent=`총 ${labelState.total}박스 · 기본 ${labelState.total}장 · 밀크런 추가 ${labelState.labels.length-labelState.total}장 · 선택 ${list.length}장. 팔레트 번호는 위 배정 순서대로 이어집니다.`;
+ $('labelPreview').innerHTML=list.map(l=>`<div style="width:50mm;height:30mm;background:white;border:1px solid #ccc;display:flex;flex-direction:column;align-items:center;justify-content:center;font:bold 16px 'Malgun Gothic',sans-serif;text-align:center;padding:2mm;overflow:hidden">${l.lines.map(t=>`<div>${esc(t)}</div>`).join('')}</div>`).join('');$('labelPdfBtn').disabled=$('labelPrintBtn').disabled=!list.length;
+ }catch(e){$('labelValidation').textContent='⚠ '+e.message;$('labelPreview').innerHTML='';$('labelPdfBtn').disabled=$('labelPrintBtn').disabled=true;}
+}
+function labelCanvas(label){const c=document.createElement('canvas');c.width=600;c.height=360;const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,600,360);ctx.fillStyle='#000';ctx.textAlign='center';ctx.textBaseline='middle';const step=76,start=180-(label.lines.length-1)*step/2;label.lines.forEach((line,i)=>{let size=48;do{ctx.font=`bold ${size}px "Malgun Gothic",sans-serif`;if(ctx.measureText(line).width<=552)break;size--;}while(size>16);ctx.fillText(line,300,start+i*step);});return c;}
+async function readyLabelImages(){if(document.fonts)await document.fonts.ready;rebuildLabels();return selectedLabels().map(l=>labelCanvas(l).toDataURL('image/jpeg',0.98));}
+function downloadLabelPdf(images){
+ const chunks=[],offsets=[0];let length=0;const enc=new TextEncoder();const add=v=>{const bytes=typeof v==='string'?enc.encode(v):v;chunks.push(bytes);length+=bytes.length;};const object=(id,body)=>{offsets[id]=length;add(`${id} 0 obj\n`);add(body);add('\nendobj\n');};
+ add('%PDF-1.4\n');object(1,'<< /Type /Catalog /Pages 2 0 R >>');const ids=images.map((_,i)=>3+i*3);object(2,`<< /Type /Pages /Count ${images.length} /Kids [${ids.map(id=>id+' 0 R').join(' ')}] >>`);
+ images.forEach((data,i)=>{const id=ids[i],jpg=Uint8Array.from(atob(data.split(',')[1]),c=>c.charCodeAt(0));object(id,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 141.732283 85.039370] /Resources << /XObject << /Im ${id+1} 0 R >> >> /Contents ${id+2} 0 R >>`);offsets[id+1]=length;add(`${id+1} 0 obj\n<< /Type /XObject /Subtype /Image /Width 600 /Height 360 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`);add(jpg);add('\nendstream\nendobj\n');const stream='q 141.732283 0 0 85.039370 0 0 cm /Im Do Q';object(id+2,`<< /Length ${enc.encode(stream).length} >>\nstream\n${stream}\nendstream`);});
+ const xref=length,count=3+images.length*3;add(`xref\n0 ${count}\n0000000000 65535 f \n`);for(let id=1;id<count;id++)add(String(offsets[id]).padStart(10,'0')+' 00000 n \n');add(`trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);const url=URL.createObjectURL(new Blob(chunks,{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download='출고라벨_50x30.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),15000);
+}
+$('labelPreviewBtn').onclick=renderLabels;
+labelPanel.addEventListener('change',renderLabels);
+$('labelPdfBtn').onclick=async()=>{try{const images=await readyLabelImages();if(images.length)downloadLabelPdf(images);}catch(e){alert(e.message);}};
+$('labelPrintBtn').onclick=async()=>{const win=window.open('','_blank');if(!win){alert('인쇄창을 열 수 있도록 팝업을 허용하세요.');return;}try{win.document.write('<p>라벨 준비 중...</p>');const images=await readyLabelImages();if(!images.length)throw new Error('선택한 라벨이 없습니다.');win.document.open();win.document.write('<!doctype html><html><head><title>50×30mm 출고 라벨</title><style>@page{size:50mm 30mm;margin:0}html,body{margin:0;padding:0}img{display:block;width:50mm;height:30mm;break-after:page}img:last-child{break-after:auto}</style></head><body>'+images.map(src=>`<img src="${src}">`).join('')+'</body></html>');win.document.close();await Promise.all([...win.document.images].map(img=>img.decode()));win.focus();win.print();}catch(e){win.close();alert(e.message);}};
+
 async function processFile(file){
   if(!file)return;if(!/\.(xlsx|xlsm)$/i.test(file.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}
   if(typeof JSZip==='undefined'){alert('Excel 처리 모듈을 불러오지 못했습니다. 인터넷 연결 후 다시 시도해 주세요.');return}
-  state.file=file;$('fileName').textContent=file.name;$('dropZone').classList.add('ready');$('resultCard').style.display='none';$('downloadBtn').disabled=true;
+  labelPanel.style.display='none';state.file=file;$('fileName').textContent=file.name;$('dropZone').classList.add('ready');$('resultCard').style.display='none';$('downloadBtn').disabled=true;
   showLoading('원본 Excel 구조를 보존한 채 출고박스번호를 계산하는 중...');setStatus('엑셀을 분석하고 있습니다.','work');
   try{
     const buf=await file.arrayBuffer();const zip=await JSZip.loadAsync(buf);const wbFile=zip.file('xl/workbook.xml'),relsFile=zip.file('xl/_rels/workbook.xml.rels');if(!wbFile||!relsFile)throw new Error('Excel 통합문서 구조를 찾지 못했습니다.');
@@ -168,15 +235,16 @@ async function processFile(file){
       const dataStart=h.row+3,maxRow=dimensionMaxRow(doc),sheetStart=counter;let newBoxes=0,keepBoxes=0,touchedRows=0;
       for(let r=dataStart;r<=maxRow;r++){
         if(boxMergeSubRows.has(r))continue;const pMerge=boxMergeByStart.get(r)||null;const boxCell=getCell(doc,boxLetter+r),outCell=getCell(doc,outLetter+r);const boxParsed=parseBoxLabel(cellDisplayText(boxCell,shared)),outParsed=parseBoxLabel(cellDisplayText(outCell,shared));if(!boxParsed&&!outParsed)continue;const count=(boxParsed&&boxParsed.count)||(outParsed&&outParsed.count)||0;if(!count)continue;
-        const r2=pMerge?pMerge.r2:r;cloneBoxLookForSpan(doc,h.boxCol,outCol,r,r2);const current=cellDisplayText(getCell(doc,outLetter+r),shared).trim();if(current){keepBoxes+=count;totalKeep+=count}else if(boxParsed){setCellValue(doc,getCell(doc,outLetter+r),numberLabel(counter,count));newBoxes+=count;totalNew+=count;touchedRows++}counter+=count;
+        const r2=pMerge?pMerge.r2:r;cloneBoxLookForSpan(doc,h.boxCol,outCol,r,r2);const current=cellDisplayText(getCell(doc,outLetter+r),shared).trim();if(current&&!$('renumberAll').checked){keepBoxes+=count;totalKeep+=count}else if(boxParsed||outParsed){setCellValue(doc,getCell(doc,outLetter+r),numberLabel(counter,count));newBoxes+=count;totalNew+=count;touchedRows++}counter+=count;
       }
       if(newBoxes+keepBoxes>0){zip.file(info.path,xmlText(doc));summary.push({name:info.name,start:sheetStart,end:counter-1,newBoxes,keepBoxes,touchedRows})}
     }
     if(!summary.length)throw new Error('박스번호/출고박스번호 열이 있는 작업 시트를 찾지 못했습니다.');
-    showLoading('원본 구조를 유지한 Excel을 생성하는 중...');const out=await zip.generateAsync({type:'arraybuffer',compression:'DEFLATE',compressionOptions:{level:6}});state.buffer=out;state.summary=summary;const base=file.name.replace(/\.(xlsx|xlsm)$/i,'');state.downloadName=base+'_출고박스자동넘버링.xlsx';renderResult(summary,totalNew,totalKeep,counter-1);setStatus(`✅ 자동넘버링 완료 · 새로 ${totalNew.toLocaleString()}박스 번호를 입력했습니다. 기존 번호 ${totalKeep.toLocaleString()}박스는 그대로 유지했습니다.<br><b>원본 Excel 내부 구조는 다시 저장하지 않고 필요한 출고박스번호 셀만 수정했습니다.</b>`,'ok');
+    showLoading('원본 구조를 유지한 Excel을 생성하는 중...');const out=await zip.generateAsync({type:'arraybuffer',compression:'DEFLATE',compressionOptions:{level:6}});state.buffer=out;state.summary=summary;const base=file.name.replace(/\.(xlsx|xlsm)$/i,'');state.downloadName=base+'_출고박스자동넘버링.xlsx';renderResult(summary,totalNew,totalKeep,counter-1);try{await prepareLabels(zip,wbDoc,relsDoc,shared);}catch(labelError){labelPanel.style.display='block';$('labelValidation').textContent='⚠ 라벨 생성 확인 필요: '+labelError.message;$('labelPreview').innerHTML='';$('labelPdfBtn').disabled=$('labelPrintBtn').disabled=true;}setStatus(`✅ 자동넘버링 완료 · 새로 ${totalNew.toLocaleString()}박스 번호를 입력했습니다. 기존 번호 ${totalKeep.toLocaleString()}박스는 그대로 유지했습니다.<br><b>원본 Excel 내부 구조는 다시 저장하지 않고 필요한 출고박스번호 셀만 수정했습니다.</b>`,'ok');
   }catch(e){console.error(e);state.buffer=null;state.summary=null;setStatus('❌ '+esc(e.message||e),'bad');alert('출고박스 자동넘버링 실패\n\n'+(e.message||e));}finally{hideLoading()}
 }
 function renderResult(rows,totalNew,totalKeep,last){$('resultCard').style.display='block';$('statSheets').textContent=rows.length.toLocaleString();$('statNew').textContent=totalNew.toLocaleString();$('statKeep').textContent=totalKeep.toLocaleString();$('statLast').textContent=last.toLocaleString();$('resultBody').innerHTML=rows.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.start===x.end?x.start:`${x.start} ~ ${x.end}`}</td><td class="new">${x.newBoxes.toLocaleString()}</td><td class="keep">${x.keepBoxes.toLocaleString()}</td><td>${x.keepBoxes?'기존 번호 유지 포함':'정상'}</td></tr>`).join('');$('downloadBtn').disabled=!state.buffer;$('resultCard').scrollIntoView({behavior:'smooth',block:'start'})}
+$('renumberAll').onchange=()=>{if(state.file)processFile(state.file)};
 function choose(file){processFile(file)}
 const dz=$('dropZone'),inp=$('fileInput');inp.addEventListener('change',()=>choose(inp.files?.[0]));['dragenter','dragover'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.add('drag')}));['dragleave','drop'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.remove('drag')}));dz.addEventListener('drop',e=>choose(e.dataTransfer.files?.[0]));
 $('downloadBtn').onclick=()=>{if(!state.buffer)return;const blob=new Blob([state.buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=state.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};$('resetBtn').onclick=()=>location.reload();
