@@ -157,7 +157,7 @@ const labelPanel=document.createElement('section');labelPanel.className='card';l
 labelPanel.innerHTML=`<div class="card-title">③ 50×30mm 출고 라벨 출력</div><div class="card-body"><label>업체명 <input id="labelCompany" value="Korea One" style="padding:8px"></label><p>팔레트 분할 수량을 확인하세요. 예: 26박스를 두 팔레트로 나누려면 <b>13,13</b> 입력. 아래 설정은 라벨에만 적용되며 Excel 팔레트 배정은 변경하지 않습니다.</p><div id="labelGroups"></div><p id="labelValidation"></p><div class="actions"><select id="labelType"><option value="all">전체 라벨</option><option value="base">기본 출고 라벨</option><option value="milk">밀크런 추가 라벨</option></select><select id="labelSheet"><option value="">모든 센터</option></select><label>출고번호 <input id="labelRange" placeholder="전체 또는 1-20,25" style="width:150px"></label><button class="btn" id="labelPreviewBtn">미리보기 갱신</button><button class="btn primary" id="labelPdfBtn">PDF 다운로드</button><button class="btn primary" id="labelPrintBtn">X프린터 감열 인쇄</button></div><p>프린터 용지 50×30mm · 배율 100% · 여백 없음 · 머리글/바닥글 해제. 밀크런 추가 라벨은 박스마다 1장 더 출력됩니다.</p><div id="labelPreview" style="display:flex;flex-wrap:wrap;gap:10px;max-height:520px;overflow:auto;background:#eef2f5;padding:15px"></div></div>`;
 $('resultCard').after(labelPanel);
 async function prepareLabels(zip,wbDoc,relsDoc,shared){
- labelPanel.style.display='none';labelState.groups=[];
+ labelPanel.style.display='none';labelState.groups=[];const declaredBySheet=new Map();
  for(const info of sheetDescriptors(wbDoc,relsDoc)){
   if(compact(info.name)==='발주서')continue;
   const f=zip.file(info.path);if(!f)continue;const doc=parseXml(await f.async('text')),h=findHeaders(doc,shared);if(!h)continue;
@@ -166,6 +166,11 @@ async function prepareLabels(zip,wbDoc,relsDoc,shared){
   let palCol=11;for(let r=1;r<=5;r++)for(const c of directChildren(getRow(doc,r)||{childNodes:[]},'c'))if(/^palette$/i.test(compact(cellDisplayText(c,shared))))palCol=splitRef(c.getAttribute('r')).colNum;
   const merges=mergeRanges(doc).map(parseRange).filter(Boolean),palMerges=merges.filter(m=>m.c1===palCol&&m.c2===palCol),boxMerges=merges.filter(m=>m.c1===h.boxCol&&m.c2===h.boxCol);
   const isPal=/팔레트|밀크런/.test(info.name);let current=null;
+  if(isPal){
+   let countCol=0;for(let r=1;r<=5;r++)for(const c of directChildren(getRow(doc,r)||{childNodes:[]},'c'))if(/^(?:palette|팔레트)박스수량$/i.test(compact(cellDisplayText(c,shared))))countCol=splitRef(c.getAttribute('r')).colNum;
+   const counts=[];if(countCol)for(const row of [...doc.getElementsByTagNameNS(NS,'row')]){const r=Number(row.getAttribute('r'));if(r<h.row+3)continue;const value=Number(read(countCol,r));if(Number.isInteger(value)&&value>0)counts.push(value);}
+   declaredBySheet.set(info.name,counts);
+  }
   for(const row of [...doc.getElementsByTagNameNS(NS,'row')]){
    const r=Number(row.getAttribute('r'));if(r<h.row+3||boxMerges.some(m=>r>m.r1&&r<=m.r2))continue;
    const out=parseBoxLabel(read(h.outCol,r));const b=parseBoxLabel(read(h.boxCol,r))||out;if(!b)continue;
@@ -179,10 +184,11 @@ async function prepareLabels(zip,wbDoc,relsDoc,shared){
   }
  }
  const consolidated=[];for(const g of labelState.groups){const prev=consolidated.find(x=>x.sheet===g.sheet);if(prev){prev.numbers.push(...g.numbers);prev.parts+=','+g.numbers.length;}else consolidated.push({...g,numbers:[...g.numbers],parts:String(g.numbers.length)});}labelState.groups=consolidated;
+ for(const g of labelState.groups){if(!g.isPal)continue;const counts=declaredBySheet.get(g.sheet)||[];const sum=counts.reduce((a,b)=>a+b,0);if(counts.length&&sum<=g.numbers.length){g.parts=[...counts,...(sum<g.numbers.length?[g.numbers.length-sum]:[])].join(',');g.inferred=sum<g.numbers.length;}else if(sum>g.numbers.length){throw new Error(g.sheet+': 팔레트 박스수량 합계가 실제 박스 수보다 큽니다.');}}
  labelState.total=labelState.groups.reduce((n,g)=>n+g.numbers.length,0);
  const numbers=labelState.groups.flatMap(g=>g.numbers);if(new Set(numbers).size!==numbers.length)throw new Error('기존 출고박스번호가 중복되어 있습니다. 위의 전체 1번부터 다시 생성 옵션을 선택하면 다운로드 파일과 라벨 번호를 함께 정리합니다.');
  
- $('labelGroups').innerHTML=labelState.groups.map((g,i)=>g.isPal?`<div style="padding:6px;border-bottom:1px solid #ddd">${esc(g.sheet)} · 원본 팔레트 ${esc(g.sourcePal||'미기재')} · ${g.numbers.length}박스 <input data-group="${i}" value="${g.parts}" style="width:100px;padding:6px" aria-label="${esc(g.sheet)} 팔레트 분할 수량"></div>`:'').join('');
+ $('labelGroups').innerHTML=labelState.groups.map((g,i)=>g.isPal?`<div style="padding:6px;border-bottom:1px solid #ddd">${esc(g.sheet)} · 센터 전체 ${g.numbers.length}박스 · 팔레트별 수량${g.inferred?' (마지막 수량은 잔여 박스 계산)':''} <input data-group="${i}" value="${g.parts}" style="width:100px;padding:6px" aria-label="${esc(g.sheet)} 팔레트 분할 수량"></div>`:'').join('');
  $('labelSheet').innerHTML='<option value="">모든 센터</option>'+[...new Set(labelState.groups.map(g=>g.sheet))].map(s=>`<option>${esc(s)}</option>`).join('');
  labelPanel.style.display='block';renderLabels();
 }
@@ -193,7 +199,7 @@ function selectedLabels(){
 function rebuildLabels(){
  const company=$('labelCompany').value.trim();if(!company)throw new Error('업체명을 입력하세요.');labelState.labels=[];let pallet=0;const milkGroups=new Map();
  for(let i=0;i<labelState.groups.length;i++){
-  const g=labelState.groups[i];const input=labelPanel.querySelector(`[data-group="${i}"]`);const raw=input?input.value:String(g.numbers.length);
+  const g=labelState.groups[i];const input=labelPanel.querySelector(`[data-group="${i}"]`);const raw=input?input.value:(g.parts||String(g.numbers.length));
   if(!/^\s*\d+(\s*,\s*\d+)*\s*$/.test(raw))throw new Error(g.sheet+': 분할 수량을 숫자와 쉼표로 입력하세요.');const parts=raw.split(',').map(Number);
   if(parts.some(n=>n<1)||parts.reduce((a,b)=>a+b,0)!==g.numbers.length)throw new Error(g.sheet+': 분할 합계가 '+g.numbers.length+'박스여야 합니다.');
   let offset=0;for(const count of parts){if(g.isPal)pallet++;for(let j=1;j<=count;j++){const number=g.numbers[offset++];labelState.labels.push({type:'base',sheet:g.sheet,number,lines:[company,`${labelState.total}-${number}`,g.isPal?`${pallet}Palette-${count}-${j}`:'택배']});}}
