@@ -216,3 +216,102 @@ init();
 })();
 // v97: Render API 자동감지가 설정되면 '배포 완료 후'가 아니라 '배포 시작 직후' 잠금. 최소 대기시간 10초.
 // ===== /v97 deployment guard =====
+
+
+// ===== v151 unified sidebar: same menu/style on every TradeCode page =====
+(function(){
+  'use strict';
+  if(window.__TC_UNIFIED_SIDEBAR_V151__)return;
+  window.__TC_UNIFIED_SIDEBAR_V151__=true;
+
+  const ITEMS=[
+    {key:'calculator',icon:'📊',label:'TradeCode Navi 관세율 계산',href:'/'},
+    {key:'rocket',icon:'🚀',label:'로켓배송 원가&마진률 계산',href:'/coupang-margin'},
+    {key:'logistics',icon:'🚚',label:'물류비 계산기',href:'/logistics-cost'},
+    {key:'simulator',icon:'📦',label:'쿠팡 팔레트 시뮬레이션',href:'/coupang-pallet-simulator.html'},
+    {key:'barcode',icon:'🏷️',label:'바코드 라벨 생성기',href:'/barcode-label.html'},
+    {divider:true,label:'🔒 아래 메뉴는 로그인 후 사용'},
+    {key:'orderbarcode',icon:'📦',label:'발주 바코드 출력',href:'/order-barcode.html'},
+    {key:'shipmentlist',icon:'📋',label:'선적 리스트 작성',href:'/shipment-list-builder.html'},
+    {key:'detail',icon:'✨',label:'쿠팡 상세페이지 자동 제작',href:'#',comingSoon:true},
+    {key:'inbound',icon:'📦',label:'쿠팡 입고 작업',href:'/coupang-inbound-work.html'},
+    {key:'purchase',icon:'📝',label:'발주서 작성',href:'/purchase-order.html'},
+    {key:'truck',icon:'🚛',label:'트럭쉽먼트 자동입력',href:'/truck-shipment.html'},
+    {key:'palletlist',icon:'📄',label:'밀크런 팔레트 적재리스트 자동입력',href:'/pallet-load-list.html'},
+    {key:'outbound',icon:'🔢',label:'출고박스 자동넘버링',href:'/outbound-box-numbering.html'}
+  ];
+
+  function style(){
+    if(document.getElementById('tcUnifiedSidebarStyleV151'))return;
+    const el=document.createElement('style');el.id='tcUnifiedSidebarStyleV151';
+    el.textContent=`
+      .tc-unified-sidebar{width:270px!important;min-width:270px!important;height:100vh!important;position:sticky!important;top:0!important;overflow-y:auto!important;overflow-x:hidden!important;background:#102744!important;color:#fff!important;padding:10px 8px 18px!important;box-sizing:border-box!important;font-family:Pretendard,"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif!important;display:block!important;align-self:flex-start!important}
+      .tc-unified-sidebar *{box-sizing:border-box!important}
+      .tc-unified-sidebar .tc-nav-brand{display:flex!important;align-items:center!important;gap:10px!important;padding:0 2px 13px!important;margin:0!important;color:#fff!important}
+      .tc-unified-sidebar .tc-nav-logo{width:40px!important;height:40px!important;min-width:40px!important;border-radius:10px!important;background:#d7ad3f!important;color:#102744!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:18px!important;font-weight:1000!important;line-height:1!important}
+      .tc-unified-sidebar .tc-nav-brand-title{font-size:19px!important;line-height:1.13!important;font-weight:900!important;letter-spacing:-.2px!important;color:#fff!important}
+      .tc-unified-sidebar .tc-nav-brand-sub{display:block!important;margin-top:4px!important;font-size:12px!important;line-height:1.2!important;font-weight:500!important;color:#b9c8da!important}
+      .tc-unified-sidebar .tc-nav-section{font-size:12px!important;line-height:1.3!important;color:#9eb0c5!important;padding:8px 4px 5px!important;margin:0!important;font-weight:700!important}
+      .tc-unified-sidebar .tc-nav-login-divider{color:#ffd463!important;font-weight:900!important;padding-top:9px!important}
+      .tc-unified-sidebar .tc-nav-link{display:flex!important;width:100%!important;min-height:56px!important;align-items:center!important;justify-content:flex-start!important;gap:8px!important;margin:6px 0!important;padding:12px 12px!important;border:1px solid #3a4d68!important;border-radius:12px!important;background:#1b2f4b!important;color:#f7f9fc!important;text-decoration:none!important;text-align:left!important;font-size:16px!important;line-height:1.35!important;font-weight:800!important;letter-spacing:-.15px!important;cursor:pointer!important;white-space:normal!important;word-break:keep-all!important;box-shadow:none!important;font-family:Pretendard,"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif!important}
+      .tc-unified-sidebar .tc-nav-link:hover{background:#223956!important;border-color:#51647c!important;color:#fff!important}
+      .tc-unified-sidebar .tc-nav-link.active{background:#d6ad3f!important;border-color:#d6ad3f!important;color:#102744!important}
+      .tc-unified-sidebar .tc-nav-icon{flex:0 0 auto!important;font-size:15px!important;line-height:1!important}
+      .tc-unified-sidebar .tc-nav-text{display:block!important;min-width:0!important}
+      @media(max-width:820px){.tc-unified-sidebar{width:100%!important;min-width:100%!important;height:auto!important;position:relative!important;padding:10px!important}.tc-unified-sidebar .tc-nav-link{min-height:50px!important}}
+    `;
+    document.head.appendChild(el);
+  }
+  function activeKey(){
+    const p=(location.pathname||'/').toLowerCase();
+    if(p==='/coupang-margin')return 'rocket';
+    if(p==='/logistics-cost')return 'logistics';
+    if(p.includes('coupang-pallet-simulator'))return 'simulator';
+    if(p.includes('barcode-label'))return 'barcode';
+    if(p.includes('order-barcode'))return 'orderbarcode';
+    if(p.includes('shipment-list-builder'))return 'shipmentlist';
+    if(p.includes('coupang-inbound-work'))return 'inbound';
+    if(p.includes('purchase-order'))return 'purchase';
+    if(p.includes('truck-shipment'))return 'truck';
+    if(p.includes('pallet-load-list'))return 'palletlist';
+    if(p.includes('outbound-box-numbering'))return 'outbound';
+    if(p==='/'||p==='/index.html'||p==='/hs-code')return 'calculator';
+    return '';
+  }
+  function findSidebar(){
+    const candidates=[...document.querySelectorAll('nav.sidebar,aside.sidebar,.sidebar,aside.side,nav.side')];
+    return candidates.find(x=>/TradeCode|관세율|물류비|바코드|발주|입고|트럭쉽먼트/.test(x.textContent||''))||candidates[0]||null;
+  }
+  function html(){
+    const active=activeKey();
+    const rows=ITEMS.map(it=>{
+      if(it.divider)return `<div class="tc-nav-section tc-nav-login-divider">${it.label}</div>`;
+      const cls='tc-nav-link'+(active===it.key?' active':'');
+      if(it.comingSoon)return `<a class="${cls}" href="#" data-tc-coming-soon="1"><span class="tc-nav-icon">${it.icon}</span><span class="tc-nav-text">${it.label}</span></a>`;
+      return `<a class="${cls}" href="${it.href}"><span class="tc-nav-icon">${it.icon}</span><span class="tc-nav-text">${it.label}</span></a>`;
+    }).join('');
+    return `<div class="tc-nav-brand"><div class="tc-nav-logo">TC</div><div><div class="tc-nav-brand-title">TradeCode Navi</div><span class="tc-nav-brand-sub">기능 목록</span></div></div><div class="tc-nav-section">도구</div>${rows}`;
+  }
+  function apply(){
+    style();
+    const side=findSidebar();if(!side)return false;
+    side.classList.add('tc-unified-sidebar');
+    if(side.dataset.tcUnifiedSidebarV151!=='1'){
+      side.innerHTML=html();side.dataset.tcUnifiedSidebarV151='1';
+    }else{
+      side.querySelectorAll('.tc-nav-link').forEach(x=>x.classList.remove('active'));
+      const key=activeKey();const item=ITEMS.find(x=>x.key===key);if(item){const a=[...side.querySelectorAll('.tc-nav-link')].find(x=>(x.getAttribute('href')||'')===item.href);if(a)a.classList.add('active')}
+    }
+    return true;
+  }
+  function comingSoonGuard(e){
+    const el=e.target&&e.target.closest?e.target.closest('[data-tc-coming-soon="1"]'):null;
+    if(!el)return;
+    e.preventDefault();e.stopPropagation();
+    alert('준비중입니다.');
+  }
+  document.addEventListener('click',comingSoonGuard,false);
+  function boot(){apply();setTimeout(apply,80);setTimeout(apply,350);}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+})();
+// ===== /v151 unified sidebar =====
