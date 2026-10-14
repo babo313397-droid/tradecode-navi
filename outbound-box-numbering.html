@@ -166,6 +166,7 @@ async function prepareLabels(zip,wbDoc,relsDoc,shared){
   let palCol=11;for(let r=1;r<=5;r++)for(const c of directChildren(getRow(doc,r)||{childNodes:[]},'c'))if(/^palette$/i.test(compact(cellDisplayText(c,shared))))palCol=splitRef(c.getAttribute('r')).colNum;
   const merges=mergeRanges(doc).map(parseRange).filter(Boolean),palMerges=merges.filter(m=>m.c1===palCol&&m.c2===palCol),boxMerges=merges.filter(m=>m.c1===h.boxCol&&m.c2===h.boxCol);
   const isPal=/팔레트|밀크런/.test(info.name);let current=null;
+  const palletStarts=isPal?[...doc.getElementsByTagNameNS(NS,'row')].map(row=>Number(row.getAttribute('r'))).filter(r=>r>=h.row+3&&/^\d+$/.test(compact(read(palCol,r)))&&Number(read(palCol,r))>0).sort((a,b)=>a-b):[];
   if(isPal){
    let countCol=0;for(let r=1;r<=5;r++)for(const c of directChildren(getRow(doc,r)||{childNodes:[]},'c'))if(/^(?:palette|팔레트)박스수량$/i.test(compact(cellDisplayText(c,shared))))countCol=splitRef(c.getAttribute('r')).colNum;
    const counts=[];if(countCol)for(const row of [...doc.getElementsByTagNameNS(NS,'row')]){const r=Number(row.getAttribute('r'));if(r<h.row+3)continue;const value=Number(read(countCol,r));if(Number.isInteger(value)&&value>0)counts.push(value);}
@@ -175,20 +176,22 @@ async function prepareLabels(zip,wbDoc,relsDoc,shared){
    const r=Number(row.getAttribute('r'));if(r<h.row+3||boxMerges.some(m=>r>m.r1&&r<=m.r2))continue;
    const out=parseBoxLabel(read(h.outCol,r));const b=parseBoxLabel(read(h.boxCol,r))||out;if(!b)continue;
    if(!out||out.count!==b.count)throw new Error(info.name+' '+r+'행: 박스 수와 출고번호 개수가 다릅니다.');
-   const pm=palMerges.find(m=>r>=m.r1&&r<=m.r2);const key=pm?pm.r1:(read(palCol,r)?r:current?.key??r);
+   const palletStart=isPal?palletStarts.filter(start=>start<=r).pop():null;
+   if(isPal&&palletStart===undefined)throw new Error(info.name+' '+r+'행: 팔레트 번호가 없어 배정을 확인해야 합니다.');
+   const key=isPal?palletStart:0;
    if(!current||!isPal||current.key!==key){
     if(!isPal&&current){}else current=null;
-    if(!current){current={sheet:info.name,key,isPal,milk:/밀크런/.test(info.name),numbers:[],sourcePal:read(palCol,pm?pm.r1:r),parts:''};labelState.groups.push(current);}
+    if(!current){current={sheet:info.name,key,isPal,milk:/밀크런/.test(info.name),numbers:[],sourcePal:isPal?read(palCol,palletStart):'',parts:''};labelState.groups.push(current);}
    }
    for(let n=out.start;n<=out.end;n++)current.numbers.push(n);
   }
  }
  const consolidated=[];for(const g of labelState.groups){const prev=consolidated.find(x=>x.sheet===g.sheet);if(prev){prev.numbers.push(...g.numbers);prev.parts+=','+g.numbers.length;}else consolidated.push({...g,numbers:[...g.numbers],parts:String(g.numbers.length)});}labelState.groups=consolidated;
- for(const g of labelState.groups){if(!g.isPal)continue;const counts=declaredBySheet.get(g.sheet)||[];const sum=counts.reduce((a,b)=>a+b,0);if(counts.length&&sum<=g.numbers.length){g.parts=[...counts,...(sum<g.numbers.length?[g.numbers.length-sum]:[])].join(',');g.inferred=sum<g.numbers.length;}else if(sum>g.numbers.length){throw new Error(g.sheet+': 팔레트 박스수량 합계가 실제 박스 수보다 큽니다.');}}
+ for(const g of labelState.groups){if(!g.isPal)continue;const counts=declaredBySheet.get(g.sheet)||[];const sum=counts.reduce((a,b)=>a+b,0);if(counts.length&&sum===g.numbers.length){g.parts=counts.join(',');}else if(sum<g.numbers.length){g.inferred=true;}else if(sum>g.numbers.length){throw new Error(g.sheet+': 팔레트 박스수량 합계가 실제 박스 수보다 큽니다.');}}
  labelState.total=labelState.groups.reduce((n,g)=>n+g.numbers.length,0);
  const numbers=labelState.groups.flatMap(g=>g.numbers);if(new Set(numbers).size!==numbers.length)throw new Error('기존 출고박스번호가 중복되어 있습니다. 위의 전체 1번부터 다시 생성 옵션을 선택하면 다운로드 파일과 라벨 번호를 함께 정리합니다.');
  
- $('labelGroups').innerHTML=labelState.groups.map((g,i)=>g.isPal?`<div style="padding:6px;border-bottom:1px solid #ddd">${esc(g.sheet)} · 센터 전체 ${g.numbers.length}박스 · 팔레트별 수량${g.inferred?' (마지막 수량은 잔여 박스 계산)':''} <input data-group="${i}" value="${g.parts}" style="width:100px;padding:6px" aria-label="${esc(g.sheet)} 팔레트 분할 수량"></div>`:'').join('');
+ $('labelGroups').innerHTML=labelState.groups.map((g,i)=>g.isPal?`<div style="padding:6px;border-bottom:1px solid #ddd">${esc(g.sheet)} · 센터 전체 ${g.numbers.length}박스 · 팔레트별 수량${g.inferred?' (빈 수량은 원본 팔레트별 실제 박스로 계산)':''} <input data-group="${i}" value="${g.parts}" style="width:100px;padding:6px" aria-label="${esc(g.sheet)} 팔레트 분할 수량"></div>`:'').join('');
  $('labelSheet').innerHTML='<option value="">모든 센터</option>'+[...new Set(labelState.groups.map(g=>g.sheet))].map(s=>`<option>${esc(s)}</option>`).join('');
  labelPanel.style.display='block';renderLabels();
 }
