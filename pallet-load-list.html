@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>쿠팡 팔레트 적재리스트 PDF / PowerPoint 생성기 | TradeCode Navi</title>
-<!-- v7: 팔레트 내 동일 SKU 통합(수작업 적재리스트 방식) -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -12,7 +11,7 @@
 <style>
 :root{--navy:#102744;--navy2:#0a1e35;--green:#087443;--gold:#d2a93f;--line:#cad5df;--bg:#f4f7f6;--muted:#65778a;--bad:#b42318;--warn:#9a6700}
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;color:#152434;background:var(--bg)}
-body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:250px;background:var(--navy2);color:white;padding:20px 14px;position:sticky;top:0;height:100vh;overflow-y:auto}.brand{font-weight:900;font-size:21px;margin-bottom:3px}.brand small{display:block;font-size:12px;font-weight:500;color:#b7c5d6;margin-top:4px}.side .sec{font-size:11px;color:#8fa4bb;margin:22px 3px 8px}.nav{display:block;width:100%;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.05);color:#f2f5f8;text-align:left;border-radius:10px;padding:12px 13px;margin:7px 0;font-weight:800;cursor:pointer;font-size:13px}.nav.active{background:#d0aa42;color:#10223b;border-color:#d0aa42}.main{flex:1;min-width:0;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}.top h1{margin:0;font-size:25px}.top p{margin:5px 0 0;color:var(--muted);font-size:13px}.btn{border:1px solid #bccbd7;background:white;border-radius:9px;padding:10px 14px;font-weight:900;cursor:pointer;color:#1b3045}.btn.primary{background:var(--green);border-color:var(--green);color:white}.btn.gold{background:#d7ae43;border-color:#d7ae43;color:#17263b}.btn.danger{color:#a61b16;border-color:#e1aaa7;background:#fff7f6}.btn:disabled{opacity:.45;cursor:not-allowed}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{background:white;border:1px solid #d7e0e6;border-radius:12px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.025)}.card h2{font-size:15px;margin:0;padding:14px 16px;border-bottom:1px solid #e2e8ed}.card-body{padding:15px}.step{display:flex;align-items:center;gap:9px}.stepno{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#126591;color:#fff;font-size:13px;font-weight:900}.drop{border:2px dashed #9cb0c0;border-radius:10px;background:#fbfcfd;padding:18px;text-align:center;transition:.15s}.drop.drag{background:#edf8f2;border-color:#26895b}.drop strong{display:block;font-size:15px}.drop small{display:block;margin-top:5px;color:#718296}.file-line{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap}.file-name{font-size:12px;color:#53677c}.center-list{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px}.center-btn{border:1px solid #b8c7d1;background:#fff;border-radius:9px;padding:9px 12px;font-weight:900;cursor:pointer}.center-btn.active{background:#0c7044;color:white;border-color:#0c7044}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.field label{font-size:12px;font-weight:900;display:block;margin-bottom:5px}.field input{width:100%;border:1px solid #c6d2dc;border-radius:8px;padding:9px 10px;font-size:13px}.hidden{display:none!important}.status{padding:11px 13px;border-radius:9px;background:#eef4f7;color:#355267;font-size:13px;line-height:1.55}.status.ok{background:#e9f7ef;color:#16633e}.status.warn{background:#fff7df;color:#765b00}.status.bad{background:#fff0ef;color:#a32620}.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.kpi{border:1px solid #dbe4e9;border-radius:10px;padding:12px;background:#fbfcfc}.kpi b{display:block;font-size:20px;color:#0b6c41}.kpi span{font-size:11px;color:#65778a}.issues{margin-top:12px;max-height:170px;overflow:auto;border:1px solid #e0e7eb;border-radius:8px}.issues table{width:100%;border-collapse:collapse;font-size:12px}.issues th,.issues td{border-bottom:1px solid #edf1f3;padding:7px 8px;text-align:left}.issues th{position:sticky;top:0;background:#f6f9fa}.preview-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #e1e7eb}.preview-wrap{display:flex;flex-direction:column;align-items:center;gap:28px;padding:24px 22px 44px;background:#dfe5e7;overflow-x:auto;overflow-y:visible;max-height:none}.pdf-page{width:1123px;height:794px;flex:0 0 794px;background:white;color:#111;padding:34px 48px 28px;box-shadow:0 2px 12px rgba(0,0,0,.18);font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;position:relative;overflow:hidden}.pdf-title{text-align:center;font-size:32px;font-weight:900;margin:0 0 14px;text-decoration:underline;text-underline-offset:6px}.pdf-box{border:2px solid #333;padding:10px 12px 10px;height:calc(100% - 57px);display:flex;flex-direction:column}.pdf-meta{font-size:21px;font-weight:800;line-height:1.30;margin-bottom:8px;flex:0 0 auto}.pdf-meta .line{display:flex;align-items:baseline;gap:7px;white-space:nowrap}.pdf-meta .label{display:inline-block}.pdf-meta .poids{color:#4381b6;text-decoration:underline;font-weight:500;font-size:19px;overflow-wrap:anywhere;white-space:normal}.pdf-page.continuation .pdf-box{padding-top:104px}.pdf-page.continuation .pdf-table{flex:0 0 auto}.pdf-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:17px;flex:1 1 auto}.pdf-table th,.pdf-table td{border:1.6px solid #222;text-align:center;vertical-align:middle;padding:4px 5px;line-height:1.20}.pdf-table th{font-size:16px;height:46px;font-weight:900}.pdf-table tbody tr{height:47px}.pdf-table td{height:47px;font-size:17px}.pdf-table .name{text-align:center;font-size:15.5px;padding:4px 6px;word-break:keep-all;overflow-wrap:anywhere}.pdf-table .sku{color:#397dac;text-decoration:underline;font-size:16.5px}.loading-mask{position:fixed;inset:0;background:rgba(10,30,53,.48);display:flex;align-items:center;justify-content:center;z-index:9999}.loading-box{background:white;padding:24px 30px;border-radius:12px;font-weight:900;box-shadow:0 7px 30px rgba(0,0,0,.25)}
+body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:250px;background:var(--navy2);color:white;padding:20px 14px;position:sticky;top:0;height:100vh;overflow-y:auto}.brand{font-weight:900;font-size:21px;margin-bottom:3px}.brand small{display:block;font-size:12px;font-weight:500;color:#b7c5d6;margin-top:4px}.side .sec{font-size:11px;color:#8fa4bb;margin:22px 3px 8px}.nav{display:block;width:100%;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.05);color:#f2f5f8;text-align:left;border-radius:10px;padding:12px 13px;margin:7px 0;font-weight:800;cursor:pointer;font-size:13px}.nav.active{background:#d0aa42;color:#10223b;border-color:#d0aa42}.main{flex:1;min-width:0;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}.top h1{margin:0;font-size:25px}.top p{margin:5px 0 0;color:var(--muted);font-size:13px}.btn{border:1px solid #bccbd7;background:white;border-radius:9px;padding:10px 14px;font-weight:900;cursor:pointer;color:#1b3045}.btn.primary{background:var(--green);border-color:var(--green);color:white}.btn.gold{background:#d7ae43;border-color:#d7ae43;color:#17263b}.btn.danger{color:#a61b16;border-color:#e1aaa7;background:#fff7f6}.btn:disabled{opacity:.45;cursor:not-allowed}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{background:white;border:1px solid #d7e0e6;border-radius:12px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.025)}.card h2{font-size:15px;margin:0;padding:14px 16px;border-bottom:1px solid #e2e8ed}.card-body{padding:15px}.step{display:flex;align-items:center;gap:9px}.stepno{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#126591;color:#fff;font-size:13px;font-weight:900}.drop{border:2px dashed #9cb0c0;border-radius:10px;background:#fbfcfd;padding:18px;text-align:center;transition:.15s}.drop.drag{background:#edf8f2;border-color:#26895b}.drop strong{display:block;font-size:15px}.drop small{display:block;margin-top:5px;color:#718296}.file-line{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap}.file-name{font-size:12px;color:#53677c}.center-list{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px}.center-btn{border:1px solid #b8c7d1;background:#fff;border-radius:9px;padding:9px 12px;font-weight:900;cursor:pointer}.center-btn.active{background:#0c7044;color:white;border-color:#0c7044}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.field label{font-size:12px;font-weight:900;display:block;margin-bottom:5px}.field input{width:100%;border:1px solid #c6d2dc;border-radius:8px;padding:9px 10px;font-size:13px}.hidden{display:none!important}.status{padding:11px 13px;border-radius:9px;background:#eef4f7;color:#355267;font-size:13px;line-height:1.55}.status.ok{background:#e9f7ef;color:#16633e}.status.warn{background:#fff7df;color:#765b00}.status.bad{background:#fff0ef;color:#a32620}.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.kpi{border:1px solid #dbe4e9;border-radius:10px;padding:12px;background:#fbfcfc}.kpi b{display:block;font-size:20px;color:#0b6c41}.kpi span{font-size:11px;color:#65778a}.issues{margin-top:12px;max-height:170px;overflow:auto;border:1px solid #e0e7eb;border-radius:8px}.issues table{width:100%;border-collapse:collapse;font-size:12px}.issues th,.issues td{border-bottom:1px solid #edf1f3;padding:7px 8px;text-align:left}.issues th{position:sticky;top:0;background:#f6f9fa}.preview-toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #e1e7eb}.preview-wrap{display:flex;flex-direction:column;align-items:center;gap:28px;padding:24px 22px 44px;background:#dfe5e7;overflow-x:auto;overflow-y:visible;max-height:none}.pdf-page{width:1123px;height:794px;flex:0 0 794px;background:white;color:#111;padding:34px 48px 28px;box-shadow:0 2px 12px rgba(0,0,0,.18);font-family:"Malgun Gothic","Apple SD Gothic Neo",Arial,sans-serif;position:relative;overflow:hidden}.pdf-title{text-align:center;font-size:32px;font-weight:900;margin:0 0 14px;text-decoration:underline;text-underline-offset:6px}.pdf-box{border:2px solid #333;padding:10px 12px 10px;height:calc(100% - 57px);display:flex;flex-direction:column}.pdf-meta{font-size:21px;font-weight:800;line-height:1.30;margin-bottom:8px;flex:0 0 auto}.pdf-meta .line{display:flex;align-items:baseline;gap:7px;white-space:nowrap}.pdf-meta .label{display:inline-block}.pdf-meta .poids{color:#4381b6;text-decoration:underline;font-weight:500;font-size:19px;overflow-wrap:anywhere;white-space:normal}.pdf-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:17px;flex:1 1 auto}.pdf-table th,.pdf-table td{border:1.6px solid #222;text-align:center;vertical-align:middle;padding:4px 5px;line-height:1.20}.pdf-table th{font-size:16px;height:46px;font-weight:900}.pdf-table tbody tr{height:47px}.pdf-table td{height:47px;font-size:17px}.pdf-table .name{text-align:center;font-size:15.5px;padding:4px 6px;word-break:keep-all;overflow-wrap:anywhere}.pdf-table .sku{color:#397dac;text-decoration:underline;font-size:16.5px}.loading-mask{position:fixed;inset:0;background:rgba(10,30,53,.48);display:flex;align-items:center;justify-content:center;z-index:9999}.loading-box{background:white;padding:24px 30px;border-radius:12px;font-weight:900;box-shadow:0 7px 30px rgba(0,0,0,.25)}
 @media(max-width:1100px){.side{display:none}.main{padding:12px}.grid2{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.preview-wrap{align-items:flex-start}.pdf-page{transform-origin:top left}}
 @page{size:A4 landscape;margin:0}
 @media print{html,body{width:297mm;height:auto;background:#fff}.side,.top,.setup-area,.preview-toolbar{display:none!important}.main{padding:0}.card{border:0;box-shadow:none;margin:0}.preview-wrap{padding:0;background:white;display:block;max-height:none;overflow:visible}.pdf-page{box-shadow:none;break-after:page;page-break-after:always;margin:0;width:297mm;height:210mm;padding:9mm 12.5mm 7.5mm}.pdf-page:last-child{break-after:auto;page-break-after:auto}}
@@ -112,73 +111,69 @@ body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:25
   function fmtDate(v){const s=String(v??'').replace(/\D/g,'');if(s.length>=8)return {raw:s.slice(0,8),month:String(Number(s.slice(4,6))),day:String(Number(s.slice(6,8)))};return {raw:norm(v),month:'',day:''}}
   function headerIndex(rows,needle,scanRows=5){for(let r=0;r<Math.min(scanRows,rows.length);r++){for(let c=0;c<(rows[r]||[]).length;c++){const t=compact(rows[r][c]);if(t&&t.includes(compact(needle)))return c}}return -1}
   function detectPackingCols(rows){
-    const cols={sku:headerIndex(rows,'상품번호'),name:headerIndex(rows,'제품명'),center:headerIndex(rows,'물류센터'),qty:headerIndex(rows,'출고총수량'),perBox:headerIndex(rows,'박스당제품수량'),boxCount:headerIndex(rows,'박스총수량'),pallet:headerIndex(rows,'Palette')};
-    const missing=Object.entries(cols).filter(([,v])=>v<0).map(([k])=>k);if(missing.length)throw new Error('선적 엑셀에서 필요한 열을 찾지 못했습니다: '+missing.join(', '));return cols
+    const cols={sku:headerIndex(rows,'상품번호'),name:headerIndex(rows,'제품명'),center:headerIndex(rows,'물류센터'),qty:headerIndex(rows,'출고총수량'),perBox:headerIndex(rows,'박스당제품수량'),boxCount:headerIndex(rows,'박스총수량'),pallet:headerIndex(rows,'Palette'),palletQty:headerIndex(rows,'Palette당제품수량'),palletBoxes:headerIndex(rows,'Palette박스수량')};
+    const required=['sku','name','center','qty','perBox','boxCount','pallet'];const missing=required.filter(k=>cols[k]<0);if(missing.length)throw new Error('선적 엑셀에서 필요한 열을 찾지 못했습니다: '+missing.join(', '));return cols
   }
-  function parsePacking(rows){
-    const c=detectPackingCols(rows);let currentPallet=null;const groups=[];let start=0;
+  function parsePacking(rows,ws){
+    const c=detectPackingCols(rows);let currentPallet=null;const groups=[];const packingIssues=[];let start=0;
+    const mergedPalletByRow=new Map();
+    if(ws&&Array.isArray(ws['!merges']))for(const m of ws['!merges']){
+      if(c.pallet>=m.s.c&&c.pallet<=m.e.c){
+        const anchor=ws[XLSX.utils.encode_cell({r:m.s.r,c:c.pallet})];const pv=num(anchor?.v??anchor?.w);
+        if(Number.isFinite(pv)&&pv>0)for(let rr=m.s.r;rr<=m.e.r;rr++)mergedPalletByRow.set(rr,Math.trunc(pv));
+      }
+    }
     for(let r=0;r<Math.min(6,rows.length);r++){if((rows[r]||[]).some(v=>compact(v).includes('상품번호'))){start=r+1;break}}
-    for(let r=start;r<rows.length;){const row=rows[r]||[];const p=num(row[c.pallet]);if(Number.isFinite(p)&&p>0)currentPallet=Math.trunc(p);
+    const palletSummaryExpected=new Map();
+    let lastExplicitPallet=null;
+    for(let r=start;r<rows.length;){
+      const row=rows[r]||[];const explicitP=num(row[c.pallet]);const mergedP=mergedPalletByRow.get(r);let rowPallet=Number.isFinite(explicitP)&&explicitP>0?Math.trunc(explicitP):(mergedP||null);
       const blank=[c.sku,c.name,c.center,c.qty].every(i=>i<0||row[i]==null||norm(row[i])==='');if(blank){r++;continue}
       const s=sku(row[c.sku]),q=num(row[c.qty]),pb=num(row[c.perBox]),bc=num(row[c.boxCount]);
-      if(s&&Number.isFinite(q)&&q>0&&Number.isFinite(pb)&&pb>0&&Number.isFinite(bc)&&bc>0&&currentPallet){
+      const palletQty=c.palletQty>=0?num(row[c.palletQty]):NaN;const palletBoxes=c.palletBoxes>=0?num(row[c.palletBoxes]):NaN;
+      const isGroupStart=s&&Number.isFinite(q)&&q>0&&Number.isFinite(pb)&&pb>0&&Number.isFinite(bc)&&bc>0;
+      if(rowPallet){
+        if(lastExplicitPallet&&rowPallet>lastExplicitPallet+1)packingIssues.push({severity:'warn',type:'팔레트 번호 순서',sku:s||'-',text:`${XLSX.utils.encode_col(c.pallet)}${r+1}의 팔레트 번호가 ${lastExplicitPallet}번 다음에 ${rowPallet}번으로 건너뜁니다.`});
+        currentPallet=rowPallet;lastExplicitPallet=Math.max(lastExplicitPallet||0,rowPallet);
+      }else if(isGroupStart&&(Number.isFinite(palletQty)&&palletQty>0||Number.isFinite(palletBoxes)&&palletBoxes>0)){
+        const inferred=(currentPallet||0)+1;currentPallet=inferred;lastExplicitPallet=Math.max(lastExplicitPallet||0,inferred);
+        packingIssues.push({severity:'info',type:'팔레트 자동보정',sku:s||'-',text:`${XLSX.utils.encode_col(c.pallet)}${r+1} 팔레트 번호가 비어 있어 팔레트 합계값을 기준으로 ${inferred}번 팔레트로 자동 판단했습니다.`});
+      }
+      if(currentPallet&&Number.isFinite(palletBoxes)&&palletBoxes>0)palletSummaryExpected.set(currentPallet,Math.trunc(palletBoxes));
+      if(isGroupStart&&currentPallet){
         const items=[{sku:s,name:cellText(row[c.name]),qty:q,row:r+1}];let j=r+1;
-        for(;j<rows.length;j++){const rr=rows[j]||[];const blank2=[c.sku,c.name,c.center,c.qty].every(i=>i<0||rr[i]==null||norm(rr[i])==='');if(blank2)break;const p2=num(rr[c.pallet]);const pb2=num(rr[c.perBox]),bc2=num(rr[c.boxCount]);if(Number.isFinite(p2)&&p2>0)break;if(Number.isFinite(pb2)&&pb2>0&&Number.isFinite(bc2)&&bc2>0)break;const ss=sku(rr[c.sku]),qq=num(rr[c.qty]);if(ss&&Number.isFinite(qq)&&qq>0)items.push({sku:ss,name:cellText(rr[c.name]),qty:qq,row:j+1})}
+        for(;j<rows.length;j++){
+          const rr=rows[j]||[];const blank2=[c.sku,c.name,c.center,c.qty].every(i=>i<0||rr[i]==null||norm(rr[i])==='');if(blank2)break;
+          const p2raw=num(rr[c.pallet]);const p2merged=mergedPalletByRow.get(j);const p2=Number.isFinite(p2raw)&&p2raw>0?Math.trunc(p2raw):(p2merged||null);const pb2=num(rr[c.perBox]),bc2=num(rr[c.boxCount]);
+          if(p2&&p2!==currentPallet)break;if(Number.isFinite(pb2)&&pb2>0&&Number.isFinite(bc2)&&bc2>0)break;
+          const ss=sku(rr[c.sku]),qq=num(rr[c.qty]);if(ss&&Number.isFinite(qq)&&qq>0)items.push({sku:ss,name:cellText(rr[c.name]),qty:qq,row:j+1})
+        }
         groups.push({pallet:currentPallet,boxCount:Math.trunc(bc),unitsPerBox:pb,items,startRow:r+1});r=j;
+      }else if(isGroupStart&&!currentPallet){
+        packingIssues.push({severity:'warn',type:'팔레트 번호 확인',sku:s||'-',text:`${XLSX.utils.encode_col(c.pallet)}${r+1}에 팔레트 번호가 없고 자동 판단할 근거도 없습니다.`});r++;
       }else r++;
     }
     if(!groups.length)throw new Error('선택한 밀크런 시트에서 팔레트 박스 작업을 찾지 못했습니다.');
-    return groups;
+    const actualBoxes=new Map();for(const g of groups)actualBoxes.set(g.pallet,(actualBoxes.get(g.pallet)||0)+g.boxCount);
+    for(const [p,expected] of palletSummaryExpected){const actual=actualBoxes.get(p)||0;if(actual!==expected)packingIssues.push({severity:'warn',type:'팔레트 박스수 확인',sku:'-',text:`${p}번 팔레트: 시트 표시 ${expected}박스 / 자동 분석 ${actual}박스`})}
+    return {groups,issues:packingIssues};
   }
   function buildDisplayRows(groups){
-    // v7: 수작업 적재리스트 기준으로 같은 팔레트 안의 동일 SKU는 반드시 한 줄로 합칩니다.
-    // 일반박스 + 혼합박스에 같은 SKU가 나뉘어 있어도 수량을 합산하고 BOX 표기만 결합합니다.
-    // 예) 60400184: 2박스 32개 + 1박스 8개 -> BOX 3 / 수량 40
-    //     61319283: 일반 1박스 8개 + 혼합 1-1 2개 -> BOX 1,1-1 / 수량 10
-    const byP=new Map();
-    for(const g of groups){if(!byP.has(g.pallet))byP.set(g.pallet,[]);byP.get(g.pallet).push(g)}
+    const byP=new Map();for(const g of groups){if(!byP.has(g.pallet))byP.set(g.pallet,[]);byP.get(g.pallet).push(g)}
     const result=[];
     for(const [pallet,gs] of [...byP.entries()].sort((a,b)=>a[0]-b[0])){
-      const skuMap=new Map();let orderSeq=0;let boxes=0;
-      const getSkuRow=(it)=>{
-        let x=skuMap.get(it.sku);
-        if(!x){
-          x={sku:it.sku,name:it.name||'',qty:0,simpleBoxes:0,mixedLabels:[],order:orderSeq++};
-          skuMap.set(it.sku,x);
-        }else if(!x.name&&it.name){x.name=it.name}
-        return x;
-      };
-      for(const g of gs){
-        boxes+=g.boxCount;
-        const mixed=g.boxCount===1&&g.items.length>1;
-        if(mixed){
-          // 한 혼합박스 안에서 같은 SKU가 여러 위치에 있으면 위치번호도 모두 보존합니다.
-          g.items.forEach((it,i)=>{
-            const x=getSkuRow(it);
-            x.qty+=it.qty;
-            x.mixedLabels.push('1-'+(i+1));
-          });
-        }else{
-          const it=g.items[0];if(!it)continue;
-          const x=getSkuRow(it);
-          x.qty+=it.qty;
-          x.simpleBoxes+=g.boxCount;
-        }
+      const out=[];const simpleMap=new Map();let orderSeq=0;let boxes=0;
+      for(const g of gs){boxes+=g.boxCount;const mixed=g.boxCount===1&&g.items.length>1;if(mixed){const m=new Map();g.items.forEach((it,i)=>{if(!m.has(it.sku))m.set(it.sku,{sku:it.sku,name:it.name,qty:0,labels:[],order:orderSeq++});const x=m.get(it.sku);x.qty+=it.qty;x.labels.push('1-'+(i+1))});for(const x of m.values())out.push({kind:'mixed',sku:x.sku,name:x.name,qty:x.qty,boxLabel:x.labels.join(','),unitsPerBox:g.unitsPerBox,order:x.order})}
+        else{const it=g.items[0];const key=it.sku+'|'+g.unitsPerBox;if(!simpleMap.has(key)){const x={kind:'simple',sku:it.sku,name:it.name,qty:0,boxes:0,unitsPerBox:g.unitsPerBox,order:orderSeq++};simpleMap.set(key,x);out.push(x)}const x=simpleMap.get(key);x.qty+=it.qty;x.boxes+=g.boxCount;x.boxLabel=String(x.boxes)}
       }
-      const out=[...skuMap.values()].sort((a,b)=>a.order-b.order).map(x=>{
-        const parts=[];
-        if(x.simpleBoxes>0)parts.push(String(x.simpleBoxes));
-        if(x.mixedLabels.length)parts.push(...x.mixedLabels);
-        return {kind:'merged',sku:x.sku,name:x.name,qty:x.qty,boxLabel:parts.join(','),order:x.order};
-      });
-      result.push({pallet,boxes,rows:out})
+      out.sort((a,b)=>a.order-b.order);result.push({pallet,boxes,rows:out})
     }
     return result
   }
   function parsePO(wb,selectedCenter){const ws=wb.Sheets['상품목록']||wb.Sheets[wb.SheetNames[0]];if(!ws)throw new Error('PO 파일에서 상품목록 시트를 찾지 못했습니다.');const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});if(!rows.length)throw new Error('PO 상품목록이 비어 있습니다.');const hdr=(rows[0]||[]).map(compact);const find=n=>hdr.findIndex(x=>x.includes(compact(n)));const c={po:find('발주번호'),center:find('물류센터'),sku:find('상품번호'),name:find('상품이름'),qty:find('확정수량'),life:find('유통(소비)기한'),mfg:find('제조일자'),edd:find('입고예정일')};const miss=Object.entries(c).filter(([k,v])=>['life','mfg'].includes(k)?false:v<0).map(([k])=>k);if(miss.length)throw new Error('PO에서 필요한 열을 찾지 못했습니다: '+miss.join(', '));const key=centerKey(selectedCenter);const list=[];for(let r=1;r<rows.length;r++){const row=rows[r]||[];if(centerKey(row[c.center])!==key)continue;const s=sku(row[c.sku]),q=num(row[c.qty]);if(!s||!Number.isFinite(q)||q<=0)continue;list.push({po:cellText(row[c.po]),center:cellText(row[c.center]),sku:s,name:cellText(row[c.name]),qty:q,life:c.life>=0?cellText(row[c.life]):'',mfg:c.mfg>=0?cellText(row[c.mfg]):'',edd:cellText(row[c.edd]),sourceIndex:r})}if(!list.length)throw new Error(`PO 파일에서 ${prettyCenter(selectedCenter)} 데이터를 찾지 못했습니다.`);return list}
-  function buildModel(groups,poRows){
+  function buildModel(groups,poRows,packingIssues=[]){
     const pallets=buildDisplayRows(groups);const lots=new Map();const poBySku=new Map();for(const r of poRows){if(!lots.has(r.sku))lots.set(r.sku,[]);lots.get(r.sku).push({...r,remaining:r.qty});if(!poBySku.has(r.sku))poBySku.set(r.sku,[]);poBySku.get(r.sku).push(r)}for(const arr of lots.values())arr.sort((a,b)=>(b.qty-a.qty)||(a.sourceIndex-b.sourceIndex));
-    const issues=[];const packingTotals=new Map();for(const p of pallets)for(const row of p.rows)packingTotals.set(row.sku,(packingTotals.get(row.sku)||0)+row.qty);
+    const issues=[...packingIssues];const packingTotals=new Map();for(const p of pallets)for(const row of p.rows)packingTotals.set(row.sku,(packingTotals.get(row.sku)||0)+row.qty);
     const poTotals=new Map();for(const r of poRows)poTotals.set(r.sku,(poTotals.get(r.sku)||0)+r.qty);
     for(const [s,q] of packingTotals){const pq=poTotals.get(s)||0;if(q!==pq)issues.push({type:q>pq?'수량 초과':'수량 차이',sku:s,text:`선적 ${nf.format(q)}개 / PO 확정 ${nf.format(pq)}개`})}
     for(const p of pallets){p.poIds=[];for(const row of p.rows){let need=row.qty;const arr=lots.get(row.sku)||[];row.poAlloc=[];for(const lot of arr){if(need<=0)break;const take=Math.min(need,lot.remaining);if(take>0){lot.remaining-=take;need-=take;row.poAlloc.push({po:lot.po,qty:take});if(!p.poIds.includes(lot.po))p.poIds.push(lot.po)}}if(need>0){issues.push({type:'PO 부족',sku:row.sku,text:`${nf.format(need)}개를 발주번호에 배정하지 못했습니다.`})}const src=(poBySku.get(row.sku)||[])[0];row.lifeText=src?(src.life||src.mfg||''):''}}
@@ -198,7 +193,6 @@ body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:25
         palletTotal:totalPallets,
         chunkIndex,
         chunkCount:chunks.length,
-        isContinuation:chunkIndex>0,
         startNo:chunkIndex*10+1,
         rows
       }));
@@ -210,22 +204,19 @@ body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:25
     const company=norm($('companyInput').value)||'코리아원';
     const center=norm($('centerInput').value)||prettyCenter(state.selectedSheet);
     const rows=[...pg.rows];while(rows.length<10)rows.push(null);
-    const pageClass=pg.isContinuation?'pdf-page continuation':'pdf-page';
-    // 10행 초과로 이어지는 페이지도 수작업 양식처럼 문서 타이틀을 반드시 다시 표시한다.
-    // 첫 페이지의 센터/업체/발주번호 메타정보는 반복하지 않고, 표 헤더와 NO만 이어서 출력한다.
-    const metaHTML=pg.isContinuation?'':`<div class="pdf-meta"><div class="line"><span>${pg.palletTotal} - ${pg.palletSeq} / 총 박스수량 (${p.boxes} BOX)</span></div><div class="line"><span class="label">입고예정일자 (</span><span>${esc(model.date.month)} 월&nbsp;&nbsp; ${esc(model.date.day)}일</span><span>) / 납품센터명 (${esc(center)})</span></div><div class="line"><span class="label">업체명</span><span>&nbsp;&nbsp;&nbsp;&nbsp;( ${esc(company)} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</span></div><div class="line"><span class="label">발주번호</span><span>&nbsp;&nbsp;&nbsp;(</span><span class="poids">${esc(p.poIds.join('/'))}</span><span>)</span></div></div>`;
-    return `<section class="${pageClass}" data-pallet="${p.pallet}" data-part="${pg.chunkIndex+1}"><div class="pdf-title">쿠팡 파렛트 적재리스트 (일반)</div><div class="pdf-box">${metaHTML}<table class="pdf-table"><colgroup><col style="width:7%"><col style="width:14%"><col style="width:33%"><col style="width:14%"><col style="width:15%"><col style="width:17%"></colgroup><thead><tr><th>NO</th><th>SKU No</th><th>SKU NAME</th><th>BOX 수량</th><th>수량</th><th>유통(소비)기한/<br>제조일자</th></tr></thead><tbody>${rows.map((r,i)=>r?`<tr><td>${pg.startNo+i}</td><td class="sku">${esc(r.sku)}</td><td class="name">${esc(r.name)}</td><td>${esc(r.boxLabel)}</td><td>${nf.format(r.qty)}</td><td>${esc(r.lifeText||'')}</td></tr>`:`<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}</tbody></table></div></section>`
+    return `<section class="pdf-page" data-pallet="${p.pallet}" data-part="${pg.chunkIndex+1}"><div class="pdf-title">쿠팡 파렛트 적재리스트 (일반)</div><div class="pdf-box"><div class="pdf-meta"><div class="line"><span>${pg.palletTotal} - ${pg.palletSeq} / 총 박스수량 (${p.boxes} BOX)</span></div><div class="line"><span class="label">입고예정일자 (</span><span>${esc(model.date.month)} 월&nbsp;&nbsp; ${esc(model.date.day)}일</span><span>) / 납품센터명 (${esc(center)})</span></div><div class="line"><span class="label">업체명</span><span>&nbsp;&nbsp;&nbsp;&nbsp;( ${esc(company)} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</span></div><div class="line"><span class="label">발주번호</span><span>&nbsp;&nbsp;&nbsp;(</span><span class="poids">${esc(p.poIds.join('/'))}</span><span>)</span></div></div><table class="pdf-table"><colgroup><col style="width:7%"><col style="width:14%"><col style="width:33%"><col style="width:14%"><col style="width:15%"><col style="width:17%"></colgroup><thead><tr><th>NO</th><th>SKU No</th><th>SKU NAME</th><th>BOX 수량</th><th>수량</th><th>유통(소비)기한/<br>제조일자</th></tr></thead><tbody>${rows.map((r,i)=>r?`<tr><td>${pg.startNo+i}</td><td class="sku">${esc(r.sku)}</td><td class="name">${esc(r.name)}</td><td>${esc(r.boxLabel)}</td><td>${nf.format(r.qty)}</td><td>${esc(r.lifeText||'')}</td></tr>`:`<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}</tbody></table></div></section>`
   }
   function renderModel(model){
     const printPages=buildPrintPages(model);
     $('resultBlock').classList.remove('hidden');$('previewCard').classList.remove('hidden');
-    $('kPallet').textContent=printPages.length;$('kBoxes').textContent=nf.format(model.totalBoxes);$('kSku').textContent=nf.format(model.skuCount);$('kPo').textContent=model.allPo.length;$('kWarn').textContent=model.issues.length;
-    const body=$('issueBody');body.innerHTML=model.issues.map(x=>`<tr><td>${esc(x.type)}</td><td>${esc(x.sku)}</td><td>${esc(x.text)}</td></tr>`).join('');$('issues').classList.toggle('hidden',!model.issues.length);
+    const warnIssues=model.issues.filter(x=>x.severity!=='info'),infoIssues=model.issues.filter(x=>x.severity==='info');
+    $('kPallet').textContent=printPages.length;$('kBoxes').textContent=nf.format(model.totalBoxes);$('kSku').textContent=nf.format(model.skuCount);$('kPo').textContent=model.allPo.length;$('kWarn').textContent=warnIssues.length;
+    const body=$('issueBody');body.innerHTML=model.issues.map(x=>`<tr><td>${x.severity==='info'?'✅ ':''}${esc(x.type)}</td><td>${esc(x.sku)}</td><td>${esc(x.text)}</td></tr>`).join('');$('issues').classList.toggle('hidden',!model.issues.length);
     $('previewNote').textContent=`${printPages.length}페이지 · A4 가로 · 팔레트 ${model.pallets.length}개 · ${model.date.month}월 ${model.date.day}일 · ${$('centerInput').value}`;
     $('previewWrap').innerHTML=printPages.map(pg=>pageHTML(pg,model)).join('');
-    setStatus(`✅ ${esc($('centerInput').value)} · 팔레트 ${model.pallets.length}개 · 출력 ${printPages.length}페이지 · 총 ${nf.format(model.totalBoxes)}박스 · 발주번호 ${model.allPo.length}개 매칭 완료${model.issues.length?`<br>⚠ 확인 필요 ${model.issues.length}건이 있습니다.`:''}`,model.issues.length?'warn':'ok')
+    setStatus(`✅ ${esc($('centerInput').value)} · 팔레트 ${model.pallets.length}개 · 출력 ${printPages.length}페이지 · 총 ${nf.format(model.totalBoxes)}박스 · 발주번호 ${model.allPo.length}개 매칭 완료${infoIssues.length?`<br>✅ 팔레트 번호 자동보정 ${infoIssues.length}건`:''}${warnIssues.length?`<br>⚠ 확인 필요 ${warnIssues.length}건이 있습니다.`:''}`,warnIssues.length?'warn':'ok')
   }
-  async function analyse(){if(!state.shipWb||!state.selectedSheet||!state.poWb)return;showLoading('팔레트/PO를 매칭하는 중...');try{const rows=sheetRows(state.shipWb,state.selectedSheet);const groups=parsePacking(rows);const poRows=parsePO(state.poWb,state.selectedSheet);state.model=buildModel(groups,poRows);renderModel(state.model)}catch(e){console.error(e);setStatus('❌ '+esc(e.message||e),'bad');$('previewCard').classList.add('hidden')}finally{hideLoading()}}
+  async function analyse(){if(!state.shipWb||!state.selectedSheet||!state.poWb)return;showLoading('팔레트/PO를 매칭하는 중...');try{const rows=sheetRows(state.shipWb,state.selectedSheet);const packing=parsePacking(rows,state.shipWb.Sheets[state.selectedSheet]);const poRows=parsePO(state.poWb,state.selectedSheet);state.model=buildModel(packing.groups,poRows,packing.issues);renderModel(state.model)}catch(e){console.error(e);setStatus('❌ '+esc(e.message||e),'bad');$('previewCard').classList.add('hidden')}finally{hideLoading()}}
   async function loadShip(file){showLoading('선적 엑셀에서 밀크런 센터를 찾는 중...');try{state.shipFile=file;state.shipWb=await readWorkbook(file);state.milkSheets=state.shipWb.SheetNames.filter(n=>/밀크런/.test(n)&&n!=='발주서');if(!state.milkSheets.length)throw new Error('밀크런 시트를 찾지 못했습니다.');$('shipName').textContent=file.name;$('centerArea').classList.remove('hidden');$('centerList').innerHTML=state.milkSheets.map(n=>`<button type="button" class="center-btn" data-sheet="${esc(n)}">${esc(n)}</button>`).join('');setStatus(`밀크런 ${state.milkSheets.length}개를 찾았습니다. 만들 센터를 선택해 주세요.`,'ok')}catch(e){setStatus('❌ '+esc(e.message||e),'bad')}finally{hideLoading()}}
   function selectCenter(name){state.selectedSheet=name;document.querySelectorAll('.center-btn').forEach(b=>b.classList.toggle('active',b.dataset.sheet===name));$('poPick').disabled=false;$('poName').textContent='PO 파일을 선택해 주세요';$('companyInput').value=inferCompany(name,state.shipFile?.name||'');$('centerInput').value=prettyCenter(name);setStatus(`선택: <b>${esc(name)}</b><br>이제 해당 센터의 쿠팡 PO 파일을 올려주세요.`,'ok');if(state.poWb)analyse()}
   async function loadPO(file){showLoading('쿠팡 PO를 읽는 중...');try{state.poFile=file;state.poWb=await readWorkbook(file);$('poName').textContent=file.name;await analyse()}catch(e){setStatus('❌ '+esc(e.message||e),'bad')}finally{hideLoading()}}
