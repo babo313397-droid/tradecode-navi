@@ -101,10 +101,10 @@
   </section>
 
   <section class="panel hidden" id="parcelUploadPanel">
-    <div class="panel-title">송장번호가 입력된 팩킹 선적건과 택배 Shipment 파일을 선택해 주세요</div>
+    <div class="panel-title">팩킹 선적건과 택배 Shipment 파일을 선택해 주세요</div>
     <div class="panel-body">
       <div class="upload-grid">
-        <label class="drop" id="parcelSourceDrop"><input id="parcelSourceFile" type="file" accept=".xlsx,.xlsm"><strong>① 송장 입력 완료 팩킹 선적건</strong><small>박스번호·출고박스번호·송장번호가 입력된 팩킹 Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="parcelSourceName">파일을 선택해 주세요.</div></label>
+        <label class="drop" id="parcelSourceDrop"><input id="parcelSourceFile" type="file" accept=".xlsx,.xlsm"><strong>① 팩킹 선적건</strong><small>박스번호가 있는 팩킹 Excel · 송장번호는 비워도 됩니다.<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="parcelSourceName">파일을 선택해 주세요.</div></label>
         <label class="drop" id="parcelShipmentDrop"><input id="parcelShipmentFile" type="file" accept=".xlsx,.xlsm"><strong>② 택배 Shipment 파일</strong><small>쿠팡에서 받은 ShipmentsUpload_PARCEL Excel<br>드래그하거나 클릭해서 선택</small><div class="file-name" id="parcelShipmentName">파일을 선택해 주세요.</div></label>
       </div>
       <div id="parcelSourceCenterArea" class="sheet-picker hidden">
@@ -112,7 +112,7 @@
         <div id="parcelSourceCenterList" class="sheet-list"></div>
         <div class="sheet-hint">선적건 Excel에서 <b>팔레트 · 밀크런 · 예비택배 · 발주서</b> 탭을 제외한 센터 탭을 모두 표시합니다.</div>
       </div>
-      <div class="rules"><b>택배 자동입력 기준</b> · 선택한 센터 탭의 <b>물류센터 + 상품번호 + 출고총수량 + 박스번호 + 송장번호</b>를 읽어 택배 Shipment의 같은 센터·SKU에 순서대로 배정합니다. 같은 SKU가 여러 PO에 나뉘어 있으면 확정수량 범위에서 PO 행 순서대로 배분합니다. 한 PO 행에 여러 송장이 들어가면 원본 행을 복제하여 새 행을 만들고 송장번호·납품수량만 입력합니다. <b>PO / 센터 / 상품번호 / 확정수량은 수정하지 않습니다.</b></div>
+      <div class="rules"><b>택배 자동입력 기준</b> · 선택한 센터 탭의 <b>물류센터 + 상품번호 + 출고총수량 + 박스번호</b>를 읽고, 택배 Shipment의 <b>송장번호입력</b> 시트에 적힌 송장번호를 박스번호 순서대로 자동 배정합니다. 예: 1번 박스=첫 번째 송장, 2번 박스=두 번째 송장. 팩킹 파일의 송장번호는 비워도 됩니다. 같은 SKU가 여러 PO에 나뉘어 있으면 확정수량 범위에서 PO 행 순서대로 배분합니다. 한 PO 행에 여러 송장이 들어가면 원본 행을 복제하여 새 행을 만들고 송장번호·납품수량만 입력합니다. <b>PO / 센터 / 상품번호 / 확정수량은 수정하지 않습니다.</b></div>
       <div id="parcelWorkStatus" class="statusbar" style="margin-top:14px">① 팩킹 선적건을 올리고 센터를 선택한 뒤 ② 택배 Shipment 파일을 올려 주세요.</div>
     </div>
   </section>
@@ -132,7 +132,7 @@
             <div class="check-row good">✅ 정상 매칭 <b id="parcelOkCount">0건</b></div>
             <div class="check-row warn">⚠️ 수량 확인 <b id="parcelWarnCount">0건</b></div>
             <div class="check-row badc">❌ 미매칭 <b id="parcelBadCount">0건</b></div>
-            <div class="check-row warn">⚠️ 송장번호 미입력 <b id="parcelMissingInvoiceCount">0박스</b></div>
+            <div class="check-row warn">⚠️ 송장 미배정 <b id="parcelMissingInvoiceCount">0박스</b></div>
           </div>
           <div class="actions"><button class="btn" id="parcelPreviewBtn">결과 미리보기</button><button class="btn green" id="parcelDownloadBtn">택배 Shipment 다운로드</button></div>
         </div>
@@ -143,7 +143,7 @@
             <div class="stat"><span>입력 라인 / 새 행</span><b id="parcelStatLines">0 / 0</b></div>
           </div>
           <div id="parcelIssueList" class="issue-list hidden"></div>
-          <div class="parcel-note">※ 상품목록에서는 <b>송장번호(I열)·납품수량(J열)</b>만 자동 입력합니다. 같은 PO 행에 송장이 여러 개 걸릴 때만 그 행을 복제합니다. <b>송장번호입력</b> 시트에는 실제 사용된 송장번호를 중복 없이 한 번씩 입력합니다.</div>
+          <div class="parcel-note">※ 택배 Shipment의 <b>송장번호입력</b> 시트 순서와 팩킹 선적건의 <b>박스번호 순서</b>를 1:1로 연결합니다. 예: 첫 번째 송장→1번 박스, 두 번째 송장→2번 박스. 상품목록에서는 <b>송장번호(I열)·납품수량(J열)</b>만 자동 입력하며 PO/센터/SKU/확정수량은 변경하지 않습니다.</div>
         </div>
       </div>
       <div id="parcelPreviewWrap" class="preview-wrap">
@@ -398,49 +398,47 @@ function findParcelSourceSheet(wb,selectedName=''){
         if(!found.name && (/^제품명$/.test(h)||/^상품명$/.test(h)))found.name={r,c};
       }
     }
-    if(found.sku&&found.center&&found.qty&&found.box&&found.invoice){
+    if(found.sku&&found.center&&found.qty&&found.box){
       const headerEndRow=Math.max(found.sku.r,found.center.r,found.qty.r,found.box.r,found.invoice.r,found.outBox?.r??0,found.name?.r??0);
       return {
         name,ws,headerRow:headerEndRow,dataStartRow:headerEndRow+1,
         skuCol:found.sku.c,centerCol:found.center.c,qtyCol:found.qty.c,
-        boxCol:found.box.c,invoiceCol:found.invoice.c,
+        boxCol:found.box.c,invoiceCol:found.invoice?found.invoice.c:-1,
         nameCol:found.name?found.name.c:-1,outBoxCol:found.outBox?found.outBox.c:-1
       };
     }
   }
-  throw new Error(selectedName?`선택한 '${selectedName}' 탭에서 택배 작업에 필요한 열을 찾지 못했습니다.`:'팩킹 선적건에서 필요한 열을 찾지 못했습니다. 상품번호·물류센터·출고총수량과 박스번호·송장번호가 위쪽 12행 안에 있는 파일인지 확인해 주세요.');
+  throw new Error(selectedName?`선택한 '${selectedName}' 탭에서 택배 작업에 필요한 열을 찾지 못했습니다.`:'팩킹 선적건에서 필요한 열을 찾지 못했습니다. 상품번호·물류센터·출고총수량·박스번호가 위쪽 12행 안에 있는 파일인지 확인해 주세요.');
 }
 function parseParcelSource(buffer,selectedName=''){
   const wb=XLSX.read(buffer,{type:'array',cellFormula:true,cellStyles:false}),info=findParcelSourceSheet(wb,selectedName),ws=info.ws,range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
-  // 박스번호/출고박스번호/송장번호는 여러 상품이 한 박스에 들어가면 세로 병합됩니다.
-  // 병합된 첫 셀 값을 그 병합 구간의 모든 상품행에 내려서 사용합니다.
-  const centerM=mergedValues(ws,info.centerCol),boxM=mergedValues(ws,info.boxCol),outM=info.outBoxCol>=0?mergedValues(ws,info.outBoxCol):new Map(),invM=mergedRawValues(ws,info.invoiceCol);
-  const demands=[],missingInvoices=[];
+  // 박스번호/출고박스번호/송장번호는 여러 상품이 한 박스에 들어가면 세로 병합될 수 있습니다.
+  // 송장번호는 팩킹 파일에서 비워도 되며, 이후 택배 Shipment의 송장번호입력 시트에서 박스번호 순서대로 배정합니다.
+  const centerM=mergedValues(ws,info.centerCol),boxM=mergedValues(ws,info.boxCol),outM=info.outBoxCol>=0?mergedValues(ws,info.outBoxCol):new Map(),invM=info.invoiceCol>=0?mergedRawValues(ws,info.invoiceCol):new Map();
+  const demands=[];
   for(let r=info.dataStartRow;r<=range.e.r;r++){
     const sku=psku(pcell(ws,r,info.skuCol)),qty=pnum(pcell(ws,r,info.qtyCol));
-    // 중간 합계행/병합 헤더행은 상품번호가 숫자가 아니므로 제외합니다.
     if(!sku||!/^\d+$/.test(sku)||qty<=0)continue;
     const center=pnorm(centerM.get(r)||pcellText(ws,r,info.centerCol));
     const boxNo=pnorm(boxM.get(r)||pcellText(ws,r,info.boxCol));
     const outBox=info.outBoxCol>=0?pnorm(outM.get(r)||pcellText(ws,r,info.outBoxCol)):'';
-    const invoice=invoiceText(invM.has(r)?invM.get(r):pcell(ws,r,info.invoiceCol));
+    const invoice=info.invoiceCol>=0?invoiceText(invM.has(r)?invM.get(r):pcell(ws,r,info.invoiceCol)):'';
     const productName=info.nameCol>=0?pnorm(pcellText(ws,r,info.nameCol)):'';
-    // 아직 박스 작업이 안 된 상품행(박스번호도 송장도 없음)은 택배 Shipment 입력 대상에서 제외합니다.
-    if(!boxNo&&!outBox&&!invoice)continue;
-    if(!invoice){missingInvoices.push({row:r+1,center,boxNo,outBox,sku,qty,productName});continue}
-    demands.push({sourceRow:r+1,center,centerKey:centerKey(center),boxNo,outBox,invoice,sku,qty,productName});
+    // 택배 작업 대상은 실제 박스번호(또는 출고박스번호)가 잡힌 상품행만 사용합니다.
+    if(!boxNo&&!outBox)continue;
+    demands.push({sourceRow:r+1,center,centerKey:centerKey(center),boxNo,outBox,invoice,packingInvoice:invoice,sku,qty,productName});
   }
-  if(!demands.length&&missingInvoices.length)throw new Error('팩킹 선적건의 박스에는 상품이 있지만 송장번호가 입력되어 있지 않습니다. 송장번호를 입력한 후 다시 올려 주세요.');
-  if(!demands.length)throw new Error('팩킹 선적건에서 송장번호가 입력된 박스별 상품 수량을 찾지 못했습니다.');
-  // 같은 센터/박스/송장 안에서 동일 SKU가 여러 줄이면 한 줄로 합산합니다.
+  if(!demands.length)throw new Error('팩킹 선적건에서 박스번호가 입력된 상품 수량을 찾지 못했습니다.');
+  // 같은 센터/박스 안에서 동일 SKU가 여러 줄이면 한 줄로 합산합니다.
+  // 송장번호는 아직 비어 있을 수 있으므로 병합 키에 넣지 않습니다.
   const mergedDemandMap=new Map();
   for(const d of demands){
-    const dk=[d.centerKey,d.sku,d.invoice,d.boxNo,d.outBox].join('|'),old=mergedDemandMap.get(dk);
+    const dk=[d.centerKey,d.sku,d.boxNo,d.outBox].join('|'),old=mergedDemandMap.get(dk);
     if(old)old.qty+=d.qty;else mergedDemandMap.set(dk,{...d});
   }
   const mergedDemands=[...mergedDemandMap.values()],byKey=new Map();
   for(const d of mergedDemands){const key=d.centerKey+'|'+d.sku;if(!byKey.has(key))byKey.set(key,[]);byKey.get(key).push(d)}
-  return {wb,info,demands:mergedDemands,missingInvoices,byKey,invoiceIssues:[]};
+  return {wb,info,demands:mergedDemands,missingInvoices:[],byKey,invoiceIssues:[]};
 }
 
 function rebuildParcelSourceKeys(source){
@@ -448,29 +446,46 @@ function rebuildParcelSourceKeys(source){
   for(const d of source.demands){const key=d.centerKey+'|'+d.sku;if(!byKey.has(key))byKey.set(key,[]);byKey.get(key).push(d)}
   source.byKey=byKey;
 }
+function parcelBoxSortValue(v){
+  const s=pnorm(v);if(!s)return Number.MAX_SAFE_INTEGER;
+  const m=s.match(/\d+/);return m?Number(m[0]):Number.MAX_SAFE_INTEGER;
+}
 function applyShipmentInvoiceList(source,parcel){
   const list=Array.isArray(parcel.inputInvoices)?parcel.inputInvoices.filter(Boolean):[];
   const issues=[];
-  if(!list.length){source.invoiceIssues=issues;return source}
-  const boxes=[],seen=new Set();
+  // 선택 센터의 실제 박스를 한 번씩만 수집하고, 박스번호 숫자순으로 정렬합니다.
+  const boxMap=new Map();
   for(const d of source.demands){
     const key=[d.centerKey,d.boxNo||'',d.outBox||''].join('|');
-    if(seen.has(key))continue;seen.add(key);boxes.push({key,center:d.center,boxNo:d.boxNo,outBox:d.outBox,packingInvoice:d.invoice,sourceRow:d.sourceRow});
+    if(!boxMap.has(key))boxMap.set(key,{key,center:d.center,boxNo:d.boxNo,outBox:d.outBox,packingInvoice:d.invoice||'',sourceRow:d.sourceRow});
   }
-  if(list.length!==boxes.length){
-    issues.push({type:'warn',msg:`Shipment 송장번호입력 시트에는 ${list.length.toLocaleString()}개, 팩킹 파일에는 ${boxes.length.toLocaleString()}개 박스가 있습니다. 개수가 같지 않아 팩킹 파일의 송장번호를 사용합니다.`});
-    source.invoiceIssues=issues;return source;
-  }
-  const boxInvoice=new Map();
-  boxes.forEach((b,i)=>{
-    // 송장번호입력 시트에 사용자가 미리 입력한 목록을 최종 기준으로 사용합니다.
-    // 팩킹 파일의 송장번호가 달라도 여기서는 오류로 처리하지 않습니다.
-    const inv=list[i];boxInvoice.set(b.key,inv);
+  const boxes=[...boxMap.values()].sort((a,b)=>{
+    const an=parcelBoxSortValue(a.boxNo||a.outBox),bn=parcelBoxSortValue(b.boxNo||b.outBox);
+    return an-bn || a.sourceRow-b.sourceRow || String(a.boxNo||a.outBox).localeCompare(String(b.boxNo||b.outBox),'ko',{numeric:true});
   });
+  const boxInvoice=new Map();
+  if(list.length){
+    const n=Math.min(list.length,boxes.length);
+    for(let i=0;i<n;i++)boxInvoice.set(boxes[i].key,list[i]);
+    if(list.length!==boxes.length){
+      if(list.length<boxes.length){
+        const missing=boxes.slice(list.length).map(b=>b.boxNo||b.outBox||'?').join(', ');
+        issues.push({type:'warn',msg:`Shipment 송장번호는 ${list.length.toLocaleString()}개인데 팩킹 박스는 ${boxes.length.toLocaleString()}개입니다. 송장이 부족한 박스: ${missing}`});
+      }else{
+        issues.push({type:'warn',msg:`Shipment 송장번호는 ${list.length.toLocaleString()}개인데 팩킹 박스는 ${boxes.length.toLocaleString()}개입니다. 뒤쪽 ${Math.max(0,list.length-boxes.length).toLocaleString()}개 송장은 사용되지 않습니다.`});
+      }
+    }
+  }else{
+    issues.push({type:'warn',msg:'택배 Shipment의 송장번호입력 시트에서 송장번호를 찾지 못했습니다. 팩킹 파일에 입력된 송장번호가 있으면 그 값을 사용합니다.'});
+  }
   source.demands=source.demands.map(d=>{
     const key=[d.centerKey,d.boxNo||'',d.outBox||''].join('|');
-    return {...d,packingInvoice:d.invoice,invoice:boxInvoice.get(key)||d.invoice};
+    const auto=boxInvoice.get(key)||'';
+    return {...d,packingInvoice:d.packingInvoice||d.invoice||'',invoice:auto||(d.invoice||'')};
   });
+  source.missingInvoices=source.demands.filter(d=>!invoiceText(d.invoice)).map(d=>({row:d.sourceRow,center:d.center,boxNo:d.boxNo,outBox:d.outBox,sku:d.sku,qty:d.qty,productName:d.productName}));
+  // 어떤 박스에 어떤 송장이 자동 배정됐는지 결과 화면에서 확인할 수 있도록 기록합니다.
+  source.invoiceAssignments=boxes.map((b,i)=>({boxNo:b.boxNo,outBox:b.outBox,invoice:boxInvoice.get(b.key)||(b.packingInvoice||''),order:i+1}));
   rebuildParcelSourceKeys(source);source.invoiceIssues=issues;return source;
 }
 
@@ -552,18 +567,18 @@ function renderParcelResult(){
   p$('parcelCenterList').innerHTML=[...centerStats.values()].map(x=>`<li>${pesc(x.name)}: <b>${x.skus.size.toLocaleString()}상품</b> / <b>${x.qty.toLocaleString()}개</b> / 송장 <b>${x.invoices.size.toLocaleString()}개</b></li>`).join('');
   p$('parcelOkCount').textContent=r.okCount.toLocaleString()+'건';p$('parcelWarnCount').textContent=r.warnCount.toLocaleString()+'건';p$('parcelBadCount').textContent=r.badCount.toLocaleString()+'건';const missingBoxCount=new Set(s.missingInvoices.map(x=>x.boxNo||x.outBox||('row'+x.row))).size;p$('parcelMissingInvoiceCount').textContent=missingBoxCount.toLocaleString()+'박스';
   const invoices=new Set(r.allocations.map(a=>a.invoice).filter(Boolean)),boxes=new Set(s.demands.map(a=>a.boxNo||a.outBox||a.invoice).filter(Boolean));p$('parcelStatInvoices').textContent=invoices.size.toLocaleString();p$('parcelStatBoxes').textContent=boxes.size.toLocaleString();p$('parcelStatLines').textContent=r.allocations.length.toLocaleString()+' / '+r.cloneCount.toLocaleString();
-  const issue=p$('parcelIssueList'),allIssues=[...r.issues,...(s.invoiceIssues||[]),...s.missingInvoices.map(x=>({type:'warn',msg:`${x.center||''} 박스 ${x.boxNo||x.outBox||x.row}: SKU ${x.sku} 송장번호 미입력`}))];if(allIssues.length){issue.classList.remove('hidden');issue.innerHTML='<b>확인 필요한 항목</b><br>'+allIssues.map(x=>(x.type==='bad'?'❌ ':'⚠️ ')+pesc(x.msg)).join('<br>')}else issue.classList.add('hidden');
+  const issue=p$('parcelIssueList'),allIssues=[...r.issues,...(s.invoiceIssues||[]),...s.missingInvoices.map(x=>({type:'warn',msg:`${x.center||''} 박스 ${x.boxNo||x.outBox||x.row}: SKU ${x.sku} 송장 미배정`}))];if(allIssues.length){issue.classList.remove('hidden');issue.innerHTML='<b>확인 필요한 항목</b><br>'+allIssues.map(x=>(x.type==='bad'?'❌ ':'⚠️ ')+pesc(x.msg)).join('<br>')}else issue.classList.add('hidden');
   p$('parcelPreviewBody').innerHTML=r.allocations.map(a=>`<tr><td>${pesc(a.center)}</td><td>${pesc(a.boxNo)}</td><td>${pesc(a.outBox)}</td><td><b>${pesc(a.invoice)}</b></td><td><b>${pesc(a.sku)}</b></td><td class="name">${pesc(a.productName)}</td><td>${a.qty.toLocaleString()}</td><td><b>${a.assignedQty.toLocaleString()}</b></td><td>${pesc(a.po)}</td><td>${a.parcelRow}</td><td><span class="pill ${a.isClone?'clone':''}">${a.isClone?'새 행':'원본 행'}</span></td></tr>`).join('')||'<tr><td colspan="11">입력할 항목이 없습니다.</td></tr>';
   p$('parcelResultCard').classList.remove('hidden');p$('parcelResultCard').classList.add('show');p$('parcelResultCard').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function parcelDownloadName(name,issues){return name.replace(/\.(xlsx|xlsm)$/i,'')+(issues?'_택배자동입력_확인필요':'_택배자동입력_완성')+'.xlsx'}
-async function runParcel(){if(!pstate.parcelFile||!pstate.sourceFile||!pstate.selectedSourceSheet)return;try{p$('parcelResultCard').classList.add('hidden');p$('parcelPreviewWrap').classList.remove('show');pStatus(`'${pstate.selectedSourceSheet}' 센터와 택배 Shipment를 분석하는 중입니다…`,'work');const [pb,sb]=await Promise.all([pstate.parcelFile.arrayBuffer(),pstate.sourceBuffer?Promise.resolve(pstate.sourceBuffer):pstate.sourceFile.arrayBuffer()]);pstate.parcel=parseParcel(pb);pstate.source=applyShipmentInvoiceList(parseParcelSource(sb,pstate.selectedSourceSheet),pstate.parcel);if(pstate.parcel.existing>0){const go=confirm(`택배 Shipment에 기존 송장번호/납품수량 입력값이 ${pstate.parcel.existing.toLocaleString()}행 있습니다.\n\n현재 선적건 기준으로 작업 사본의 입력값을 비우고 다시 자동입력합니다. 원본 파일은 변경되지 않습니다. 계속할까요?`);if(!go){pStatus('자동입력을 취소했습니다. 원본 파일은 변경되지 않았습니다.');return}}pStatus('센터·SKU별 박스/송장 수량을 PO 확정수량에 맞춰 배분하는 중입니다…','work');const result=allocateParcel(pstate.source,pstate.parcel),built=await buildParcelOutput(pstate.parcelFile,pstate.parcel,result.allocations);pstate.blob=built.blob;pstate.result={...result,cloneCount:built.cloneCount};const missingBoxCount=new Set(pstate.source.missingInvoices.map(x=>x.boxNo||x.outBox||('row'+x.row))).size,invoiceWarnCount=(pstate.source.invoiceIssues||[]).length,issueCount=result.warnCount+result.badCount+missingBoxCount+invoiceWarnCount;pstate.downloadName=parcelDownloadName(pstate.parcelFile.name,issueCount>0);pStatus(issueCount?`택배 자동입력 완료 · 확인 필요 ${issueCount.toLocaleString()}건이 있습니다.`:'택배 자동입력 완료 · 모든 수량과 송장번호가 정상 매칭되었습니다.','ok');renderParcelResult()}catch(e){console.error(e);pstate.blob=null;pstate.result=null;pStatus(e.message||'택배 Shipment 자동입력 중 오류가 발생했습니다.','bad');alert('택배 Shipment 자동입력 실패\n\n'+(e.message||e))}}
+async function runParcel(){if(!pstate.parcelFile||!pstate.sourceFile||!pstate.selectedSourceSheet)return;try{p$('parcelResultCard').classList.add('hidden');p$('parcelPreviewWrap').classList.remove('show');pStatus(`'${pstate.selectedSourceSheet}' 센터와 택배 Shipment를 분석하는 중입니다…`,'work');const [pb,sb]=await Promise.all([pstate.parcelFile.arrayBuffer(),pstate.sourceBuffer?Promise.resolve(pstate.sourceBuffer):pstate.sourceFile.arrayBuffer()]);pstate.parcel=parseParcel(pb);pstate.source=applyShipmentInvoiceList(parseParcelSource(sb,pstate.selectedSourceSheet),pstate.parcel);if(pstate.source.missingInvoices.length){const boxes=[...new Set(pstate.source.missingInvoices.map(x=>x.boxNo||x.outBox||('row'+x.row)))];throw new Error(`송장번호가 배정되지 않은 박스가 ${boxes.length.toLocaleString()}개 있습니다: ${boxes.join(', ')}\n\n택배 Shipment의 송장번호입력 시트에 박스 수만큼 송장번호가 있는지 확인해 주세요.`)}if(pstate.parcel.existing>0){const go=confirm(`택배 Shipment에 기존 송장번호/납품수량 입력값이 ${pstate.parcel.existing.toLocaleString()}행 있습니다.\n\n현재 선적건 기준으로 작업 사본의 입력값을 비우고 다시 자동입력합니다. 원본 파일은 변경되지 않습니다. 계속할까요?`);if(!go){pStatus('자동입력을 취소했습니다. 원본 파일은 변경되지 않았습니다.');return}}pStatus('센터·SKU별 박스/송장 수량을 PO 확정수량에 맞춰 배분하는 중입니다…','work');const result=allocateParcel(pstate.source,pstate.parcel),built=await buildParcelOutput(pstate.parcelFile,pstate.parcel,result.allocations);pstate.blob=built.blob;pstate.result={...result,cloneCount:built.cloneCount};const missingBoxCount=new Set(pstate.source.missingInvoices.map(x=>x.boxNo||x.outBox||('row'+x.row))).size,invoiceWarnCount=(pstate.source.invoiceIssues||[]).length,issueCount=result.warnCount+result.badCount+missingBoxCount+invoiceWarnCount;pstate.downloadName=parcelDownloadName(pstate.parcelFile.name,issueCount>0);pStatus(issueCount?`택배 자동입력 완료 · 확인 필요 ${issueCount.toLocaleString()}건이 있습니다.`:'택배 자동입력 완료 · 모든 수량과 송장번호가 정상 매칭되었습니다.','ok');renderParcelResult()}catch(e){console.error(e);pstate.blob=null;pstate.result=null;pStatus(e.message||'택배 Shipment 자동입력 중 오류가 발생했습니다.','bad');alert('택배 Shipment 자동입력 실패\n\n'+(e.message||e))}}
 function parcelSourceCandidates(wb){return wb.SheetNames.filter(name=>{const k=pnorm(name).replace(/\s+/g,'');return !/팔레트|밀크런/i.test(k)&&k!=='예비택배'&&k!=='발주서'})}
 function renderParcelSourceCenters(){const area=p$('parcelSourceCenterArea'),list=p$('parcelSourceCenterList');if(!pstate.sourceCenterSheets.length){area.classList.add('hidden');list.innerHTML='';return}area.classList.remove('hidden');list.innerHTML=pstate.sourceCenterSheets.map((name,i)=>`<button type="button" class="sheet-btn${pstate.selectedSourceSheet===name?' active':''}" data-index="${i}">${pesc(name)}</button>`).join('')}
 async function prepareParcelSourceFile(f){pstate.sourceFile=f;pstate.source=null;pstate.sourceBuffer=null;pstate.sourceWb=null;pstate.selectedSourceSheet='';pstate.sourceCenterSheets=[];p$('parcelSourceName').textContent=f.name;p$('parcelSourceDrop').classList.add('ready');p$('parcelResultCard').classList.add('hidden');try{pStatus('팩킹 선적건의 택배 센터 탭을 찾는 중입니다…','work');const buf=await f.arrayBuffer(),wb=XLSX.read(buf,{type:'array',cellFormula:true,cellStyles:false});pstate.sourceBuffer=buf;pstate.sourceWb=wb;pstate.sourceCenterSheets=parcelSourceCandidates(wb);renderParcelSourceCenters();if(!pstate.sourceCenterSheets.length){pStatus('선적건에서 택배 작업용 센터 탭을 찾지 못했습니다.','bad');return}pStatus(`택배 작업 센터 ${pstate.sourceCenterSheets.length}개를 찾았습니다. 작업할 센터를 선택해 주세요.`)}catch(e){pstate.sourceBuffer=null;pstate.sourceWb=null;pstate.sourceCenterSheets=[];renderParcelSourceCenters();pStatus(e.message||'팩킹 선적건을 읽는 중 오류가 발생했습니다.','bad')}}
 function setupParcelDrop(dropId,inputId,nameId,key){const drop=p$(dropId),input=p$(inputId),choose=async f=>{if(!f)return;if(!/\.(xlsx|xlsm)$/i.test(f.name)){alert('Excel .xlsx 또는 .xlsm 파일을 선택해 주세요.');return}if(key==='sourceFile'){await prepareParcelSourceFile(f);return}pstate[key]=f;p$(nameId).textContent=f.name;drop.classList.add('ready');if(pstate.sourceFile&&!pstate.selectedSourceSheet)pStatus('팩킹 선적건의 센터를 먼저 선택해 주세요.');if(pstate.parcelFile&&pstate.sourceFile&&pstate.selectedSourceSheet)setTimeout(runParcel,80)};input.addEventListener('change',()=>choose(input.files?.[0]));['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>choose(e.dataTransfer.files?.[0]))}
-function setShipmentMode(mode){const parcel=mode==='parcel';p$('truckModeTab').classList.toggle('active',!parcel);p$('parcelModeTab').classList.toggle('active',parcel);p$('truckUploadPanel').classList.toggle('hidden',parcel);p$('resultCard').classList.toggle('hidden',parcel);p$('parcelUploadPanel').classList.toggle('hidden',!parcel);p$('parcelResultCard').classList.toggle('hidden',!parcel||!pstate.result);p$('pageTitle').textContent=parcel?'📦 택배 Shipment 자동입력':'🚛 트럭쉽먼트 자동입력';p$('pageDesc').innerHTML=parcel?'송장번호가 입력된 선적건에서 작업 센터를 선택한 뒤 박스별 상품수량을 택배 Shipment와 자동 매칭합니다.<br>원본 PO·센터·상품번호·확정수량은 변경하지 않습니다.':'선적건에서 팔레트 작업 센터를 선택한 뒤 팔레트별 상품번호·수량을 TruckShipment와 자동 매칭합니다.<br>원본의 확정수량(G열)과 팔레트 생성가능 수량(H열)은 변경하지 않습니다.';p$('pageBadge').textContent=parcel?'✓ 송장번호/납품수량 자동입력 · 송장목록 자동작성':'✓ I/J열만 자동 입력 · 분할 시 새 행 생성'}
-p$('truckModeTab').onclick=()=>setShipmentMode('truck');p$('parcelModeTab').onclick=()=>setShipmentMode('parcel');setupParcelDrop('parcelSourceDrop','parcelSourceFile','parcelSourceName','sourceFile');setupParcelDrop('parcelShipmentDrop','parcelShipmentFile','parcelShipmentName','parcelFile');p$('parcelSourceCenterList').addEventListener('click',e=>{const b=e.target.closest('.sheet-btn');if(!b)return;const name=pstate.sourceCenterSheets[Number(b.dataset.index)];if(!name)return;pstate.selectedSourceSheet=name;renderParcelSourceCenters();pStatus(pstate.parcelFile?`'${name}' 센터를 선택했습니다. 자동입력을 시작합니다…`:`'${name}' 센터를 선택했습니다. 이제 ② 택배 Shipment 파일을 올려 주세요.`,'ok');if(pstate.parcelFile)setTimeout(runParcel,80)});p$('parcelPreviewBtn').onclick=()=>{p$('parcelPreviewWrap').classList.toggle('show');if(p$('parcelPreviewWrap').classList.contains('show'))p$('parcelPreviewWrap').scrollIntoView({behavior:'smooth',block:'start'})};p$('parcelClosePreviewBtn').onclick=()=>p$('parcelPreviewWrap').classList.remove('show');p$('parcelDownloadBtn').onclick=()=>{if(!pstate.blob)return alert('먼저 택배 Shipment 파일과 선적건 파일을 선택해 주세요.');const a=document.createElement('a');a.href=URL.createObjectURL(pstate.blob);a.download=pstate.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};
+function setShipmentMode(mode){const parcel=mode==='parcel';p$('truckModeTab').classList.toggle('active',!parcel);p$('parcelModeTab').classList.toggle('active',parcel);p$('truckUploadPanel').classList.toggle('hidden',parcel);p$('resultCard').classList.toggle('hidden',parcel);p$('parcelUploadPanel').classList.toggle('hidden',!parcel);p$('parcelResultCard').classList.toggle('hidden',!parcel||!pstate.result);p$('pageTitle').textContent=parcel?'📦 택배 Shipment 자동입력':'🚛 트럭쉽먼트 자동입력';p$('pageDesc').innerHTML=parcel?'팩킹 선적건에서 작업 센터를 선택하면 박스번호 순서대로 택배 Shipment의 송장번호를 자동 배정하고 상품수량을 매칭합니다.<br>팩킹 파일에는 송장번호를 입력하지 않아도 됩니다. 원본 PO·센터·상품번호·확정수량은 변경하지 않습니다.':'선적건에서 팔레트 작업 센터를 선택한 뒤 팔레트별 상품번호·수량을 TruckShipment와 자동 매칭합니다.<br>원본의 확정수량(G열)과 팔레트 생성가능 수량(H열)은 변경하지 않습니다.';p$('pageBadge').textContent=parcel?'✓ 박스순서→송장 자동배정 · 납품수량 자동입력':'✓ I/J열만 자동 입력 · 분할 시 새 행 생성'}
+p$('truckModeTab').onclick=()=>setShipmentMode('truck');p$('parcelModeTab').onclick=()=>setShipmentMode('parcel');setupParcelDrop('parcelSourceDrop','parcelSourceFile','parcelSourceName','sourceFile');setupParcelDrop('parcelShipmentDrop','parcelShipmentFile','parcelShipmentName','parcelFile');p$('parcelSourceCenterList').addEventListener('click',e=>{const b=e.target.closest('.sheet-btn');if(!b)return;const name=pstate.sourceCenterSheets[Number(b.dataset.index)];if(!name)return;pstate.selectedSourceSheet=name;renderParcelSourceCenters();pStatus(pstate.parcelFile?`'${name}' 센터를 선택했습니다. 자동입력을 시작합니다…`:`'${name}' 센터를 선택했습니다. 이제 ② 택배 Shipment 파일을 올려 주세요. 송장번호는 Shipment의 송장번호입력 시트에서 자동 배정됩니다.`,'ok');if(pstate.parcelFile)setTimeout(runParcel,80)});p$('parcelPreviewBtn').onclick=()=>{p$('parcelPreviewWrap').classList.toggle('show');if(p$('parcelPreviewWrap').classList.contains('show'))p$('parcelPreviewWrap').scrollIntoView({behavior:'smooth',block:'start'})};p$('parcelClosePreviewBtn').onclick=()=>p$('parcelPreviewWrap').classList.remove('show');p$('parcelDownloadBtn').onclick=()=>{if(!pstate.blob)return alert('먼저 택배 Shipment 파일과 선적건 파일을 선택해 주세요.');const a=document.createElement('a');a.href=URL.createObjectURL(pstate.blob);a.download=pstate.downloadName;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000)};
 })();
 </script>
 <script src="/auth-client.js"></script>
