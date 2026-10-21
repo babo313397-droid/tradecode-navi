@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>쿠팡 팔레트 적재리스트 PDF / PowerPoint 생성기 | TradeCode Navi</title>
-<!-- v7: 팔레트 내 동일 SKU 통합(수작업 적재리스트 방식) -->
+<!-- v8: 빨간색(품절/미입고) 상품 자동 제외 + 팔레트 내 동일 SKU 통합 -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.0/dist/pptxgen.bundle.js"></script>
@@ -93,7 +94,7 @@ body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:25
 (() => {
   'use strict';
   const $=id=>document.getElementById(id);
-  const state={shipFile:null,shipWb:null,milkSheets:[],selectedSheet:'',poFile:null,poWb:null,model:null};
+  const state={shipFile:null,shipWb:null,milkSheets:[],selectedSheet:'',redRowsBySheet:new Map(),poFile:null,poWb:null,model:null};
   const nf=new Intl.NumberFormat('ko-KR');
   function norm(v){return String(v??'').replace(/\r?\n/g,' ').replace(/\s+/g,' ').trim()}
   function compact(v){return norm(v).replace(/\s+/g,'')}
@@ -106,6 +107,53 @@ body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:25
   function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
   function readWorkbook(file){return new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>{try{resolve(XLSX.read(fr.result,{type:'array',cellDates:false,cellNF:true,cellText:true}))}catch(e){reject(e)}};fr.onerror=reject;fr.readAsArrayBuffer(file)})}
   function sheetRows(wb,name){return XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:null,blankrows:true})}
+  function resolveZipPath(base,target){
+    const parts=(base+'/'+String(target||'').replace(/\\/g,'/')).split('/'),out=[];
+    for(const part of parts){if(!part||part==='.')continue;if(part==='..')out.pop();else out.push(part)}
+    return out.join('/')
+  }
+  function isRedRgb(rgb){
+    let s=String(rgb||'').replace(/^#/,'').toUpperCase();if(s.length===8)s=s.slice(2);if(s.length!==6)return false;
+    const r=parseInt(s.slice(0,2),16),g=parseInt(s.slice(2,4),16),b=parseInt(s.slice(4,6),16);
+    return Number.isFinite(r)&&r>=150&&g<=105&&b<=105&&r>=g*1.45&&r>=b*1.45
+  }
+  // 선적 Excel에서 사용자가 빨간 글씨로 표시한 품절/미입고 행을 직접 읽습니다.
+  // SheetJS 값 변환과 별개로 xlsx 내부 styles.xml의 실제 글자색을 확인하므로,
+  // 셀의 값/수량/팔레트 구조를 바꾸지 않고 '빨간색 표시'만 출고 제외 기준으로 사용합니다.
+  async function detectRedRowsBySheet(file){
+    const result=new Map();
+    if(typeof JSZip==='undefined')return result;
+    const zip=await JSZip.loadAsync(await file.arrayBuffer());
+    const [wbText,relText,styleText]=await Promise.all([
+      zip.file('xl/workbook.xml')?.async('text'),
+      zip.file('xl/_rels/workbook.xml.rels')?.async('text'),
+      zip.file('xl/styles.xml')?.async('text')
+    ]);
+    if(!wbText||!relText||!styleText)return result;
+    const parser=new DOMParser(),wbDoc=parser.parseFromString(wbText,'application/xml'),relDoc=parser.parseFromString(relText,'application/xml'),styleDoc=parser.parseFromString(styleText,'application/xml');
+    const relMap=new Map([...relDoc.getElementsByTagNameNS('*','Relationship')].map(x=>[x.getAttribute('Id'),x.getAttribute('Target')||'']));
+    const fontsNode=styleDoc.getElementsByTagNameNS('*','fonts')[0],xfsNode=styleDoc.getElementsByTagNameNS('*','cellXfs')[0];
+    if(!fontsNode||!xfsNode)return result;
+    const fonts=[...fontsNode.children].filter(x=>x.localName==='font'),redFonts=new Set();
+    fonts.forEach((font,i)=>{const color=[...font.children].find(x=>x.localName==='color');if(color&&isRedRgb(color.getAttribute('rgb')))redFonts.add(i)});
+    const xfs=[...xfsNode.children].filter(x=>x.localName==='xf'),redStyles=new Set();
+    xfs.forEach((xf,i)=>{if(redFonts.has(Number(xf.getAttribute('fontId')||0)))redStyles.add(i)});
+    if(!redStyles.size)return result;
+    for(const sh of [...wbDoc.getElementsByTagNameNS('*','sheet')]){
+      const name=sh.getAttribute('name')||'',rid=sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id')||sh.getAttribute('r:id')||'';
+      const target=relMap.get(rid);if(!target)continue;
+      const path=target.startsWith('/')?target.slice(1):resolveZipPath('xl',target),entry=zip.file(path);if(!entry)continue;
+      const doc=parser.parseFromString(await entry.async('text'),'application/xml'),rows=new Set();
+      for(const cell of [...doc.getElementsByTagNameNS('*','c')]){
+        const styleId=Number(cell.getAttribute('s')||0);if(!redStyles.has(styleId))continue;
+        const ref=cell.getAttribute('r')||'',m=ref.match(/^([A-Z]+)(\d+)$/i);if(!m)continue;
+        // 상품정보 영역(A~G)에서 빨간색이 발견된 데이터 행만 제외 대상으로 잡습니다.
+        const col=XLSX.utils.decode_col(m[1].toUpperCase());if(col<=6)rows.add(Number(m[2]));
+      }
+      if(rows.size)result.set(name,rows)
+    }
+    return result
+  }
   function centerKey(v){const s=compact(v).replace(/센터/g,'').replace(/밀크런/g,'');const m=s.match(/(인천|안성|평택|시흥|천안|대구|광주|경기광주)(\d+)/);if(m)return m[1]+m[2];return s.replace(/^(봄날애|봄|차통|코리아원)/,'')}
   function prettyCenter(v){const key=centerKey(v);const m=key.match(/^(경기광주|인천|안성|평택|시흥|천안|대구|광주)(\d+)$/);return m?`${m[1]} ${m[2]}센터`:norm(v).replace(/밀크런/g,'').trim()+'센터'}
   function inferCompany(sheetName,fileName){const s=norm(sheetName);if(/차통/.test(s))return '차통';if(/봄/.test(s))return '봄날애';if(/코리아원/.test(s))return '코리아원';const f=norm(fileName);if(/차통/.test(f))return '차통';if(/봄날애|봄날/.test(f))return '봄날애';return '코리아원'}
@@ -115,20 +163,29 @@ body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:25
     const cols={sku:headerIndex(rows,'상품번호'),name:headerIndex(rows,'제품명'),center:headerIndex(rows,'물류센터'),qty:headerIndex(rows,'출고총수량'),perBox:headerIndex(rows,'박스당제품수량'),boxCount:headerIndex(rows,'박스총수량'),pallet:headerIndex(rows,'Palette')};
     const missing=Object.entries(cols).filter(([,v])=>v<0).map(([k])=>k);if(missing.length)throw new Error('선적 엑셀에서 필요한 열을 찾지 못했습니다: '+missing.join(', '));return cols
   }
-  function parsePacking(rows){
+  function parsePacking(rows,excludedRows=new Set()){
     const c=detectPackingCols(rows);let currentPallet=null;const groups=[];let start=0;
     for(let r=0;r<Math.min(6,rows.length);r++){if((rows[r]||[]).some(v=>compact(v).includes('상품번호'))){start=r+1;break}}
-    for(let r=start;r<rows.length;){const row=rows[r]||[];const p=num(row[c.pallet]);if(Number.isFinite(p)&&p>0)currentPallet=Math.trunc(p);
+    for(let r=start;r<rows.length;){if(excludedRows.has(r+1)){r++;continue}const row=rows[r]||[];const p=num(row[c.pallet]);if(Number.isFinite(p)&&p>0)currentPallet=Math.trunc(p);
       const blank=[c.sku,c.name,c.center,c.qty].every(i=>i<0||row[i]==null||norm(row[i])==='');if(blank){r++;continue}
       const s=sku(row[c.sku]),q=num(row[c.qty]),pb=num(row[c.perBox]),bc=num(row[c.boxCount]);
       if(s&&Number.isFinite(q)&&q>0&&Number.isFinite(pb)&&pb>0&&Number.isFinite(bc)&&bc>0&&currentPallet){
         const items=[{sku:s,name:cellText(row[c.name]),qty:q,row:r+1}];let j=r+1;
-        for(;j<rows.length;j++){const rr=rows[j]||[];const blank2=[c.sku,c.name,c.center,c.qty].every(i=>i<0||rr[i]==null||norm(rr[i])==='');if(blank2)break;const p2=num(rr[c.pallet]);const pb2=num(rr[c.perBox]),bc2=num(rr[c.boxCount]);if(Number.isFinite(p2)&&p2>0)break;if(Number.isFinite(pb2)&&pb2>0&&Number.isFinite(bc2)&&bc2>0)break;const ss=sku(rr[c.sku]),qq=num(rr[c.qty]);if(ss&&Number.isFinite(qq)&&qq>0)items.push({sku:ss,name:cellText(rr[c.name]),qty:qq,row:j+1})}
+        for(;j<rows.length;j++){if(excludedRows.has(j+1))continue;const rr=rows[j]||[];const blank2=[c.sku,c.name,c.center,c.qty].every(i=>i<0||rr[i]==null||norm(rr[i])==='');if(blank2)break;const p2=num(rr[c.pallet]);const pb2=num(rr[c.perBox]),bc2=num(rr[c.boxCount]);if(Number.isFinite(p2)&&p2>0)break;if(Number.isFinite(pb2)&&pb2>0&&Number.isFinite(bc2)&&bc2>0)break;const ss=sku(rr[c.sku]),qq=num(rr[c.qty]);if(ss&&Number.isFinite(qq)&&qq>0)items.push({sku:ss,name:cellText(rr[c.name]),qty:qq,row:j+1})}
         groups.push({pallet:currentPallet,boxCount:Math.trunc(bc),unitsPerBox:pb,items,startRow:r+1});r=j;
       }else r++;
     }
     if(!groups.length)throw new Error('선택한 밀크런 시트에서 팔레트 박스 작업을 찾지 못했습니다.');
     return groups;
+  }
+  function collectExcludedStockouts(rows,excludedRows=new Set()){
+    const items=[],totals=new Map();if(!excludedRows.size)return {items,totals,totalQty:0};
+    const c=detectPackingCols(rows);let totalQty=0;
+    for(const rowNo of [...excludedRows].sort((a,b)=>a-b)){
+      const row=rows[rowNo-1]||[],s=sku(row[c.sku]),q=num(row[c.qty]);if(!s||!Number.isFinite(q)||q<=0)continue;
+      const item={row:rowNo,sku:s,name:cellText(row[c.name]),qty:q};items.push(item);totals.set(s,(totals.get(s)||0)+q);totalQty+=q
+    }
+    return {items,totals,totalQty}
   }
   function buildDisplayRows(groups){
     // v7: 수작업 적재리스트 기준으로 같은 팔레트 안의 동일 SKU는 반드시 한 줄로 합칩니다.
@@ -176,14 +233,14 @@ body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:25
     return result
   }
   function parsePO(wb,selectedCenter){const ws=wb.Sheets['상품목록']||wb.Sheets[wb.SheetNames[0]];if(!ws)throw new Error('PO 파일에서 상품목록 시트를 찾지 못했습니다.');const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});if(!rows.length)throw new Error('PO 상품목록이 비어 있습니다.');const hdr=(rows[0]||[]).map(compact);const find=n=>hdr.findIndex(x=>x.includes(compact(n)));const c={po:find('발주번호'),center:find('물류센터'),sku:find('상품번호'),name:find('상품이름'),qty:find('확정수량'),life:find('유통(소비)기한'),mfg:find('제조일자'),edd:find('입고예정일')};const miss=Object.entries(c).filter(([k,v])=>['life','mfg'].includes(k)?false:v<0).map(([k])=>k);if(miss.length)throw new Error('PO에서 필요한 열을 찾지 못했습니다: '+miss.join(', '));const key=centerKey(selectedCenter);const list=[];for(let r=1;r<rows.length;r++){const row=rows[r]||[];if(centerKey(row[c.center])!==key)continue;const s=sku(row[c.sku]),q=num(row[c.qty]);if(!s||!Number.isFinite(q)||q<=0)continue;list.push({po:cellText(row[c.po]),center:cellText(row[c.center]),sku:s,name:cellText(row[c.name]),qty:q,life:c.life>=0?cellText(row[c.life]):'',mfg:c.mfg>=0?cellText(row[c.mfg]):'',edd:cellText(row[c.edd]),sourceIndex:r})}if(!list.length)throw new Error(`PO 파일에서 ${prettyCenter(selectedCenter)} 데이터를 찾지 못했습니다.`);return list}
-  function buildModel(groups,poRows){
+  function buildModel(groups,poRows,stockouts={items:[],totals:new Map(),totalQty:0}){
     const pallets=buildDisplayRows(groups);const lots=new Map();const poBySku=new Map();for(const r of poRows){if(!lots.has(r.sku))lots.set(r.sku,[]);lots.get(r.sku).push({...r,remaining:r.qty});if(!poBySku.has(r.sku))poBySku.set(r.sku,[]);poBySku.get(r.sku).push(r)}for(const arr of lots.values())arr.sort((a,b)=>(b.qty-a.qty)||(a.sourceIndex-b.sourceIndex));
     const issues=[];const packingTotals=new Map();for(const p of pallets)for(const row of p.rows)packingTotals.set(row.sku,(packingTotals.get(row.sku)||0)+row.qty);
     const poTotals=new Map();for(const r of poRows)poTotals.set(r.sku,(poTotals.get(r.sku)||0)+r.qty);
-    for(const [s,q] of packingTotals){const pq=poTotals.get(s)||0;if(q!==pq)issues.push({type:q>pq?'수량 초과':'수량 차이',sku:s,text:`선적 ${nf.format(q)}개 / PO 확정 ${nf.format(pq)}개`})}
+    for(const [s,q] of packingTotals){const pq=poTotals.get(s)||0,excluded=stockouts.totals?.get(s)||0,expected=Math.max(0,pq-excluded);if(q!==expected)issues.push({type:q>expected?'수량 초과':'수량 차이',sku:s,text:`선적 ${nf.format(q)}개 / 출고대상 ${nf.format(expected)}개${excluded?` (빨간색 품절 ${nf.format(excluded)}개 제외)`:``}`})}
     for(const p of pallets){p.poIds=[];for(const row of p.rows){let need=row.qty;const arr=lots.get(row.sku)||[];row.poAlloc=[];for(const lot of arr){if(need<=0)break;const take=Math.min(need,lot.remaining);if(take>0){lot.remaining-=take;need-=take;row.poAlloc.push({po:lot.po,qty:take});if(!p.poIds.includes(lot.po))p.poIds.push(lot.po)}}if(need>0){issues.push({type:'PO 부족',sku:row.sku,text:`${nf.format(need)}개를 발주번호에 배정하지 못했습니다.`})}const src=(poBySku.get(row.sku)||[])[0];row.lifeText=src?(src.life||src.mfg||''):''}}
     const dates=[...new Set(poRows.map(x=>x.edd).filter(Boolean))];if(dates.length>1)issues.push({type:'입고일 확인',sku:'-',text:'PO 안에 입고예정일이 여러 개 있습니다: '+dates.join(', ')});
-    const date=fmtDate(dates[0]||'');const allPo=[...new Set(pallets.flatMap(p=>p.poIds))];return {pallets,issues,date,allPo,skuCount:packingTotals.size,totalBoxes:pallets.reduce((s,p)=>s+p.boxes,0)}
+    const date=fmtDate(dates[0]||'');const allPo=[...new Set(pallets.flatMap(p=>p.poIds))];return {pallets,issues,date,allPo,skuCount:packingTotals.size,totalBoxes:pallets.reduce((s,p)=>s+p.boxes,0),stockouts:stockouts.items||[],stockoutCount:(stockouts.items||[]).length,stockoutQty:stockouts.totalQty||0}
   }
   function buildPrintPages(model){
     const pages=[];
@@ -222,12 +279,12 @@ body{overflow-y:auto!important}.app{display:flex;min-height:100vh}.side{width:25
     $('resultBlock').classList.remove('hidden');$('previewCard').classList.remove('hidden');
     $('kPallet').textContent=printPages.length;$('kBoxes').textContent=nf.format(model.totalBoxes);$('kSku').textContent=nf.format(model.skuCount);$('kPo').textContent=model.allPo.length;$('kWarn').textContent=model.issues.length;
     const body=$('issueBody');body.innerHTML=model.issues.map(x=>`<tr><td>${esc(x.type)}</td><td>${esc(x.sku)}</td><td>${esc(x.text)}</td></tr>`).join('');$('issues').classList.toggle('hidden',!model.issues.length);
-    $('previewNote').textContent=`${printPages.length}페이지 · A4 가로 · 팔레트 ${model.pallets.length}개 · ${model.date.month}월 ${model.date.day}일 · ${$('centerInput').value}`;
+    $('previewNote').textContent=`${printPages.length}페이지 · A4 가로 · 팔레트 ${model.pallets.length}개 · ${model.date.month}월 ${model.date.day}일 · ${$('centerInput').value}${model.stockoutCount?` · 빨간색 품절 ${model.stockoutCount}행 제외`:''}`;
     $('previewWrap').innerHTML=printPages.map(pg=>pageHTML(pg,model)).join('');
-    setStatus(`✅ ${esc($('centerInput').value)} · 팔레트 ${model.pallets.length}개 · 출력 ${printPages.length}페이지 · 총 ${nf.format(model.totalBoxes)}박스 · 발주번호 ${model.allPo.length}개 매칭 완료${model.issues.length?`<br>⚠ 확인 필요 ${model.issues.length}건이 있습니다.`:''}`,model.issues.length?'warn':'ok')
+    setStatus(`✅ ${esc($('centerInput').value)} · 팔레트 ${model.pallets.length}개 · 출력 ${printPages.length}페이지 · 총 ${nf.format(model.totalBoxes)}박스 · 발주번호 ${model.allPo.length}개 매칭 완료${model.stockoutCount?`<br>🚫 빨간색 표시 품절/미입고 ${model.stockoutCount}행 · ${nf.format(model.stockoutQty)}개를 적재리스트에서 자동 제외했습니다.`:''}${model.issues.length?`<br>⚠ 확인 필요 ${model.issues.length}건이 있습니다.`:''}`,model.issues.length?'warn':'ok')
   }
-  async function analyse(){if(!state.shipWb||!state.selectedSheet||!state.poWb)return;showLoading('팔레트/PO를 매칭하는 중...');try{const rows=sheetRows(state.shipWb,state.selectedSheet);const groups=parsePacking(rows);const poRows=parsePO(state.poWb,state.selectedSheet);state.model=buildModel(groups,poRows);renderModel(state.model)}catch(e){console.error(e);setStatus('❌ '+esc(e.message||e),'bad');$('previewCard').classList.add('hidden')}finally{hideLoading()}}
-  async function loadShip(file){showLoading('선적 엑셀에서 밀크런 센터를 찾는 중...');try{state.shipFile=file;state.shipWb=await readWorkbook(file);state.milkSheets=state.shipWb.SheetNames.filter(n=>/밀크런/.test(n)&&n!=='발주서');if(!state.milkSheets.length)throw new Error('밀크런 시트를 찾지 못했습니다.');$('shipName').textContent=file.name;$('centerArea').classList.remove('hidden');$('centerList').innerHTML=state.milkSheets.map(n=>`<button type="button" class="center-btn" data-sheet="${esc(n)}">${esc(n)}</button>`).join('');setStatus(`밀크런 ${state.milkSheets.length}개를 찾았습니다. 만들 센터를 선택해 주세요.`,'ok')}catch(e){setStatus('❌ '+esc(e.message||e),'bad')}finally{hideLoading()}}
+  async function analyse(){if(!state.shipWb||!state.selectedSheet||!state.poWb)return;showLoading('팔레트/PO를 매칭하는 중...');try{const rows=sheetRows(state.shipWb,state.selectedSheet),excludedRows=state.redRowsBySheet.get(state.selectedSheet)||new Set(),stockouts=collectExcludedStockouts(rows,excludedRows);const groups=parsePacking(rows,excludedRows);const poRows=parsePO(state.poWb,state.selectedSheet);state.model=buildModel(groups,poRows,stockouts);renderModel(state.model)}catch(e){console.error(e);setStatus('❌ '+esc(e.message||e),'bad');$('previewCard').classList.add('hidden')}finally{hideLoading()}}
+  async function loadShip(file){showLoading('선적 엑셀에서 밀크런 센터와 품절 표시를 읽는 중...');try{state.shipFile=file;const [wb,redRows]=await Promise.all([readWorkbook(file),detectRedRowsBySheet(file)]);state.shipWb=wb;state.redRowsBySheet=redRows;state.milkSheets=state.shipWb.SheetNames.filter(n=>/밀크런/.test(n)&&n!=='발주서');if(!state.milkSheets.length)throw new Error('밀크런 시트를 찾지 못했습니다.');$('shipName').textContent=file.name;$('centerArea').classList.remove('hidden');$('centerList').innerHTML=state.milkSheets.map(n=>`<button type="button" class="center-btn" data-sheet="${esc(n)}">${esc(n)}</button>`).join('');const redCount=[...redRows.values()].reduce((sum,set)=>sum+set.size,0);setStatus(`밀크런 ${state.milkSheets.length}개를 찾았습니다.${redCount?`<br>빨간색 품절/미입고 표시 ${redCount}행을 감지했습니다. 선택한 센터의 빨간색 상품은 적재리스트에서 자동 제외합니다.`:''}<br>만들 센터를 선택해 주세요.`,'ok')}catch(e){console.error(e);setStatus('❌ '+esc(e.message||e),'bad')}finally{hideLoading()}}
   function selectCenter(name){state.selectedSheet=name;document.querySelectorAll('.center-btn').forEach(b=>b.classList.toggle('active',b.dataset.sheet===name));$('poPick').disabled=false;$('poName').textContent='PO 파일을 선택해 주세요';$('companyInput').value=inferCompany(name,state.shipFile?.name||'');$('centerInput').value=prettyCenter(name);setStatus(`선택: <b>${esc(name)}</b><br>이제 해당 센터의 쿠팡 PO 파일을 올려주세요.`,'ok');if(state.poWb)analyse()}
   async function loadPO(file){showLoading('쿠팡 PO를 읽는 중...');try{state.poFile=file;state.poWb=await readWorkbook(file);$('poName').textContent=file.name;await analyse()}catch(e){setStatus('❌ '+esc(e.message||e),'bad')}finally{hideLoading()}}
   function exportBaseName(){const company=(norm($('companyInput').value)||'업체').replace(/[\\/:*?"<>|]/g,'_');const center=(norm($('centerInput').value)||'센터').replace(/[\\/:*?"<>|]/g,'_');const date=state.model?.date?.raw||'';return `${company}_${date}_${center}_쿠팡_팔레트_적재리스트`}
