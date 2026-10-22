@@ -584,7 +584,7 @@ app.get('/api/system/deploy-heartbeat',async(req,res)=>{
   res.json({ok:true,bootId:TC_DEPLOY_BOOT_ID_V82,startedAt:TC_SERVER_STARTED_AT_V82,build:TC_DEPLOY_BUILD_V82.slice(0,16),serverTime:Date.now(),deploying:!!dep.deploying,deployStatus:dep.status||'unknown',deployId:dep.deployId||'',deployWatchConfigured:!!dep.configured,deployWatchError:dep.error?'check_failed':''});
 });
 
-const PROTECTED_PAGE_PREFIXES_V48=['/order-barcode','/shipment-list-builder','/coupang-inbound-work','/purchase-order','/detail-maker','/account-admin'];
+const PROTECTED_PAGE_PREFIXES_V48=['/order-barcode','/shipment-list-builder','/coupang-inbound-work','/coupang-inbound-template','/purchase-order','/detail-maker','/account-admin'];
 app.use((req,res,next)=>{if(PROTECTED_PAGE_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'.')||req.path.startsWith(p+'/')))return requireLoginPageV48(req,res,next);next()});
 const PRIVATE_API_PREFIXES_V48=['/api/shared-workspace','/api/shipment-list-vault','/api/coupang-shared'];
 app.use((req,res,next)=>{if(PRIVATE_API_PREFIXES_V48.some(p=>req.path===p||req.path.startsWith(p+'/')))return requireLoginApiV48(req,res,next);next()});
@@ -2708,6 +2708,13 @@ function purchasePublicV62(x){
     koreaAltName:String(x.koreaAltName||''),
     koreaAltImageFile:String(x.koreaAltImageFile||''),
     koreaAltImageUrl:x.koreaAltImageFile?`/api/purchase-products/image/${encodeURIComponent(x.koreaAltImageFile)}`:'',
+    isKoreaBundle:!!x.isKoreaBundle,
+    koreaBundleUnitPrice:Math.max(0,Number(x.koreaBundleUnitPrice||0)||0),
+    koreaBundleMinPack:Math.max(1,Math.floor(Number(x.koreaBundleMinPack||1)||1)),
+    koreaBundleGroup:String(x.koreaBundleGroup||''),
+    koreaBundleAltName:String(x.koreaBundleAltName||''),
+    koreaBundleAltImageFile:String(x.koreaBundleAltImageFile||''),
+    koreaBundleAltImageUrl:x.koreaBundleAltImageFile?`/api/purchase-products/image/${encodeURIComponent(x.koreaBundleAltImageFile)}`:'',
     createdAt:Number(x.createdAt||0), updatedAt:Number(x.updatedAt||0)
   };
 }
@@ -2747,8 +2754,21 @@ function savePurchaseKoreaAltImageV140(req,item,image){
   if(item.koreaAltImageFile&&item.koreaAltImageFile!==name){try{fs.rmSync(path.join(p.images,path.basename(item.koreaAltImageFile)),{force:true})}catch(_){}}
   item.koreaAltImageFile=name;return item;
 }
+function savePurchaseKoreaBundleAltImageV142(req,item,image){
+  if(!image||!image.base64)return item;
+  const ext=imageExtV62(image.ext||image.extension||image.type);if(!ext)throw new Error('번들 대체사진은 JPG/JPEG 또는 PNG만 사용할 수 있습니다.');
+  let buf;try{buf=Buffer.from(String(image.base64||'').replace(/^data:[^,]+,/,''),'base64')}catch(_){throw new Error('번들 대체사진 데이터가 올바르지 않습니다.')}
+  if(!buf.length)throw new Error('빈 번들 대체사진은 저장할 수 없습니다.');
+  if(buf.length>2*1024*1024)throw new Error('번들 대체사진 1장은 2MB 이하로 올려주세요.');
+  const p=ensurePurchaseDirsV62(req);
+  const name=`${String(item.id).replace(/[^A-Za-z0-9_-]/g,'_')}_korea_bundle.${ext}`;
+  const dest=path.join(p.images,name),tmp=`${dest}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp,buf);fs.renameSync(tmp,dest);
+  if(item.koreaBundleAltImageFile&&item.koreaBundleAltImageFile!==name){try{fs.rmSync(path.join(p.images,path.basename(item.koreaBundleAltImageFile)),{force:true})}catch(_){}}
+  item.koreaBundleAltImageFile=name;return item;
+}
 function applyPurchaseKoreaFieldsV140(req,item,raw,allowImage){
-  const keys=['isKoreaOrder','koreaUnitPrice','koreaMinPack','koreaGroup','koreaAltName','koreaAltImage','removeKoreaAltImage'];
+  const keys=['isKoreaOrder','koreaUnitPrice','koreaMinPack','koreaGroup','koreaAltName','koreaAltImage','removeKoreaAltImage','isKoreaBundle','koreaBundleUnitPrice','koreaBundleMinPack','koreaBundleGroup','koreaBundleAltName','koreaBundleAltImage','removeKoreaBundleAltImage'];
   const hasPayload=keys.some(k=>Object.prototype.hasOwnProperty.call(raw||{},k));
   if(!hasPayload)return item;
   if(Object.prototype.hasOwnProperty.call(raw,'isKoreaOrder'))item.isKoreaOrder=!!raw.isKoreaOrder;
@@ -2756,8 +2776,15 @@ function applyPurchaseKoreaFieldsV140(req,item,raw,allowImage){
   if(Object.prototype.hasOwnProperty.call(raw,'koreaMinPack'))item.koreaMinPack=Math.max(1,Math.floor(Number(String(raw.koreaMinPack??1).replace(/,/g,''))||1));
   if(Object.prototype.hasOwnProperty.call(raw,'koreaGroup'))item.koreaGroup=cleanTextV62(raw.koreaGroup,60).toUpperCase();
   if(Object.prototype.hasOwnProperty.call(raw,'koreaAltName'))item.koreaAltName=cleanTextV62(raw.koreaAltName,500);
+  if(Object.prototype.hasOwnProperty.call(raw,'isKoreaBundle'))item.isKoreaBundle=!!raw.isKoreaBundle;
+  if(Object.prototype.hasOwnProperty.call(raw,'koreaBundleUnitPrice'))item.koreaBundleUnitPrice=Math.max(0,Number(String(raw.koreaBundleUnitPrice??0).replace(/,/g,''))||0);
+  if(Object.prototype.hasOwnProperty.call(raw,'koreaBundleMinPack'))item.koreaBundleMinPack=Math.max(1,Math.floor(Number(String(raw.koreaBundleMinPack??1).replace(/,/g,''))||1));
+  if(Object.prototype.hasOwnProperty.call(raw,'koreaBundleGroup'))item.koreaBundleGroup=cleanTextV62(raw.koreaBundleGroup,60).toUpperCase();
+  if(Object.prototype.hasOwnProperty.call(raw,'koreaBundleAltName'))item.koreaBundleAltName=cleanTextV62(raw.koreaBundleAltName,500);
   if(raw.removeKoreaAltImage&&item.koreaAltImageFile){const p=ensurePurchaseDirsV62(req);try{fs.rmSync(path.join(p.images,path.basename(item.koreaAltImageFile)),{force:true})}catch(_){};item.koreaAltImageFile=''}
+  if(raw.removeKoreaBundleAltImage&&item.koreaBundleAltImageFile){const p=ensurePurchaseDirsV62(req);try{fs.rmSync(path.join(p.images,path.basename(item.koreaBundleAltImageFile)),{force:true})}catch(_){};item.koreaBundleAltImageFile=''}
   if(allowImage&&raw?.koreaAltImage?.base64)savePurchaseKoreaAltImageV140(req,item,raw.koreaAltImage);
+  if(allowImage&&raw?.koreaBundleAltImage?.base64)savePurchaseKoreaBundleAltImageV142(req,item,raw.koreaBundleAltImage);
   return item;
 }
 function upsertPurchaseProductV62(req,items,raw,{allowImage=true}={}){
@@ -2807,7 +2834,7 @@ app.post('/api/purchase-products',requireLoginApiV48,(req,res)=>{
   catch(e){res.status(400).json({ok:false,error:e.message})}
 });
 app.delete('/api/purchase-products/:id',requireLoginApiV48,(req,res)=>{
-  try{const p=purchasePathsV63(req),items=purchaseReadV62(req),idx=items.findIndex(x=>String(x.id||'')===String(req.params.id||''));if(idx<0)return res.status(404).json({ok:false,error:'제품을 찾지 못했습니다.'});const [item]=items.splice(idx,1);if(item.imageFile)try{fs.rmSync(path.join(p.images,path.basename(item.imageFile)),{force:true})}catch(_){};if(item.koreaAltImageFile)try{fs.rmSync(path.join(p.images,path.basename(item.koreaAltImageFile)),{force:true})}catch(_){};purchaseWriteV62(req,items);res.json({ok:true,count:items.length,accountScoped:true})}catch(e){res.status(500).json({ok:false,error:e.message})}
+  try{const p=purchasePathsV63(req),items=purchaseReadV62(req),idx=items.findIndex(x=>String(x.id||'')===String(req.params.id||''));if(idx<0)return res.status(404).json({ok:false,error:'제품을 찾지 못했습니다.'});const [item]=items.splice(idx,1);if(item.imageFile)try{fs.rmSync(path.join(p.images,path.basename(item.imageFile)),{force:true})}catch(_){};if(item.koreaAltImageFile)try{fs.rmSync(path.join(p.images,path.basename(item.koreaAltImageFile)),{force:true})}catch(_){};if(item.koreaBundleAltImageFile)try{fs.rmSync(path.join(p.images,path.basename(item.koreaBundleAltImageFile)),{force:true})}catch(_){};purchaseWriteV62(req,items);res.json({ok:true,count:items.length,accountScoped:true})}catch(e){res.status(500).json({ok:false,error:e.message})}
 });
 
 
