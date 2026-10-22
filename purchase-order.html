@@ -98,6 +98,16 @@
               <label>대체 상품명</label><input id="productKoreaAltName" class="input" placeholder="묶음 발주서에 표시할 명칭">
               <label>대체 사진</label><div class="image-pick"><div id="editKoreaImagePreview" class="image-preview">사진 없음</div><div><button class="btn" type="button" onclick="$('productKoreaAltImage').click()">대체 사진 선택</button><input id="productKoreaAltImage" class="file-input" type="file" accept="image/png,image/jpeg"><button id="removeKoreaAltImageBtn" class="btn red" type="button" style="margin-left:4px;display:none" onclick="removeKoreaAltImageV140()">대체 사진 삭제</button><div style="font-size:9px;color:#71818c;margin-top:5px">동일상품 묶음 발주 요약에서 이 사진을 우선 사용합니다.</div></div></div>
             </div>
+            <div class="korea-bundle-toggle"><label><input id="productKoreaBundle" type="checkbox"> 📦 번들 상품</label><span>체크하면 아래 번들 전용 정보가 한국 발주 계산과 동일상품군 관리에 우선 적용됩니다.</span></div>
+            <div id="productKoreaBundleFields" class="korea-bundle-fields" style="display:none">
+              <div class="korea-product-grid">
+                <label>번들 낱개 단가</label><input id="productKoreaBundleUnitPrice" class="input" type="number" min="0" step="1" value="0">
+                <label>번들 최소 팩킹수량</label><input id="productKoreaBundleMinPack" class="input" type="number" min="1" step="1" value="1">
+                <label>번들 동일 상품군</label><input id="productKoreaBundleGroup" class="input" placeholder="예: Z1, BUNDLE-A">
+                <label>번들 대체 상품명</label><input id="productKoreaBundleAltName" class="input" placeholder="번들 발주서에 표시할 명칭">
+                <label>번들 대체 사진</label><div class="image-pick"><div id="editKoreaBundleImagePreview" class="image-preview">사진 없음</div><div><button class="btn" type="button" onclick="$('productKoreaBundleAltImage').click()">번들 대체 사진 선택</button><input id="productKoreaBundleAltImage" class="file-input" type="file" accept="image/png,image/jpeg"><button id="removeKoreaBundleAltImageBtn" class="btn red" type="button" style="margin-left:4px;display:none" onclick="removeKoreaBundleAltImageV142()">번들 사진 삭제</button><div style="font-size:9px;color:#71818c;margin-top:5px">번들 상품일 때만 이 사진과 명칭/단가/팩킹/상품군을 사용합니다.</div></div></div>
+              </div>
+            </div>
           </div>
           <div class="row" style="margin-top:10px">
             <button id="saveProductBtn" class="btn green" type="button" onclick="saveProduct()">제품 저장</button>
@@ -1138,20 +1148,24 @@ loadProducts();renderOrderPreview();
 
 
 <style id="korea-product-master-v140-style">
-.korea-product-toggle{display:flex;align-items:center;gap:10px;min-height:36px}.korea-product-toggle label{font-weight:900;color:#146b3a}.korea-product-toggle span{font-size:9px;color:#71818c}.korea-product-fields{margin-top:10px;padding:12px;border:1px solid #b9d8c5;border-radius:9px;background:#f4fbf6}.korea-product-grid{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px 10px;align-items:center}.korea-product-grid>label{font-weight:900;color:#205c3a}.korea-product-badge{display:inline-block;padding:3px 7px;border-radius:999px;background:#e7f6ec;color:#166a3a;font-size:9px;font-weight:900;border:1px solid #b8dec5}@media(max-width:850px){.korea-product-grid{grid-template-columns:1fr}}
+.korea-product-toggle{display:flex;align-items:center;gap:10px;min-height:36px}.korea-product-toggle label{font-weight:900;color:#146b3a}.korea-product-toggle span{font-size:9px;color:#71818c}.korea-product-fields{margin-top:10px;padding:12px;border:1px solid #b9d8c5;border-radius:9px;background:#f4fbf6}.korea-product-grid{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px 10px;align-items:center}.korea-product-grid>label{font-weight:900;color:#205c3a}.korea-product-badge{display:inline-block;padding:3px 7px;border-radius:999px;background:#e7f6ec;color:#166a3a;font-size:9px;font-weight:900;border:1px solid #b8dec5}.korea-bundle-toggle{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:10px;border-top:1px dashed #b8d1c2;min-height:34px}.korea-bundle-toggle label{font-weight:900;color:#7a4c00}.korea-bundle-toggle span{font-size:9px;color:#71818c}.korea-bundle-fields{margin-top:8px;padding:11px;border:1px solid #e4c47f;border-radius:9px;background:#fffaf0}.korea-bundle-fields .korea-product-grid>label{color:#795300}.korea-bundle-badge{display:inline-block;padding:3px 7px;border-radius:999px;background:#fff0c9;color:#7a4c00;font-size:9px;font-weight:900;border:1px solid #e4c47f}@media(max-width:850px){.korea-product-grid{grid-template-columns:1fr}}
 </style>
 <script id="korea-product-master-v140">
 // ===== Korea-only product master extension v140 =====
 // 기존 일반 발주 필드는 그대로 두고, 한국 발주 체크 시에만 추가정보를 저장/사용합니다.
 (function(){
-  let koreaAltFileV140=null,koreaAltExistingV140='',koreaAltRemoveV140=false;
+  let koreaAltFileV140=null,koreaAltExistingV140='',koreaAltRemoveV140=false,koreaBundleAltFileV142=null,koreaBundleAltExistingV142='',koreaBundleAltRemoveV142=false;
   function kNormPnV140(v){return typeof normalizePoProductNumber==='function'?normalizePoProductNumber(v):norm(v).replace(/\.0$/,'')}
   function kKeyV140(x){const pn=kNormPnV140(x?.productNumber);if(pn)return 'PN:'+pn;const bc=norm(x?.barcode).replace(/\s+/g,'').toUpperCase();return bc?'BC:'+bc:''}
   function currentMasterForProductV140(x){const k=kKeyV140(x);return (window.koreaOrderMaster||koreaOrderMaster||[]).find(m=>kKeyV140(m)===k)||null}
   window.toggleKoreaProductFieldsV140=function(){const on=!!$('productKoreaOrder')?.checked;const box=$('productKoreaFields');if(box)box.style.display=on?'block':'none'};
   $('productKoreaOrder')?.addEventListener('change',toggleKoreaProductFieldsV140);
+  window.toggleKoreaBundleFieldsV142=function(){const on=!!$('productKoreaBundle')?.checked;const box=$('productKoreaBundleFields');if(box)box.style.display=on?'block':'none'};
+  $('productKoreaBundle')?.addEventListener('change',toggleKoreaBundleFieldsV142);
   $('productKoreaAltImage')?.addEventListener('change',e=>{const f=e.target.files?.[0];if(!f)return;koreaAltFileV140=f;koreaAltRemoveV140=false;const url=URL.createObjectURL(f);$('editKoreaImagePreview').innerHTML=`<img src="${url}">`;$('removeKoreaAltImageBtn').style.display='inline-block';setTimeout(()=>URL.revokeObjectURL(url),30000)});
   window.removeKoreaAltImageV140=function(){koreaAltFileV140=null;koreaAltExistingV140='';koreaAltRemoveV140=true;$('productKoreaAltImage').value='';$('editKoreaImagePreview').textContent='사진 없음';$('removeKoreaAltImageBtn').style.display='none'};
+  $('productKoreaBundleAltImage')?.addEventListener('change',e=>{const f=e.target.files?.[0];if(!f)return;koreaBundleAltFileV142=f;koreaBundleAltRemoveV142=false;const url=URL.createObjectURL(f);$('editKoreaBundleImagePreview').innerHTML=`<img src="${url}">`;$('removeKoreaBundleAltImageBtn').style.display='inline-block';setTimeout(()=>URL.revokeObjectURL(url),30000)});
+  window.removeKoreaBundleAltImageV142=function(){koreaBundleAltFileV142=null;koreaBundleAltExistingV142='';koreaBundleAltRemoveV142=true;$('productKoreaBundleAltImage').value='';$('editKoreaBundleImagePreview').textContent='사진 없음';$('removeKoreaBundleAltImageBtn').style.display='none'};
 
   const baseEditProductV140=editProduct;
   editProduct=function(id){
@@ -1164,12 +1178,14 @@ loadProducts();renderOrderPreview();
     $('productKoreaAltName').value=configured?norm(x.koreaAltName||''):norm(m?.altName||'');
     koreaAltFileV140=null;koreaAltRemoveV140=false;koreaAltExistingV140=norm(x.koreaAltImageUrl||'');$('productKoreaAltImage').value='';
     if(koreaAltExistingV140){$('editKoreaImagePreview').innerHTML=`<img src="${esc(koreaAltExistingV140)}">`;$('removeKoreaAltImageBtn').style.display='inline-block'}else{$('editKoreaImagePreview').textContent=m?'기존 기준표 사진 사용':'사진 없음';$('removeKoreaAltImageBtn').style.display='none'}
-    toggleKoreaProductFieldsV140();
+    const bundleOn=!!x.isKoreaBundle;$('productKoreaBundle').checked=bundleOn;$('productKoreaBundleUnitPrice').value=Math.max(0,num(x.koreaBundleUnitPrice||0));$('productKoreaBundleMinPack').value=Math.max(1,num(x.koreaBundleMinPack)||1);$('productKoreaBundleGroup').value=norm(x.koreaBundleGroup||'');$('productKoreaBundleAltName').value=norm(x.koreaBundleAltName||'');
+    koreaBundleAltFileV142=null;koreaBundleAltRemoveV142=false;koreaBundleAltExistingV142=norm(x.koreaBundleAltImageUrl||'');$('productKoreaBundleAltImage').value='';if(koreaBundleAltExistingV142){$('editKoreaBundleImagePreview').innerHTML=`<img src="${esc(koreaBundleAltExistingV142)}">`;$('removeKoreaBundleAltImageBtn').style.display='inline-block'}else{$('editKoreaBundleImagePreview').textContent='사진 없음';$('removeKoreaBundleAltImageBtn').style.display='none'}
+    toggleKoreaProductFieldsV140();toggleKoreaBundleFieldsV142();
   };
   window.editProduct=editProduct;
 
   const baseClearProductFormV140=clearProductForm;
-  clearProductForm=function(){baseClearProductFormV140();if($('productKoreaOrder'))$('productKoreaOrder').checked=false;if($('productKoreaUnitPrice'))$('productKoreaUnitPrice').value=0;if($('productKoreaMinPack'))$('productKoreaMinPack').value=1;if($('productKoreaGroup'))$('productKoreaGroup').value='';if($('productKoreaAltName'))$('productKoreaAltName').value='';if($('productKoreaAltImage'))$('productKoreaAltImage').value='';if($('editKoreaImagePreview'))$('editKoreaImagePreview').textContent='사진 없음';if($('removeKoreaAltImageBtn'))$('removeKoreaAltImageBtn').style.display='none';koreaAltFileV140=null;koreaAltExistingV140='';koreaAltRemoveV140=false;toggleKoreaProductFieldsV140()};
+  clearProductForm=function(){baseClearProductFormV140();if($('productKoreaOrder'))$('productKoreaOrder').checked=false;if($('productKoreaUnitPrice'))$('productKoreaUnitPrice').value=0;if($('productKoreaMinPack'))$('productKoreaMinPack').value=1;if($('productKoreaGroup'))$('productKoreaGroup').value='';if($('productKoreaAltName'))$('productKoreaAltName').value='';if($('productKoreaAltImage'))$('productKoreaAltImage').value='';if($('editKoreaImagePreview'))$('editKoreaImagePreview').textContent='사진 없음';if($('removeKoreaAltImageBtn'))$('removeKoreaAltImageBtn').style.display='none';if($('productKoreaBundle'))$('productKoreaBundle').checked=false;if($('productKoreaBundleUnitPrice'))$('productKoreaBundleUnitPrice').value=0;if($('productKoreaBundleMinPack'))$('productKoreaBundleMinPack').value=1;if($('productKoreaBundleGroup'))$('productKoreaBundleGroup').value='';if($('productKoreaBundleAltName'))$('productKoreaBundleAltName').value='';if($('productKoreaBundleAltImage'))$('productKoreaBundleAltImage').value='';if($('editKoreaBundleImagePreview'))$('editKoreaBundleImagePreview').textContent='사진 없음';if($('removeKoreaBundleAltImageBtn'))$('removeKoreaBundleAltImageBtn').style.display='none';koreaAltFileV140=null;koreaAltExistingV140='';koreaAltRemoveV140=false;koreaBundleAltFileV142=null;koreaBundleAltExistingV142='';koreaBundleAltRemoveV142=false;toggleKoreaProductFieldsV140();toggleKoreaBundleFieldsV142()};
   window.clearProductForm=clearProductForm;
 
   saveProduct=async function(){
@@ -1178,9 +1194,10 @@ loadProducts();renderOrderPreview();
       if(!productNumber&&!barcode)return alert('상품번호 또는 바코드를 입력해 주세요.');if(!productName)return alert('상품명을 입력해 주세요.');
       const koreaOn=!!$('productKoreaOrder')?.checked;
       setStatus('productEditStatus','저장 중…','work');
-      const body={id:editingProductId||undefined,productNumber,barcode,productName,cavity,isKoreaOrder:koreaOn,koreaUnitPrice:Math.max(0,num($('productKoreaUnitPrice')?.value)),koreaMinPack:Math.max(1,Math.floor(num($('productKoreaMinPack')?.value)||1)),koreaGroup:norm($('productKoreaGroup')?.value).toUpperCase(),koreaAltName:norm($('productKoreaAltName')?.value),removeKoreaAltImage:koreaAltRemoveV140};
+      const bundleOn=!!$('productKoreaBundle')?.checked;const body={id:editingProductId||undefined,productNumber,barcode,productName,cavity,isKoreaOrder:koreaOn,koreaUnitPrice:Math.max(0,num($('productKoreaUnitPrice')?.value)),koreaMinPack:Math.max(1,Math.floor(num($('productKoreaMinPack')?.value)||1)),koreaGroup:norm($('productKoreaGroup')?.value).toUpperCase(),koreaAltName:norm($('productKoreaAltName')?.value),removeKoreaAltImage:koreaAltRemoveV140,isKoreaBundle:bundleOn,koreaBundleUnitPrice:Math.max(0,num($('productKoreaBundleUnitPrice')?.value)),koreaBundleMinPack:Math.max(1,Math.floor(num($('productKoreaBundleMinPack')?.value)||1)),koreaBundleGroup:norm($('productKoreaBundleGroup')?.value).toUpperCase(),koreaBundleAltName:norm($('productKoreaBundleAltName')?.value),removeKoreaBundleAltImage:koreaBundleAltRemoveV142};
       if(editingImageFile)body.image={ext:(editingImageFile.type.includes('png')?'png':'jpeg'),base64:await fileToBase64(editingImageFile)};
       if(koreaAltFileV140)body.koreaAltImage={ext:(koreaAltFileV140.type.includes('png')?'png':'jpeg'),base64:await fileToBase64(koreaAltFileV140)};
+      if(koreaBundleAltFileV142)body.koreaBundleAltImage={ext:(koreaBundleAltFileV142.type.includes('png')?'png':'jpeg'),base64:await fileToBase64(koreaBundleAltFileV142)};
       const j=await apiJson('/api/purchase-products',{method:'POST',body:JSON.stringify(body)});
       setStatus('productEditStatus',j.created?(koreaOn?'한국 발주 신규 제품을 추가했습니다.':'신규 제품을 추가했습니다.'):(koreaOn?'제품 + 한국 발주 정보를 수정했습니다.':'제품 정보를 수정했습니다.'),'ok');
       clearProductForm();await loadProducts();
@@ -1197,7 +1214,7 @@ loadProducts();renderOrderPreview();
         const k=kKeyV140(p);if(!k)continue;
         if(!p.isKoreaOrder){map.delete(k);continue}
         const old=map.get(k)||{};
-        map.set(k,{...old,productNumber:kNormPnV140(p.productNumber||old.productNumber),barcode:norm(p.barcode||old.barcode).replace(/\s+/g,'').toUpperCase(),productName:norm(p.productName||old.productName),cavity:Math.max(1,Math.floor(num(p.cavity)||1)),unitPrice:Math.max(0,num(p.koreaUnitPrice)),sameGroup:norm(p.koreaGroup||'').toUpperCase(),minPack:Math.max(1,Math.floor(num(p.koreaMinPack)||1)),altName:norm(p.koreaAltName||''),koreaAltImageUrl:norm(p.koreaAltImageUrl||''),category:typeof koreaCategory==='function'?koreaCategory(p.productName||old.productName):(old.category||'기타')});
+        const bundle=!!p.isKoreaBundle;map.set(k,{...old,productNumber:kNormPnV140(p.productNumber||old.productNumber),barcode:norm(p.barcode||old.barcode).replace(/\s+/g,'').toUpperCase(),productName:norm(p.productName||old.productName),cavity:Math.max(1,Math.floor(num(p.cavity)||1)),unitPrice:Math.max(0,num(bundle?p.koreaBundleUnitPrice:p.koreaUnitPrice)),sameGroup:norm(bundle?p.koreaBundleGroup:p.koreaGroup||'').toUpperCase(),minPack:Math.max(1,Math.floor(num(bundle?p.koreaBundleMinPack:p.koreaMinPack)||1)),altName:norm(bundle?p.koreaBundleAltName:p.koreaAltName||''),koreaAltImageUrl:norm(bundle?p.koreaBundleAltImageUrl:p.koreaAltImageUrl||''),isBundle:bundle,category:typeof koreaCategory==='function'?koreaCategory(p.productName||old.productName):(old.category||'기타')});
       }
       koreaOrderMaster=[...map.values()].map((x,i)=>({...x,sourceIndex:i}));window.koreaOrderMaster=koreaOrderMaster;
       if(typeof renderKoreaMaster==='function')renderKoreaMaster();if(typeof rebuildKoreaOrder==='function')rebuildKoreaOrder();
@@ -1205,7 +1222,7 @@ loadProducts();renderOrderPreview();
   };
   // 최초 페이지 진입 시 기존 33개 기준 + 서버에서 체크한 한국 신규/수정 제품을 합친다.
   setTimeout(()=>syncKoreaMasterFromProductsV140(),700);
-  toggleKoreaProductFieldsV140();
+  toggleKoreaProductFieldsV140();toggleKoreaBundleFieldsV142();
 })();
 </script>
 
@@ -1246,7 +1263,7 @@ loadProducts();renderOrderPreview();
     const m=masterMapV141().get(keyV141(p));
     if(p?.koreaConfigured){
       if(!p.isKoreaOrder)return null;
-      return {productNumber:pnV141(p.productNumber||m?.productNumber),barcode:norm(p.barcode||m?.barcode),productName:norm(p.productName||m?.productName),cavity:Math.max(1,Number(p.cavity)||1),unitPrice:Math.max(0,Number(p.koreaUnitPrice)||0),minPack:Math.max(1,Number(p.koreaMinPack)||1),sameGroup:norm(p.koreaGroup||'').toUpperCase(),altName:norm(p.koreaAltName||''),koreaAltImageUrl:norm(p.koreaAltImageUrl||''),_product:p,_master:m};
+      const bundle=!!p.isKoreaBundle;return {productNumber:pnV141(p.productNumber||m?.productNumber),barcode:norm(p.barcode||m?.barcode),productName:norm(p.productName||m?.productName),cavity:Math.max(1,Number(p.cavity)||1),unitPrice:Math.max(0,Number(bundle?p.koreaBundleUnitPrice:p.koreaUnitPrice)||0),minPack:Math.max(1,Number(bundle?p.koreaBundleMinPack:p.koreaMinPack)||1),sameGroup:norm(bundle?p.koreaBundleGroup:p.koreaGroup||'').toUpperCase(),altName:norm(bundle?p.koreaBundleAltName:p.koreaAltName||''),koreaAltImageUrl:norm(bundle?p.koreaBundleAltImageUrl:p.koreaAltImageUrl||''),isBundle:bundle,_product:p,_master:m};
     }
     if(!m)return null;
     return {...m,productNumber:pnV141(p?.productNumber||m.productNumber),barcode:norm(p?.barcode||m.barcode),productName:norm(p?.productName||m.productName),_product:p,_master:m};
@@ -1278,7 +1295,7 @@ loadProducts();renderOrderPreview();
   function updateGroupSuggestionsV141(){
     let dl=$('koreaGroupSuggestionsV141');if(!dl){dl=document.createElement('datalist');dl.id='koreaGroupSuggestionsV141';document.body.appendChild(dl)}
     dl.innerHTML=groupsV141().filter(x=>!x.single).map(x=>`<option value="${esc(x.g)}">${esc(altNameV141(x.items)||x.g)}</option>`).join('');
-    const input=$('productKoreaGroup');if(input)input.setAttribute('list','koreaGroupSuggestionsV141');
+    const input=$('productKoreaGroup');if(input)input.setAttribute('list','koreaGroupSuggestionsV141');const binput=$('productKoreaBundleGroup');if(binput)binput.setAttribute('list','koreaGroupSuggestionsV141');
   }
   const baseFilteredProductsV141=filteredProducts;
   filteredProducts=function(){const rows=baseFilteredProductsV141();return koreaOnlyV141?rows.filter(isKoreaV141):rows};window.filteredProducts=filteredProducts;
@@ -1309,7 +1326,7 @@ loadProducts();renderOrderPreview();
   function productForMetaV141(m){if(m?._product)return m._product;const k=keyV141(m);return (products||[]).find(p=>keyV141(p)===k)||null}
   function startEditV141(m,presetGroup){
     const p=productForMetaV141(m);if(!p){alert('이 SKU는 아직 제품 목록에 등록되어 있지 않습니다. 먼저 신규 제품으로 등록해 주세요.');return}
-    closeManagerV141();editProduct(p.id);if(presetGroup!==undefined){$('productKoreaOrder').checked=true;$('productKoreaGroup').value=presetGroup;toggleKoreaProductFieldsV140?.();setStatus('productEditStatus',`한국 발주 동일상품군 ${presetGroup||'단독'}으로 설정 준비 · 확인 후 제품 저장을 눌러주세요.`,'work')}
+    closeManagerV141();editProduct(p.id);if(presetGroup!==undefined){$('productKoreaOrder').checked=true;const bundle=!!p.isKoreaBundle;if(bundle&&$('productKoreaBundleGroup'))$('productKoreaBundleGroup').value=presetGroup;else $('productKoreaGroup').value=presetGroup;toggleKoreaProductFieldsV140?.();toggleKoreaBundleFieldsV142?.();setStatus('productEditStatus',`${bundle?'번들 ':''}한국 발주 동일상품군 ${presetGroup||'단독'}으로 설정 준비 · 확인 후 제품 저장을 눌러주세요.`,'work')}
     setTimeout(()=>document.querySelector('.master-grid')?.scrollIntoView({behavior:'smooth',block:'start'}),30);
   }
   function pickerRowsV141(group,q){
@@ -1321,7 +1338,7 @@ loadProducts();renderOrderPreview();
   function renderManagerV141(){
     const body=$('kgmBodyV141');if(!body)return;const q=compact($('kgmSearchV141')?.value||''),all=groupsV141(),groups=all.map(g=>({...g,items:g.items.filter(x=>!q||compact(`${g.g} ${altNameV141(g.items)} ${x.productNumber} ${x.barcode} ${x.productName}`).includes(q))})).filter(g=>g.items.length);
     const memberCount=all.reduce((s,g)=>s+g.items.length,0);$('kgmStatsV141').textContent=`동일상품군 ${all.filter(g=>!g.single).length.toLocaleString()}개 · 한국 발주 SKU ${memberCount.toLocaleString()}개`;
-    body.innerHTML=groups.length?groups.map(g=>{const alt=altNameV141(g.items),photo=photoV141(g.items),gid=esc(g.g);return `<section class="kgm-v141-group"><div class="kgm-v141-group-head"><span class="kgm-v141-badge">${gid}</span><div class="kgm-v141-photo">${photo?`<img src="${esc(photo)}" loading="lazy">`:'사진 없음'}</div><div class="kgm-v141-group-name"><b>${esc(alt|| (g.single?'단독제품 / 미지정':'대체명칭 미지정'))}</b><span>${g.items.length.toLocaleString()}개 SKU · ${esc(g.items.map(x=>x.productNumber||x.barcode).join(', '))}</span></div>${g.single?'':`<button type="button" class="kgm-v141-add" data-kgm-add="${gid}">+ 이 그룹에 제품 추가</button>`}</div><table class="kgm-v141-members"><thead><tr><th>사진</th><th>SKU</th><th>바코드</th><th>상품명</th><th>단가</th><th>최소팩킹</th><th>관리</th></tr></thead><tbody>${g.items.map((x,i)=>{const p=productForMetaV141(x),im=norm(x.koreaAltImageUrl||p?.imageUrl||'');return `<tr><td class="center">${im?`<img class="kgm-v141-mini" src="${esc(im)}" loading="lazy">`:'-'}</td><td>${esc(x.productNumber||'-')}</td><td>${esc(x.barcode||'-')}</td><td>${esc(x.productName||'')}</td><td class="num">${Number(x.unitPrice||0).toLocaleString()}</td><td class="num">${Number(x.minPack||1).toLocaleString()}</td><td class="center">${p?`<button type="button" class="kgm-v141-edit" data-kgm-edit="${esc(keyV141(x))}">수정</button>`:'<span class="kgm-v141-missing">제품목록 미등록</span>'}</td></tr>`}).join('')}</tbody></table>${g.single?'':`<div class="kgm-v141-picker" id="kgmPickerV141_${gid}"><div class="kgm-v141-picker-head"><input placeholder="추가할 제품 검색 · 상품번호/바코드/상품명"><button type="button" class="kgm-v141-close" data-kgm-picker-close="${gid}">닫기</button></div><div class="kgm-v141-picker-list"></div></div>`}</section>`}).join(''):'<div class="empty">검색 결과가 없습니다.</div>';
+    body.innerHTML=groups.length?groups.map(g=>{const alt=altNameV141(g.items),photo=photoV141(g.items),gid=esc(g.g);return `<section class="kgm-v141-group"><div class="kgm-v141-group-head"><span class="kgm-v141-badge">${gid}</span><div class="kgm-v141-photo">${photo?`<img src="${esc(photo)}" loading="lazy">`:'사진 없음'}</div><div class="kgm-v141-group-name"><b>${esc(alt|| (g.single?'단독제품 / 미지정':'대체명칭 미지정'))}</b><span>${g.items.length.toLocaleString()}개 SKU · ${esc(g.items.map(x=>x.productNumber||x.barcode).join(', '))}</span></div>${g.single?'':`<button type="button" class="kgm-v141-add" data-kgm-add="${gid}">+ 이 그룹에 제품 추가</button>`}</div><table class="kgm-v141-members"><thead><tr><th>사진</th><th>SKU</th><th>바코드</th><th>상품명</th><th>형태</th><th>단가</th><th>최소팩킹</th><th>관리</th></tr></thead><tbody>${g.items.map((x,i)=>{const p=productForMetaV141(x),im=norm(x.koreaAltImageUrl||p?.imageUrl||'');return `<tr><td class="center">${im?`<img class="kgm-v141-mini" src="${esc(im)}" loading="lazy">`:'-'}</td><td>${esc(x.productNumber||'-')}</td><td>${esc(x.barcode||'-')}</td><td>${esc(x.productName||'')}</td><td class="center">${x.isBundle?'<span class="korea-bundle-badge">번들</span>':'일반'}</td><td class="num">${Number(x.unitPrice||0).toLocaleString()}</td><td class="num">${Number(x.minPack||1).toLocaleString()}</td><td class="center">${p?`<button type="button" class="kgm-v141-edit" data-kgm-edit="${esc(keyV141(x))}">수정</button>`:'<span class="kgm-v141-missing">제품목록 미등록</span>'}</td></tr>`}).join('')}</tbody></table>${g.single?'':`<div class="kgm-v141-picker" id="kgmPickerV141_${gid}"><div class="kgm-v141-picker-head"><input placeholder="추가할 제품 검색 · 상품번호/바코드/상품명"><button type="button" class="kgm-v141-close" data-kgm-picker-close="${gid}">닫기</button></div><div class="kgm-v141-picker-list"></div></div>`}</section>`}).join(''):'<div class="empty">검색 결과가 없습니다.</div>';
     body.querySelectorAll('[data-kgm-edit]').forEach(b=>b.onclick=()=>{const k=b.dataset.kgmEdit,m=allKoreaEntriesV141().find(x=>keyV141(x)===k);if(m)startEditV141(m)});
     body.querySelectorAll('[data-kgm-add]').forEach(b=>b.onclick=()=>{const g=b.dataset.kgmAdd,box=$('kgmPickerV141_'+CSS.escape(g));if(!box)return;box.classList.toggle('show');if(box.classList.contains('show')){box.querySelector('input').value='';renderPickerV141(g);box.querySelector('input').focus()}});
     body.querySelectorAll('[data-kgm-picker-close]').forEach(b=>b.onclick=()=>$('kgmPickerV141_'+CSS.escape(b.dataset.kgmPickerClose))?.classList.remove('show'));
