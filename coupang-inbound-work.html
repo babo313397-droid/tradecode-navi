@@ -257,27 +257,12 @@ async function prepareWorkbookStructure(zip,index,desiredSpecs=[]){
   const ordered=kept.sort((a,b)=>{const ca=sheetSortCategory(a.name,desired),cb=sheetSortCategory(b.name,desired);return ca-cb||a.originalIndex-b.originalIndex});
   while(sheetsEl.firstChild)sheetsEl.removeChild(sheetsEl.firstChild);ordered.forEach(x=>sheetsEl.appendChild(x.node));
   const finalNames=ordered.map(x=>x.name),finalIndex=new Map(finalNames.map((n,i)=>[n,i]));
+  // 출력 통합문서의 명명된 범위는 모두 제거합니다.
+  // 기준 파일의 definedNames에는 자동필터용 _FilterDatabase와 깨진 외부참조(그림/그림목록/품번)만 존재하며,
+  // 동적 시트 생성/삭제/재정렬 후 localSheetId가 달라지면 Excel이 workbook.xml을 복구하려고 합니다.
+  // 실제 자동필터 범위는 각 worksheet XML의 <autoFilter>에 별도로 보존되므로 데이터/수식/필터 버튼에는 영향이 없습니다.
   const dn=xels(wb,'definedNames')[0];
-  if(dn){
-    for(const d of [...xels(dn,'definedName')]){
-      let txt=d.textContent||'';
-      for(const [oldn,newn] of renameMap){const oq=oldn.replace(/'/g,"''"),nq=newn.replace(/'/g,"''");txt=txt.split(`'${oq}'!`).join(`'${nq}'!`).split(`${oq}!`).join(`${nq}!`)}
-      d.textContent=txt;
-      // 템플릿에 남아 있던 #REF! 및 외부 통합문서 [1] 참조 이름은 Excel 복구 경고의 원인이므로 제거합니다.
-      if(/#REF!/i.test(txt)||/\[[^\]]+\]/.test(txt)){d.parentNode.removeChild(d);continue}
-      const refSheet=sheetNameFromDefinedFormula(txt);
-      if(refSheet&&!finalIndex.has(refSheet)){d.parentNode.removeChild(d);continue}
-      const lid=d.getAttribute('localSheetId');
-      if(lid!=null){
-        if(refSheet&&finalIndex.has(refSheet)){d.setAttribute('localSheetId',String(finalIndex.get(refSheet)));continue}
-        const oldName=oldNames[Number(lid)];
-        if(dropOldNames.has(oldName)){d.parentNode.removeChild(d);continue}
-        const current=renameMap.get(oldName)||oldName;
-        if(finalIndex.has(current))d.setAttribute('localSheetId',String(finalIndex.get(current)));else d.parentNode.removeChild(d);
-      }
-    }
-    if(!xels(dn,'definedName').length&&dn.parentNode)dn.parentNode.removeChild(dn);
-  }
+  if(dn&&dn.parentNode)dn.parentNode.removeChild(dn);
   const views=xels(wb,'workbookView');for(const v of views){v.setAttribute('activeTab','0');v.setAttribute('firstSheet','0')}
   zip.file('xl/workbook.xml',serializeXml(wb));zip.file('xl/_rels/workbook.xml.rels',serializeXml(rels));
   return {finalNames,renameMap,dropOldNames};
