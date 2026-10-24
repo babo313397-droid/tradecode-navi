@@ -67,7 +67,7 @@
       <div class="map-list" id="mapList"></div>
       <div id="warnBox" class="warnbox"></div>
       <div class="actions"><button id="downloadBtn" class="btn green" disabled>변환 Excel 다운로드</button><button id="resetBtn" class="btn">다른 파일 작업</button></div>
-      <div class="note"><b>보존 기준</b> · 선적 파일에 실제로 존재하는 센터 작업 시트만 생성·유지합니다. 선적 파일에 없는 다사바·김부장님·이전 센터 시트와 기존 잔여 수량은 제거하며, 발주서 하단에 남아 있던 이전 품절/추가입력 상품도 값만 초기화합니다. 예비 시트는 예비택배1~10 열 개를 유지하고, 탭 순서는 코리아원 팔레트 → 코리아원 밀크런 → 봄날애 팔레트 → 봄날애 밀크런 → 차통익스프레스 팔레트 → 차통익스프레스 밀크런 → 김부장님 팔레트 → 김부장님 밀크런 → 코리아원 택배 → 봄날애 택배 → 차통 택배 → 김부장님 택배 → 다사바 → 예비택배 순으로 정렬합니다.</div>
+      <div class="note"><b>보존 기준</b> · 선적 파일에 실제로 존재하는 센터 작업 시트만 생성·유지합니다. 선적 파일에 없는 다사바·김부장님·이전 센터 시트와 기존 잔여 수량은 제거하며, 발주서 하단에 남아 있던 이전 품절/추가입력 상품도 값만 초기화합니다. 예비 시트는 예비팔레트1~2 두 개와 예비택배1~10 열 개를 유지합니다. 예비팔레트는 일반 팔레트 시트의 서식·수식·함수를 그대로 가진 빈 작업 시트이며, 탭 순서는 코리아원 팔레트 → 코리아원 밀크런 → 봄날애 팔레트 → 봄날애 밀크런 → 차통익스프레스 팔레트 → 차통익스프레스 밀크런 → 김부장님 팔레트 → 김부장님 밀크런 → 예비팔레트1~2 → 코리아원 택배 → 봄날애 택배 → 차통 택배 → 김부장님 택배 → 다사바 → 예비택배1~10 순으로 정렬합니다.</div>
     </div>
   </section>
 </main>
@@ -101,6 +101,8 @@ function sourceWorkKind(company,s,selectedPalletCenter=''){
 }
 function centerToken(s){return centerBase(s).replace(/\s+/g,'')}
 function workKind(s){s=norm(s);if(/밀크런/.test(s))return'milkrun';if(/팔레트/.test(s))return'pallet';if(/택배/.test(s))return'parcel';return''}
+function isReservePallet(name){return /^예비팔레트(?:\d+)?$/i.test(norm(name))}
+function isReserveParcel(name){return /^예비/.test(norm(name))&&!isReservePallet(name)}
 function isReserve(name){return /^예비/.test(norm(name))}
 function safeWorkSheetName(s){
   // Excel 시트명에서 / \\ : * ? [ ] 는 사용할 수 없습니다.
@@ -184,6 +186,7 @@ function itemScalar(v){if(v==null)return'';if(typeof v==='number')return v;if(ty
 function sheetSortCategory(name,specByName=null){
   const n=norm(name),spec=specByName&&specByName.get?specByName.get(name):null,ck=spec?.company||sheetCompanyKey(n),wk=spec?.kind||workKind(n);
   if(n==='발주서')return -100;
+  if(isReservePallet(n))return 85;
   if(/^예비/.test(n))return 140;
   if(ck==='korea'&&wk==='pallet')return 10;
   if(ck==='korea'&&wk==='milkrun')return 20;
@@ -211,7 +214,12 @@ async function prepareWorkbookStructure(zip,index,desiredSpecs=[]){
   const records=oldNodes.map((node,i)=>{const rid=node.getAttribute('r:id')||node.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id'),rel=relMap.get(rid),target=rel?.getAttribute('Target')||'';return{node,i,oldName:node.getAttribute('name'),rid,rel,name:node.getAttribute('name'),path:normalizeTarget(target),removed:false}});
   const desired=new Map(desiredSpecs.map(x=>[x.name,x]));
   const renameMap=new Map(),dropOldNames=new Set();
-  const reserves=records.filter(x=>isReserve(x.name)),keepRes=reserves.slice(0,10),extraRes=reserves.slice(10);
+  // 예비팔레트와 예비택배를 분리해서 관리합니다.
+  // 기준 파일의 기존 '예비시트*'는 택배 예비시트로 재사용하고, 예비팔레트는 팔레트 기준 시트를 복제해 별도로 만듭니다.
+  const reserves=records.filter(x=>isReserve(x.name));
+  const palletReserveOld=reserves.filter(x=>isReservePallet(x.name));
+  const parcelReserveOld=reserves.filter(x=>!isReservePallet(x.name));
+  const keepRes=parcelReserveOld.slice(0,10),extraRes=[...parcelReserveOld.slice(10),...palletReserveOld];
   keepRes.forEach((x,i)=>{const nn=`예비택배${i+1}`;if(x.name!==nn){renameMap.set(x.oldName,nn);x.node.setAttribute('name',nn);x.name=nn}});
 
   const protectedSheet=r=>r.name==='발주서';
@@ -237,6 +245,13 @@ async function prepareWorkbookStructure(zip,index,desiredSpecs=[]){
     const rel=rels.createElementNS('http://schemas.openxmlformats.org/package/2006/relationships','Relationship');rel.setAttribute('Id',rid);rel.setAttribute('Type','http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet');rel.setAttribute('Target',`worksheets/sheet${maxSheetNo}.xml`);rels.documentElement.appendChild(rel);addCtOverride(newPath);
     const rec={node,i:records.length,oldName:spec.name,rid,rel,name:spec.name,path:newPath,removed:false,created:true};records.push(rec);return rec;
   };
+
+  // 예비팔레트 2개는 실제 팔레트 작업 시트와 완전히 같은 XML을 복제하여 만듭니다.
+  // 이후 데이터 값만 비우고 수식/함수/서식은 그대로 보존합니다.
+  for(let i=1;i<=2;i++){
+    const name=`예비팔레트${i}`;
+    if(!records.some(r=>!r.removed&&r.name===name))await cloneSheet({name,formatKind:'pallet',kind:'pallet',company:'reserve'});
+  }
 
   // 이번 선적에 필요한 센터가 기준 Excel에 없으면 같은 형식의 오래된 센터 시트를 재사용하고,
   // 그것도 부족하면 팔레트/택배 기준 시트를 복제하여 새 센터 시트를 만듭니다.
@@ -312,6 +327,18 @@ clearLegacyStockoutRows(doc,shared);
 // order 총수량은 상단의 이번 선적 상품목록까지만 합산합니다. 하단 품절 입력은 중복합산하지 않습니다.
 const rm=rowMap(sd),orderEnd=orderDataEndRow(doc,shared);setFormulaXml(doc,rm.get(4),'E',4,`SUM($E$8:$E$${orderEnd})`);setFormulaXml(doc,rm.get(4),'F',4,'IF(E4=G4,"맞음","틀림")');setFormulaXml(doc,rm.get(4),'AT',4,'SUM(AT$8:AT$5000)');for(let c=10;c<=40;c++){const col=numCol(c),r2=rm.get(2),name=cellValue(cellByCol(r2,col),shared);if(!name)continue;const sn=name.replace(/'/g,"''"),pallet=/팔레트|밀크런/.test(name);setFormulaXml(doc,rm.get(6),col,6,pallet?`SUMPRODUCT('${sn}'!$F$4:$F$5000,'${sn}'!$G$4:$G$5000)`:`SUM('${sn}'!$F$4:$F$5000)`);setFormulaXml(doc,rm.get(7),col,7,`IFERROR(IF(${col}6=0,"작업전",${col}6/${col}4),"작업전")`)}updateDimension(doc,Math.max(...xels(sd,'row').map(r=>Number(r.getAttribute('r')))),'AT')}
 function patchCenterSheet(doc,items,sheetName){const sd=xels(doc,'sheetData')[0],rm=rowMap(sd),tpl=rm.get(4)||xels(sd,'row').find(r=>Number(r.getAttribute('r'))>=4);if(sheetName&&rm.get(1))setCellXml(doc,rm.get(1),'A',1,sheetName,true,cellByCol(rm.get(1),'A'));if(!tpl)throw new Error('센터 시트의 기준 행을 찾지 못했습니다.');const oldLast=lastContentRow(sd,4,1,22),clearTo=Math.max(oldLast,3+items.length);let map=rowMap(sd);for(let rn=4;rn<=clearTo;rn++){let row=map.get(rn);if(!row){row=cloneRow(tpl,rn,true);insertRowSorted(sd,row);map.set(rn,row)}for(const c of xels(row,'c')){const n=colNum(xcol(c.getAttribute('r')));if(n>=1&&n<=22)clearCellXml(c)}}for(let i=0;i<items.length;i++){const rn=4+i,it=items[i],row=map.get(rn);if(it.rowHeight)row.setAttribute('ht',String(it.rowHeight));setCellXml(doc,row,'A',rn,itemScalar(it.productNumber),false,cellByCol(tpl,'A'));setCellXml(doc,row,'B',rn,it.productName,true,cellByCol(tpl,'B'));setCellXml(doc,row,'C',rn,itemScalar(it.barcode),true,cellByCol(tpl,'C'));setCellXml(doc,row,'D',rn,it.center,true,cellByCol(tpl,'D'));setCellXml(doc,row,'E',rn,it.qty,false,cellByCol(tpl,'E'))}const max=Math.max(...xels(sd,'row').map(r=>Number(r.getAttribute('r'))));const dim=xels(doc,'dimension')[0],last=(dim?.getAttribute('ref')||'A1:S1').split(':').pop().match(/^[A-Z]+/i)?.[0]||'S';updateDimension(doc,max,last)}
+function resetReservePalletSheet(doc){
+  const sd=xels(doc,'sheetData')[0];if(!sd)return;
+  // 1~3행의 팔레트 헤더와 계산식은 그대로 둡니다.
+  // 4행 이하에서는 기존 템플릿의 상품/박스 작업 값만 지우되, 수식 셀은 보존합니다.
+  for(const row of xels(sd,'row')){
+    const rn=Number(row.getAttribute('r'));if(rn<4)continue;
+    for(const c of xels(row,'c')){
+      if(xels(c,'f').length)continue;
+      clearCellXml(c);
+    }
+  }
+}
 async function buildOutput(sections,selectedPalletCenter=''){
   const zip=await JSZip.loadAsync(embeddedTemplateBuffer()),idx=await templateIndex(zip);
   const grouped=new Map();
@@ -322,6 +349,10 @@ async function buildOutput(sections,selectedPalletCenter=''){
   }}
   const structure=await prepareWorkbookStructure(zip,idx,[...grouped.values()].map(g=>g.spec));
   const finalIndex=await templateIndex(zip),pathByName=new Map(finalIndex.sheets.map(x=>[x.name,x.path]));
+  for(const reserveName of ['예비팔레트1','예비팔레트2']){
+    const reservePath=pathByName.get(reserveName);if(!reservePath)throw new Error(`${reserveName} 시트를 만들지 못했습니다.`);
+    const reserveDoc=xdoc(await zip.file(reservePath).async('text'));resetReservePalletSheet(reserveDoc);zip.file(reservePath,serializeXml(reserveDoc));
+  }
   const orderPath=pathByName.get('발주서');if(!orderPath)throw new Error('내장 기준 Excel에서 발주서 시트를 찾지 못했습니다.');
   const orderDoc=xdoc(await zip.file(orderPath).async('text'));writeOrderData(orderDoc,idx.shared,sections);const specByName=new Map([...grouped.values()].map(g=>[g.target,g.spec]));rewriteOrderSummary(orderDoc,structure.finalNames.filter(n=>n!=='발주서'),specByName,idx.shared);zip.file(orderPath,serializeXml(orderDoc));
   const mapping=[];for(const g of grouped.values()){
@@ -353,7 +384,7 @@ async function convertPending(){
   try{
     const built=await buildOutput(state.sections,state.selectedPalletCenter);
     state.mapping=built.mapping;state.name=outName(state.pendingFileName);state.blob=new Blob([built.buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    renderResult(state.sections,built.mapping);setStatus(`✓ 변환 완료 · ${built.mapping.length}개 센터 시트 생성/갱신 · 지정 순서 정렬 · 예비택배 10개 유지 · 수식 보존`,'ok');
+    renderResult(state.sections,built.mapping);setStatus(`✓ 변환 완료 · ${built.mapping.length}개 센터 시트 생성/갱신 · 지정 순서 정렬 · 예비팔레트 2개 + 예비택배 10개 유지 · 수식 보존`,'ok');
   }catch(e){console.error(e);setStatus('❌ '+String(e.message||e),'bad');alert('쿠팡 입고 Excel 변환 실패\n\n'+String(e.message||e))}
 }
 async function processFile(file){
