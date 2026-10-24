@@ -67,7 +67,7 @@
       <div class="map-list" id="mapList"></div>
       <div id="warnBox" class="warnbox"></div>
       <div class="actions"><button id="downloadBtn" class="btn green" disabled>변환 Excel 다운로드</button><button id="resetBtn" class="btn">다른 파일 작업</button></div>
-      <div class="note"><b>보존 기준</b> · 선적 파일에 실제로 존재하는 센터 작업 시트만 생성·유지합니다. 선적 파일에 없는 다사바·김부장님·이전 센터 시트와 기존 잔여 수량은 제거합니다. 예비 시트는 예비택배1~10 열 개를 유지하고, 탭 순서는 코리아원 팔레트 → 코리아원 밀크런 → 봄날애 팔레트 → 봄날애 밀크런 → 차통익스프레스 팔레트 → 차통익스프레스 밀크런 → 김부장님 팔레트 → 김부장님 밀크런 → 코리아원 택배 → 봄날애 택배 → 차통 택배 → 김부장님 택배 → 다사바 → 예비택배 순으로 정렬합니다.</div>
+      <div class="note"><b>보존 기준</b> · 선적 파일에 실제로 존재하는 센터 작업 시트만 생성·유지합니다. 선적 파일에 없는 다사바·김부장님·이전 센터 시트와 기존 잔여 수량은 제거하며, 발주서 하단에 남아 있던 이전 품절/추가입력 상품도 값만 초기화합니다. 예비 시트는 예비택배1~10 열 개를 유지하고, 탭 순서는 코리아원 팔레트 → 코리아원 밀크런 → 봄날애 팔레트 → 봄날애 밀크런 → 차통익스프레스 팔레트 → 차통익스프레스 밀크런 → 김부장님 팔레트 → 김부장님 밀크런 → 코리아원 택배 → 봄날애 택배 → 차통 택배 → 김부장님 택배 → 다사바 → 예비택배 순으로 정렬합니다.</div>
     </div>
   </section>
 </main>
@@ -267,7 +267,23 @@ async function prepareWorkbookStructure(zip,index,desiredSpecs=[]){
   zip.file('xl/workbook.xml',serializeXml(wb));zip.file('xl/_rels/workbook.xml.rels',serializeXml(rels));
   return {finalNames,renameMap,dropOldNames};
 }
-function rewriteOrderSummary(doc,orderedSheetNames,specByName=null){
+function clearLegacyStockoutRows(doc,shared){
+  const sd=xels(doc,'sheetData')[0],marker=findMarkerRow(doc,shared);
+  if(!marker)return 0;
+  let cleared=0;
+  for(const row of xels(sd,'row')){
+    const rn=Number(row.getAttribute('r'));
+    if(rn<=marker)continue;
+    for(const col of ['B','C','E']){
+      const c=cellByCol(row,col);
+      if(!c||xels(c,'f').length)continue;
+      if(xels(c,'v').length||xels(c,'is').length||c.getAttribute('t')){clearCellXml(c);cleared++;}
+    }
+  }
+  return cleared;
+}
+function orderDataEndRow(doc,shared){const marker=findMarkerRow(doc,shared);return marker?Math.max(8,marker-1):5000}
+function rewriteOrderSummary(doc,orderedSheetNames,specByName=null,shared=[]){
   const sd=xels(doc,'sheetData')[0],rm=rowMap(sd),start=10,end=40; // J:AN
   const row2=rm.get(2),row3=rm.get(3),row4=rm.get(4),row5=rm.get(5),row6=rm.get(6),row7=rm.get(7);
   for(let c=start;c<=end;c++){
@@ -283,14 +299,18 @@ function rewriteOrderSummary(doc,orderedSheetNames,specByName=null){
   }
   const lastCol=orderedSheetNames.length?numCol(start+orderedSheetNames.length-1):'J';
   setFormulaXml(doc,rm.get(2),'I',2,`SUM(J5:${lastCol}5)`);
-  setFormulaXml(doc,rm.get(4),'E',4,'SUM($E$8:$E$5000)');
+  const orderEnd=orderDataEndRow(doc,shared);
+  setFormulaXml(doc,rm.get(4),'E',4,`SUM($E$8:$E$${orderEnd})`);
   setFormulaXml(doc,rm.get(4),'F',4,'IF(E4=G4,"맞음","틀림")');
   setFormulaXml(doc,rm.get(4),'AT',4,'SUM(AT$8:AT$5000)');
 }
 async function patchCalcPackage(zip){let w=await zip.file('xl/workbook.xml').async('text');if(/<calcPr\b/.test(w))w=w.replace(/<calcPr\b([^>]*)\/>/,(_,attrs)=>{attrs=attrs.replace(/\s+(calcMode|fullCalcOnLoad|forceFullCalc)="[^"]*"/g,'');return `<calcPr${attrs} calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/>`});else w=w.replace(/<\/workbook>/,'<calcPr calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/></workbook>');zip.file('xl/workbook.xml',w);let rel=await zip.file('xl/_rels/workbook.xml.rels').async('text');rel=rel.replace(/<Relationship\b[^>]*Type="[^"]*\/calcChain"[^>]*\/>/g,'');zip.file('xl/_rels/workbook.xml.rels',rel);const ct=zip.file('[Content_Types].xml');if(ct){const t=await ct.async('text');zip.file('[Content_Types].xml',t.replace(/<Override\b[^>]*PartName="\/xl\/calcChain\.xml"[^>]*\/>/g,''))}zip.remove('xl/calcChain.xml')}
 function writeOrderData(doc,shared,sections){const sd=xels(doc,'sheetData')[0],tailStart=findMarkerRow(doc,shared)||999999,titleBom=findTitleRow(doc,shared,/^봄날애\s/),titleChat=findTitleRow(doc,shared,/^차통/);const rows=rowMap(sd),koreaTpl=rows.get(8)||xels(sd,'row').find(r=>Number(r.getAttribute('r'))>=8),bomTitleTpl=rows.get(titleBom)||koreaTpl,bomDataTpl=rows.get(titleBom+1)||koreaTpl,chatTitleTpl=rows.get(titleChat)||bomTitleTpl,chatDataTpl=rows.get(titleChat+1)||koreaTpl,blankTpl=rows.get((titleBom||9)-1)||koreaTpl;let need=8+sections.reduce((s,x)=>s+x.items.length,0)+Math.max(0,sections.length-1)*2-1;if(need>=tailStart){const delta=need-tailStart+3;shiftRowsAndRefs(doc,tailStart,delta)}const clearEnd=(tailStart===999999)?Math.max(need,651):(need>=tailStart?tailStart+(need-tailStart+3)-1:tailStart-1);removeMergeRows(doc,8,clearEnd);removeRowsBetween(sd,8,clearEnd);let wr=8;for(let si=0;si<sections.length;si++){const sec=sections[si],key=companyKey(sec.company);if(si>0){let br=cloneRow(blankTpl,wr,true);insertRowSorted(sd,br);wr++;let tt=key==='chatong'?chatTitleTpl:bomTitleTpl,tr=cloneRow(tt,wr,true);if(sec.titleHeight)tr.setAttribute('ht',String(sec.titleHeight));setCellXml(doc,tr,'A',wr,sec.title,true,cellByCol(tt,'A'));insertRowSorted(sd,tr);addMerge(doc,`A${wr}:E${wr}`);wr++}const tpl=key==='chatong'?chatDataTpl:(key==='bom'?bomDataTpl:koreaTpl);for(const it of sec.items){const row=cloneRow(tpl,wr,true);if(it.rowHeight)row.setAttribute('ht',String(it.rowHeight));setCellXml(doc,row,'A',wr,itemScalar(it.productNumber),false,cellByCol(tpl,'A'));setCellXml(doc,row,'B',wr,it.productName,true,cellByCol(tpl,'B'));setCellXml(doc,row,'C',wr,itemScalar(it.barcode),true,cellByCol(tpl,'C'));setCellXml(doc,row,'D',wr,it.center,true,cellByCol(tpl,'D'));setCellXml(doc,row,'E',wr,it.qty,false,cellByCol(tpl,'E'));insertRowSorted(sd,row);wr++}}
-// 핵심 집계 수식은 참조범위를 넉넉히 잡고 강제 재계산시킵니다.
-const rm=rowMap(sd);setFormulaXml(doc,rm.get(4),'E',4,'SUM($E$8:$E$5000)');setFormulaXml(doc,rm.get(4),'F',4,'IF(E4=G4,"맞음","틀림")');setFormulaXml(doc,rm.get(4),'AT',4,'SUM(AT$8:AT$5000)');for(let c=10;c<=40;c++){const col=numCol(c),r2=rm.get(2),name=cellValue(cellByCol(r2,col),shared);if(!name)continue;const sn=name.replace(/'/g,"''"),pallet=/팔레트|밀크런/.test(name);setFormulaXml(doc,rm.get(6),col,6,pallet?`SUMPRODUCT('${sn}'!$F$4:$F$5000,'${sn}'!$G$4:$G$5000)`:`SUM('${sn}'!$F$4:$F$5000)`);setFormulaXml(doc,rm.get(7),col,7,`IFERROR(IF(${col}6=0,"작업전",${col}6/${col}4),"작업전")`)}updateDimension(doc,Math.max(...xels(sd,'row').map(r=>Number(r.getAttribute('r')))),'AT')}
+// 기준 Excel에 남아 있던 하단 품절/추가입력 샘플 데이터는 새 선적건으로 가져오지 않습니다.
+// 헤더와 셀 서식은 유지하고 상품명(B)·바코드(C)·수량(E) 값만 비웁니다.
+clearLegacyStockoutRows(doc,shared);
+// order 총수량은 상단의 이번 선적 상품목록까지만 합산합니다. 하단 품절 입력은 중복합산하지 않습니다.
+const rm=rowMap(sd),orderEnd=orderDataEndRow(doc,shared);setFormulaXml(doc,rm.get(4),'E',4,`SUM($E$8:$E$${orderEnd})`);setFormulaXml(doc,rm.get(4),'F',4,'IF(E4=G4,"맞음","틀림")');setFormulaXml(doc,rm.get(4),'AT',4,'SUM(AT$8:AT$5000)');for(let c=10;c<=40;c++){const col=numCol(c),r2=rm.get(2),name=cellValue(cellByCol(r2,col),shared);if(!name)continue;const sn=name.replace(/'/g,"''"),pallet=/팔레트|밀크런/.test(name);setFormulaXml(doc,rm.get(6),col,6,pallet?`SUMPRODUCT('${sn}'!$F$4:$F$5000,'${sn}'!$G$4:$G$5000)`:`SUM('${sn}'!$F$4:$F$5000)`);setFormulaXml(doc,rm.get(7),col,7,`IFERROR(IF(${col}6=0,"작업전",${col}6/${col}4),"작업전")`)}updateDimension(doc,Math.max(...xels(sd,'row').map(r=>Number(r.getAttribute('r')))),'AT')}
 function patchCenterSheet(doc,items,sheetName){const sd=xels(doc,'sheetData')[0],rm=rowMap(sd),tpl=rm.get(4)||xels(sd,'row').find(r=>Number(r.getAttribute('r'))>=4);if(sheetName&&rm.get(1))setCellXml(doc,rm.get(1),'A',1,sheetName,true,cellByCol(rm.get(1),'A'));if(!tpl)throw new Error('센터 시트의 기준 행을 찾지 못했습니다.');const oldLast=lastContentRow(sd,4,1,22),clearTo=Math.max(oldLast,3+items.length);let map=rowMap(sd);for(let rn=4;rn<=clearTo;rn++){let row=map.get(rn);if(!row){row=cloneRow(tpl,rn,true);insertRowSorted(sd,row);map.set(rn,row)}for(const c of xels(row,'c')){const n=colNum(xcol(c.getAttribute('r')));if(n>=1&&n<=22)clearCellXml(c)}}for(let i=0;i<items.length;i++){const rn=4+i,it=items[i],row=map.get(rn);if(it.rowHeight)row.setAttribute('ht',String(it.rowHeight));setCellXml(doc,row,'A',rn,itemScalar(it.productNumber),false,cellByCol(tpl,'A'));setCellXml(doc,row,'B',rn,it.productName,true,cellByCol(tpl,'B'));setCellXml(doc,row,'C',rn,itemScalar(it.barcode),true,cellByCol(tpl,'C'));setCellXml(doc,row,'D',rn,it.center,true,cellByCol(tpl,'D'));setCellXml(doc,row,'E',rn,it.qty,false,cellByCol(tpl,'E'))}const max=Math.max(...xels(sd,'row').map(r=>Number(r.getAttribute('r'))));const dim=xels(doc,'dimension')[0],last=(dim?.getAttribute('ref')||'A1:S1').split(':').pop().match(/^[A-Z]+/i)?.[0]||'S';updateDimension(doc,max,last)}
 async function buildOutput(sections,selectedPalletCenter=''){
   const zip=await JSZip.loadAsync(embeddedTemplateBuffer()),idx=await templateIndex(zip);
@@ -303,7 +323,7 @@ async function buildOutput(sections,selectedPalletCenter=''){
   const structure=await prepareWorkbookStructure(zip,idx,[...grouped.values()].map(g=>g.spec));
   const finalIndex=await templateIndex(zip),pathByName=new Map(finalIndex.sheets.map(x=>[x.name,x.path]));
   const orderPath=pathByName.get('발주서');if(!orderPath)throw new Error('내장 기준 Excel에서 발주서 시트를 찾지 못했습니다.');
-  const orderDoc=xdoc(await zip.file(orderPath).async('text'));writeOrderData(orderDoc,idx.shared,sections);const specByName=new Map([...grouped.values()].map(g=>[g.target,g.spec]));rewriteOrderSummary(orderDoc,structure.finalNames.filter(n=>n!=='발주서'),specByName);zip.file(orderPath,serializeXml(orderDoc));
+  const orderDoc=xdoc(await zip.file(orderPath).async('text'));writeOrderData(orderDoc,idx.shared,sections);const specByName=new Map([...grouped.values()].map(g=>[g.target,g.spec]));rewriteOrderSummary(orderDoc,structure.finalNames.filter(n=>n!=='발주서'),specByName,idx.shared);zip.file(orderPath,serializeXml(orderDoc));
   const mapping=[];for(const g of grouped.values()){
     const path=pathByName.get(g.target);if(!path)throw new Error(`작업 시트 '${g.target}'을 만들지 못했습니다.`);
     const doc=xdoc(await zip.file(path).async('text'));patchCenterSheet(doc,g.items,g.target);zip.file(path,serializeXml(doc));
