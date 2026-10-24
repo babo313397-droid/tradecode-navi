@@ -37,7 +37,7 @@
 </nav>
 <main class="main">
   <div class="head">
-    <div><h1>📦 쿠팡 입고 Excel 자동 변환</h1><p>기존 웹 화면에서 직접 작업하지 않고, <b>선적 Excel 1개를 넣으면 작업용 Excel을 바로 만듭니다.</b><br>예비 택배 시트는 5개만 유지하고, 기존 보조 시트와 수식은 그대로 살립니다. 시트 탭도 작업 순서대로 자동 정렬합니다. 별도 템플릿 파일은 필요하지 않습니다.</p></div>
+    <div><h1>📦 쿠팡 입고 Excel 자동 변환</h1><p>기존 웹 화면에서 직접 작업하지 않고, <b>선적 Excel 1개를 넣으면 작업용 Excel을 바로 만듭니다.</b><br>예비 택배 시트는 10개 유지하고, 기존 보조 시트와 수식은 그대로 살립니다. 시트 탭도 작업 순서대로 자동 정렬합니다. 별도 템플릿 파일은 필요하지 않습니다.</p></div>
     <div class="badge">빠른 Excel 변환 전용</div>
   </div>
   <section class="panel">
@@ -67,7 +67,7 @@
       <div class="map-list" id="mapList"></div>
       <div id="warnBox" class="warnbox"></div>
       <div class="actions"><button id="downloadBtn" class="btn green" disabled>변환 Excel 다운로드</button><button id="resetBtn" class="btn">다른 파일 작업</button></div>
-      <div class="note"><b>보존 기준</b> · 다사바·김부장님 시트와 기존 수식/서식은 유지합니다. 예비 시트는 예비택배1~5 다섯 개만 남기고, 탭 순서는 코리아원 팔레트 → 코리아원 밀크런 → 봄날애 팔레트 → 봄날애 밀크런 → 차통익스프레스 팔레트 → 차통익스프레스 밀크런 → 김부장님 팔레트 → 김부장님 밀크런 → 코리아원 택배 → 봄날애 택배 → 차통 택배 → 김부장님 택배 → 다사바 → 예비택배 순으로 정렬합니다.</div>
+      <div class="note"><b>보존 기준</b> · 선적 파일에 실제로 존재하는 센터 작업 시트만 생성·유지합니다. 선적 파일에 없는 다사바·김부장님·이전 센터 시트와 기존 잔여 수량은 제거합니다. 예비 시트는 예비택배1~10 열 개를 유지하고, 탭 순서는 코리아원 팔레트 → 코리아원 밀크런 → 봄날애 팔레트 → 봄날애 밀크런 → 차통익스프레스 팔레트 → 차통익스프레스 밀크런 → 김부장님 팔레트 → 김부장님 밀크런 → 코리아원 택배 → 봄날애 택배 → 차통 택배 → 김부장님 택배 → 다사바 → 예비택배 순으로 정렬합니다.</div>
     </div>
   </section>
 </main>
@@ -211,10 +211,10 @@ async function prepareWorkbookStructure(zip,index,desiredSpecs=[]){
   const records=oldNodes.map((node,i)=>{const rid=node.getAttribute('r:id')||node.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id'),rel=relMap.get(rid),target=rel?.getAttribute('Target')||'';return{node,i,oldName:node.getAttribute('name'),rid,rel,name:node.getAttribute('name'),path:normalizeTarget(target),removed:false}});
   const desired=new Map(desiredSpecs.map(x=>[x.name,x]));
   const renameMap=new Map(),dropOldNames=new Set();
-  const reserves=records.filter(x=>isReserve(x.name)),keepRes=reserves.slice(0,5),extraRes=reserves.slice(5);
+  const reserves=records.filter(x=>isReserve(x.name)),keepRes=reserves.slice(0,10),extraRes=reserves.slice(10);
   keepRes.forEach((x,i)=>{const nn=`예비택배${i+1}`;if(x.name!==nn){renameMap.set(x.oldName,nn);x.node.setAttribute('name',nn);x.name=nn}});
 
-  const protectedSheet=r=>r.name==='발주서'||/^다사바/.test(norm(r.name))||/^김부장/.test(norm(r.name));
+  const protectedSheet=r=>r.name==='발주서';
   const fmt=name=>{const k=workKind(name);return(k==='pallet'||k==='milkrun')?'pallet':'parcel'};
   const desiredExisting=new Set(records.filter(r=>desired.has(r.name)).map(r=>r.name));
   const staleRegular=records.filter(r=>!protectedSheet(r)&&!isReserve(r.name)&&!desired.has(r.name));
@@ -247,7 +247,7 @@ async function prepareWorkbookStructure(zip,index,desiredSpecs=[]){
     else await cloneSheet(spec);
   }
 
-  // 사용하지 않는 이전 센터 시트와 여분 예비시트는 제거합니다. 다사바/김부장님 시트는 기존대로 보존합니다.
+  // 선적 파일에 없는 모든 이전 작업 시트와 여분 예비시트는 제거합니다. 다사바/김부장님도 선적 파일에 있을 때만 생성·유지합니다.
   const removeList=records.filter(r=>!r.created&&!protectedSheet(r)&&!keepRes.includes(r)&&!desired.has(r.name));
   const removeRecord=r=>{r.removed=true;dropOldNames.add(r.oldName);if(r.node.parentNode===sheetsEl)sheetsEl.removeChild(r.node);if(r.rel?.parentNode)rels.documentElement.removeChild(r.rel);if(r.path){zip.remove(r.path);const base=r.path.split('/').pop(),rp='xl/worksheets/_rels/'+base+'.rels';zip.remove(rp)}};
   removeList.forEach(removeRecord);
@@ -333,7 +333,7 @@ async function convertPending(){
   try{
     const built=await buildOutput(state.sections,state.selectedPalletCenter);
     state.mapping=built.mapping;state.name=outName(state.pendingFileName);state.blob=new Blob([built.buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    renderResult(state.sections,built.mapping);setStatus(`✓ 변환 완료 · ${built.mapping.length}개 센터 시트 생성/갱신 · 지정 순서 정렬 · 예비택배 5개 유지 · 수식 보존`,'ok');
+    renderResult(state.sections,built.mapping);setStatus(`✓ 변환 완료 · ${built.mapping.length}개 센터 시트 생성/갱신 · 지정 순서 정렬 · 예비택배 10개 유지 · 수식 보존`,'ok');
   }catch(e){console.error(e);setStatus('❌ '+String(e.message||e),'bad');alert('쿠팡 입고 Excel 변환 실패\n\n'+String(e.message||e))}
 }
 async function processFile(file){
