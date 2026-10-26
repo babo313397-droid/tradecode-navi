@@ -1,7 +1,7 @@
 (function(){
 function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 const TC_PUBLIC_PATHS_V144=new Set(['/', '/index.html','/barcode-label','/barcode-label.html','/coupang-pallet-simulator','/coupang-pallet-simulator.html']);
-const TC_RESTRICTED_PREFIXES_V144=['/order-barcode','/shipment-list-builder','/detail-maker','/coupang-inbound-work','/purchase-order','/truck-shipment','/pallet-load-list','/outbound-box-numbering','/account-admin'];
+const TC_RESTRICTED_PREFIXES_V144=['/order-barcode','/shipment-list-builder','/detail-maker','/coupang-inbound-work','/purchase-order','/truck-shipment','/pallet-load-list','/outbound-box-numbering','/kim-billing','/account-admin'];
 let tcAuthStateV144={checked:false,authenticated:false,user:null};
 let tcAuthPromiseV144=null;
 let tcPendingTargetV144='';
@@ -25,7 +25,7 @@ function targetFromElementV144(el){
   const txt=(el.textContent||'').trim();
   const map=[
     ['발주 바코드','/order-barcode.html'],['선적 리스트','/shipment-list-builder.html'],['상세페이지','/detail-maker'],
-    ['쿠팡 입고 작업','/coupang-inbound-work.html'],['발주서 작성','/purchase-order.html'],['트럭쉽먼트','/truck-shipment.html'],['밀크런 팔레트 적재리스트','/pallet-load-list.html'],['출고박스 자동넘버링','/outbound-box-numbering.html'],['계정관리','/account-admin.html']
+    ['쿠팡 입고 작업','/coupang-inbound-work.html'],['발주서 작성','/purchase-order.html'],['트럭쉽먼트','/truck-shipment.html'],['밀크런 팔레트 적재리스트','/pallet-load-list.html'],['출고박스 자동넘버링','/outbound-box-numbering.html'],['김부장님 청구건','/kim-billing.html'],['계정관리','/account-admin.html']
   ];
   const hit=map.find(([name])=>txt.includes(name));
   return hit?hit[1]:'';
@@ -75,6 +75,18 @@ function ensureOutboundBoxNumberingNav(){
     if(pallet&&pallet.parentNode===sidebar&&pallet.nextElementSibling!==link)pallet.insertAdjacentElement('afterend',link);else if(!link.isConnected)sidebar.appendChild(link);
     link.style.removeProperty('display');if(location.pathname.startsWith('/outbound-box-numbering'))link.classList.add('active');else link.classList.remove('active');
   }catch(e){console.warn('outbound box numbering nav',e)}
+}
+function ensureKimBillingAdminNav(user){
+  try{
+    const sidebar=document.querySelector('nav.sidebar,.sidebar');if(!sidebar)return;
+    let link=document.getElementById('tcKimBillingAdminNav')||[...sidebar.querySelectorAll('a,button')].find(el=>{const href=el.getAttribute('href')||'';return href.includes('/kim-billing')||(el.textContent||'').includes('김부장님 청구건')});
+    if(!user||user.role!=='admin'){if(link)link.remove();return}
+    if(!link){link=document.createElement('a');link.id='tcKimBillingAdminNav';link.className='nav-btn';link.href='/kim-billing.html';link.textContent='🧾 김부장님 청구건'}
+    const nodes=[...sidebar.querySelectorAll('a,button')];
+    const outbound=nodes.find(el=>{const href=el.getAttribute('href')||'';return href.includes('/outbound-box-numbering')||(el.textContent||'').includes('출고박스 자동넘버링')});
+    if(outbound&&outbound.parentNode===sidebar&&outbound.nextElementSibling!==link)outbound.insertAdjacentElement('afterend',link);else if(!link.isConnected)sidebar.appendChild(link);
+    link.style.removeProperty('display');if(location.pathname.startsWith('/kim-billing'))link.classList.add('active');else link.classList.remove('active');
+  }catch(e){console.warn('kim billing nav',e)}
 }
 function ensurePalletSimulatorNav(){
   try{
@@ -139,7 +151,7 @@ function installRestrictedNavGuardV144(){
   },true);
 }
 async function init(){
-  ensurePurchaseOrderNav();ensureTruckShipmentNav();ensurePalletLoadListNav();ensureOutboundBoxNumberingNav();ensurePalletSimulatorNav();ensureLoginRequiredDivider();installRestrictedNavGuardV144();
+  ensureKimBillingAdminNav(null);ensurePurchaseOrderNav();ensureTruckShipmentNav();ensurePalletLoadListNav();ensureOutboundBoxNumberingNav();ensurePalletSimulatorNav();ensureLoginRequiredDivider();installRestrictedNavGuardV144();
   try{
     const st=await checkAuthV144();const j={authenticated:st.authenticated,user:st.user};
     if(!j.authenticated){
@@ -147,7 +159,7 @@ async function init(){
       if(!isPublicPathV144())location.href='/login.html?next='+encodeURIComponent(location.pathname+location.search);
       return;
     }
-    const u=j.user;ensurePurchaseOrderNav();ensureTruckShipmentNav();ensurePalletLoadListNav();ensureOutboundBoxNumberingNav();ensurePalletSimulatorNav();ensureLoginRequiredDivider();
+    const u=j.user;ensurePurchaseOrderNav();ensureTruckShipmentNav();ensurePalletLoadListNav();ensureOutboundBoxNumberingNav();ensurePalletSimulatorNav();ensureKimBillingAdminNav(u);ensureLoginRequiredDivider();
     if(!document.getElementById('tradecodeAccountBar')){
       const bar=document.createElement('div');bar.id='tradecodeAccountBar';bar.style.cssText='position:fixed;right:12px;bottom:12px;z-index:2147483000;background:#0b2e4f;color:#fff;border-radius:11px;padding:8px 10px;box-shadow:0 5px 18px #0003;font:700 12px -apple-system,BlinkMacSystemFont,Pretendard,Malgun Gothic,sans-serif;display:flex;gap:8px;align-items:center';
       bar.innerHTML='<span>👤 '+esc(u.displayName||u.username)+'</span>'+(u.role==='admin'?'<a href="/account-admin.html" style="color:#ffd66b;text-decoration:none">계정관리</a>':'')+'<button id="tcLogout" style="border:1px solid #ffffff55;background:#ffffff14;color:white;border-radius:7px;padding:4px 7px;cursor:pointer">로그아웃</button>';
@@ -156,8 +168,8 @@ async function init(){
     window.TRADECODE_USER=u;window.dispatchEvent(new CustomEvent('tradecode-auth-ready',{detail:u}));
   }catch(e){console.warn('auth init',e)}
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{ensurePurchaseOrderNav();ensureTruckShipmentNav();ensurePalletLoadListNav();ensureOutboundBoxNumberingNav();ensurePalletSimulatorNav();ensureLoginRequiredDivider();installRestrictedNavGuardV144()},{once:true});
-else {ensurePurchaseOrderNav();ensureTruckShipmentNav();ensurePalletLoadListNav();ensureOutboundBoxNumberingNav();ensurePalletSimulatorNav();ensureLoginRequiredDivider();installRestrictedNavGuardV144();}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{ensureKimBillingAdminNav(null);ensurePurchaseOrderNav();ensureTruckShipmentNav();ensurePalletLoadListNav();ensureOutboundBoxNumberingNav();ensurePalletSimulatorNav();ensureLoginRequiredDivider();installRestrictedNavGuardV144()},{once:true});
+else {ensureKimBillingAdminNav(null);ensurePurchaseOrderNav();ensureTruckShipmentNav();ensurePalletLoadListNav();ensureOutboundBoxNumberingNav();ensurePalletSimulatorNav();ensureLoginRequiredDivider();installRestrictedNavGuardV144();}
 init();
 })();
 
@@ -216,50 +228,3 @@ init();
 })();
 // v97: Render API 자동감지가 설정되면 '배포 완료 후'가 아니라 '배포 시작 직후' 잠금. 최소 대기시간 10초.
 // ===== /v97 deployment guard =====
-
-// ===== v20261014 layout safety: navigation must never move page content =====
-(function(){
-  'use strict';
-  const protectedLegacy=/^\/(?:shipment-list-builder|purchase-order|order-barcode|coupang-inbound-work)(?:\.html)?\/?$/;
-  function repair(){
-    try{
-      const path=location.pathname||'/';
-      const sidebar=document.querySelector('nav.sidebar');
-      if(!sidebar)return;
-      // Never allow menu synchronization to introduce offsets/transforms.
-      sidebar.style.setProperty('margin-left','0','important');
-      sidebar.style.setProperty('margin-top','0','important');
-      sidebar.style.setProperty('transform','none','important');
-      const cs=getComputedStyle(sidebar);
-      if(cs.position==='fixed'){
-        sidebar.style.setProperty('left','0','important');
-        sidebar.style.setProperty('top','0','important');
-        sidebar.style.setProperty('bottom','0','important');
-        if(protectedLegacy.test(path)){
-          const main=document.querySelector('main.main');
-          if(main){
-            const w=Math.round(sidebar.getBoundingClientRect().width)||258;
-            main.style.setProperty('margin-left',w+'px','important');
-            main.style.setProperty('margin-top','0','important');
-            main.style.setProperty('top','0','important');
-            main.style.setProperty('transform','none','important');
-          }
-          document.documentElement.style.setProperty('margin-top','0','important');
-          document.body.style.setProperty('margin-top','0','important');
-        }
-      }else if(cs.position==='sticky'){
-        sidebar.style.setProperty('top','0','important');
-      }
-    }catch(e){console.warn('[layout safety]',e)}
-  }
-  function start(){
-    repair();
-    requestAnimationFrame(repair);
-    setTimeout(repair,80);setTimeout(repair,350);setTimeout(repair,1000);
-    const mo=new MutationObserver(()=>requestAnimationFrame(repair));
-    mo.observe(document.documentElement,{childList:true,subtree:true});
-    setTimeout(()=>mo.disconnect(),4000);
-  }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
-})();
-// ===== /v20261014 layout safety =====
