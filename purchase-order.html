@@ -103,9 +103,14 @@
               <div class="korea-product-grid">
                 <label>번들 낱개 단가</label><input id="productKoreaBundleUnitPrice" class="input" type="number" min="0" step="1" value="0">
                 <label>번들 최소 팩킹수량</label><input id="productKoreaBundleMinPack" class="input" type="number" min="1" step="1" value="1">
-                <label>번들 동일 상품군</label><input id="productKoreaBundleGroup" class="input" placeholder="예: Z1, BUNDLE-A">
+                <label style="display:none">번들 동일 상품군</label><input id="productKoreaBundleGroup" class="input" style="display:none" placeholder="자동 저장용">
                 <label>번들 대체 상품명</label><input id="productKoreaBundleAltName" class="input" placeholder="번들 발주서에 표시할 명칭">
                 <label>번들 대체 사진</label><div class="image-pick"><div id="editKoreaBundleImagePreview" class="image-preview">사진 없음</div><div><button class="btn" type="button" onclick="$('productKoreaBundleAltImage').click()">번들 대체 사진 선택</button><input id="productKoreaBundleAltImage" class="file-input" type="file" accept="image/png,image/jpeg"><button id="removeKoreaBundleAltImageBtn" class="btn red" type="button" style="margin-left:4px;display:none" onclick="removeKoreaBundleAltImageV142()">번들 사진 삭제</button><div style="font-size:9px;color:#71818c;margin-top:5px">번들 상품일 때만 이 사진과 명칭/단가/팩킹/상품군을 사용합니다.</div></div></div>
+              </div>
+              <div class="bundle-components-v143">
+                <div class="bundle-components-v143-head"><b>번들 구성 동일상품</b><span>번들 1개에 들어가는 동일상품군과 수량을 각각 지정합니다.</span><button id="addBundleComponentV143" class="btn" type="button">+ 구성품 추가</button></div>
+                <div id="bundleComponentsV143"></div>
+                <div class="bundle-components-v143-note">예: <b>Z × 1</b> + <b>ZD × 1</b> → PO 발주수량 3개면 Z 3개와 ZD 3개가 각각 동일상품 묶음 계산에 들어갑니다.</div>
               </div>
             </div>
           </div>
@@ -1194,7 +1199,7 @@ loadProducts();renderOrderPreview();
       if(!productNumber&&!barcode)return alert('상품번호 또는 바코드를 입력해 주세요.');if(!productName)return alert('상품명을 입력해 주세요.');
       const koreaOn=!!$('productKoreaOrder')?.checked;
       setStatus('productEditStatus','저장 중…','work');
-      const bundleOn=!!$('productKoreaBundle')?.checked;const body={id:editingProductId||undefined,productNumber,barcode,productName,cavity,isKoreaOrder:koreaOn,koreaUnitPrice:Math.max(0,num($('productKoreaUnitPrice')?.value)),koreaMinPack:Math.max(1,Math.floor(num($('productKoreaMinPack')?.value)||1)),koreaGroup:norm($('productKoreaGroup')?.value).toUpperCase(),koreaAltName:norm($('productKoreaAltName')?.value),removeKoreaAltImage:koreaAltRemoveV140,isKoreaBundle:bundleOn,koreaBundleUnitPrice:Math.max(0,num($('productKoreaBundleUnitPrice')?.value)),koreaBundleMinPack:Math.max(1,Math.floor(num($('productKoreaBundleMinPack')?.value)||1)),koreaBundleGroup:norm($('productKoreaBundleGroup')?.value).toUpperCase(),koreaBundleAltName:norm($('productKoreaBundleAltName')?.value),removeKoreaBundleAltImage:koreaBundleAltRemoveV142};
+      const bundleOn=!!$('productKoreaBundle')?.checked;const body={id:editingProductId||undefined,productNumber,barcode,productName,cavity,isKoreaOrder:koreaOn,koreaUnitPrice:Math.max(0,num($('productKoreaUnitPrice')?.value)),koreaMinPack:Math.max(1,Math.floor(num($('productKoreaMinPack')?.value)||1)),koreaGroup:norm($('productKoreaGroup')?.value).toUpperCase(),koreaAltName:norm($('productKoreaAltName')?.value),removeKoreaAltImage:koreaAltRemoveV140,isKoreaBundle:bundleOn,koreaBundleUnitPrice:Math.max(0,num($('productKoreaBundleUnitPrice')?.value)),koreaBundleMinPack:Math.max(1,Math.floor(num($('productKoreaBundleMinPack')?.value)||1)),koreaBundleGroup:(typeof serializeBundleComponentsV143==='function'?serializeBundleComponentsV143():norm($('productKoreaBundleGroup')?.value).toUpperCase()),koreaBundleAltName:norm($('productKoreaBundleAltName')?.value),removeKoreaBundleAltImage:koreaBundleAltRemoveV142};
       if(editingImageFile)body.image={ext:(editingImageFile.type.includes('png')?'png':'jpeg'),base64:await fileToBase64(editingImageFile)};
       if(koreaAltFileV140)body.koreaAltImage={ext:(koreaAltFileV140.type.includes('png')?'png':'jpeg'),base64:await fileToBase64(koreaAltFileV140)};
       if(koreaBundleAltFileV142)body.koreaBundleAltImage={ext:(koreaBundleAltFileV142.type.includes('png')?'png':'jpeg'),base64:await fileToBase64(koreaBundleAltFileV142)};
@@ -1263,7 +1268,7 @@ loadProducts();renderOrderPreview();
     const m=masterMapV141().get(keyV141(p));
     if(p?.koreaConfigured){
       if(!p.isKoreaOrder)return null;
-      const bundle=!!p.isKoreaBundle;return {productNumber:pnV141(p.productNumber||m?.productNumber),barcode:norm(p.barcode||m?.barcode),productName:norm(p.productName||m?.productName),cavity:Math.max(1,Number(p.cavity)||1),unitPrice:Math.max(0,Number(bundle?p.koreaBundleUnitPrice:p.koreaUnitPrice)||0),minPack:Math.max(1,Number(bundle?p.koreaBundleMinPack:p.koreaMinPack)||1),sameGroup:norm(bundle?p.koreaBundleGroup:p.koreaGroup||'').toUpperCase(),altName:norm(bundle?p.koreaBundleAltName:p.koreaAltName||''),koreaAltImageUrl:norm(bundle?p.koreaBundleAltImageUrl:p.koreaAltImageUrl||''),isBundle:bundle,_product:p,_master:m};
+      const bundle=!!p.isKoreaBundle;return {productNumber:pnV141(p.productNumber||m?.productNumber),barcode:norm(p.barcode||m?.barcode),productName:norm(p.productName||m?.productName),cavity:Math.max(1,Number(p.cavity)||1),unitPrice:Math.max(0,Number(bundle?p.koreaBundleUnitPrice:p.koreaUnitPrice)||0),minPack:Math.max(1,Number(bundle?p.koreaBundleMinPack:p.koreaMinPack)||1),sameGroup:(bundle?(typeof bundlePrimaryGroupV143==='function'?bundlePrimaryGroupV143(p.koreaBundleGroup):norm(p.koreaBundleGroup||'').toUpperCase().split('|')[0].split('@')[0]):norm(p.koreaGroup||'').toUpperCase()),altName:norm(bundle?p.koreaBundleAltName:p.koreaAltName||''),koreaAltImageUrl:norm(bundle?p.koreaBundleAltImageUrl:p.koreaAltImageUrl||''),isBundle:bundle,_product:p,_master:m};
     }
     if(!m)return null;
     return {...m,productNumber:pnV141(p?.productNumber||m.productNumber),barcode:norm(p?.barcode||m.barcode),productName:norm(p?.productName||m.productName),_product:p,_master:m};
@@ -1347,6 +1352,119 @@ loadProducts();renderOrderPreview();
   const baseLoadProductsV141=loadProducts;
   loadProducts=async function(){const r=await baseLoadProductsV141.apply(this,arguments);ensureToolbarV141();updateGroupSuggestionsV141();renderProductList();return r};window.loadProducts=loadProducts;
   ensureToolbarV141();ensureModalV141();updateGroupSuggestionsV141();renderProductList();
+})();
+</script>
+
+
+<style id="korea-bundle-components-v143-style">
+.bundle-components-v143{margin-top:10px;border-top:1px dashed #d8bd7e;padding-top:10px}.bundle-components-v143-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px}.bundle-components-v143-head b{color:#724c00}.bundle-components-v143-head span{font-size:9px;color:#6f7d74;flex:1}.bundle-components-v143-row{display:grid;grid-template-columns:minmax(120px,1fr) 92px auto;gap:7px;align-items:end;margin:6px 0;padding:7px;border:1px solid #ead8ad;border-radius:8px;background:#fff}.bundle-components-v143-row label{display:block;font-size:9px;font-weight:900;color:#725400;margin-bottom:3px}.bundle-components-v143-row input{width:100%;border:1px solid #cdbd95;border-radius:7px;padding:7px}.bundle-components-v143-note{font-size:9px;line-height:1.5;color:#725400;background:#fff7e5;border-radius:7px;padding:6px 8px;margin-top:7px}.bundle-component-tag-v143{display:inline-block;padding:2px 6px;border-radius:999px;background:#fff0c9;color:#7a4c00;font-size:9px;font-weight:900;margin-left:5px}
+@media(max-width:700px){.bundle-components-v143-row{grid-template-columns:1fr 80px auto}}
+</style>
+<script id="korea-bundle-components-v143">
+// ===== v143: bundle composition expansion =====
+// Server schema remains unchanged. Multiple bundle components are encoded in koreaBundleGroup as GROUP@QTY|GROUP@QTY.
+(function(){
+  let bundleComponentsStateV143=[];
+  function cleanGroupV143(v){return norm(v).toUpperCase().replace(/[|@]+/g,'').trim()}
+  window.parseBundleComponentsV143=function(raw,fallbackQty=1){
+    raw=norm(raw);if(!raw)return [];
+    const tokens=raw.includes('|')?raw.split('|'):(/[,+]/.test(raw)?raw.split(/[,+]/):[raw]);
+    const out=[];
+    for(const tok0 of tokens){
+      const tok=norm(tok0);if(!tok)continue;
+      let g=tok,q=fallbackQty;
+      const m=tok.match(/^(.+?)(?:@|\*)(\d+)$/);if(m){g=m[1];q=Number(m[2])||1}
+      g=cleanGroupV143(g);q=Math.max(1,Math.floor(Number(q)||1));if(!g)continue;
+      const old=out.find(x=>x.group===g);if(old)old.qty+=q;else out.push({group:g,qty:q});
+    }
+    return out;
+  };
+  window.serializeBundleComponentsV143=function(){
+    const rows=getBundleComponentsV143();return rows.map(x=>`${x.group}@${x.qty}`).join('|');
+  };
+  window.bundlePrimaryGroupV143=function(raw){return (parseBundleComponentsV143(raw,1)[0]?.group)||''};
+  window.getBundleComponentsV143=function(){
+    const box=$('bundleComponentsV143');if(!box)return bundleComponentsStateV143.slice();
+    const rows=[...box.querySelectorAll('.bundle-components-v143-row')].map(r=>({group:cleanGroupV143(r.querySelector('[data-bc-group]')?.value),qty:Math.max(1,Math.floor(num(r.querySelector('[data-bc-qty]')?.value)||1))})).filter(x=>x.group);
+    bundleComponentsStateV143=rows;return rows;
+  };
+  function groupSuggestionsV143(){
+    const set=new Set();for(const m of (window.koreaOrderMaster||koreaOrderMaster||[])){const g=norm(m.sameGroup).toUpperCase();if(g&&!koreaStandaloneGroup(g))set.add(g)}return [...set].sort((a,b)=>a.localeCompare(b,'en'));
+  }
+  function ensureDatalistV143(){let d=$('bundleGroupSuggestionsV143');if(!d){d=document.createElement('datalist');d.id='bundleGroupSuggestionsV143';document.body.appendChild(d)}d.innerHTML=groupSuggestionsV143().map(g=>`<option value="${esc(g)}"></option>`).join('')}
+  function renderBundleComponentsV143(){
+    const box=$('bundleComponentsV143');if(!box)return;ensureDatalistV143();
+    if(!bundleComponentsStateV143.length)bundleComponentsStateV143=[{group:'',qty:1}];
+    box.innerHTML=bundleComponentsStateV143.map((x,i)=>`<div class="bundle-components-v143-row" data-bc-row="${i}"><div><label>동일상품군</label><input data-bc-group list="bundleGroupSuggestionsV143" value="${esc(x.group||'')}" placeholder="예: Z"></div><div><label>번들 1개당 수량</label><input data-bc-qty type="number" min="1" step="1" value="${Math.max(1,Math.floor(num(x.qty)||1))}"></div><button type="button" class="btn red" data-bc-del="${i}">삭제</button></div>`).join('');
+    box.querySelectorAll('[data-bc-group],[data-bc-qty]').forEach(inp=>inp.addEventListener('input',()=>{bundleComponentsStateV143=getBundleComponentsV143()}));
+    box.querySelectorAll('[data-bc-del]').forEach(b=>b.onclick=()=>{bundleComponentsStateV143.splice(Number(b.dataset.bcDel),1);renderBundleComponentsV143()});
+  }
+  function setBundleComponentsV143(rows){bundleComponentsStateV143=(rows||[]).map(x=>({group:cleanGroupV143(x.group),qty:Math.max(1,Math.floor(num(x.qty)||1))})).filter(x=>x.group);renderBundleComponentsV143()}
+  window.setBundleComponentsV143=setBundleComponentsV143;
+  $('addBundleComponentV143')?.addEventListener('click',()=>{bundleComponentsStateV143.push({group:'',qty:1});renderBundleComponentsV143()});
+
+  // Existing product edit data -> component rows. Plain old group values remain compatible.
+  const baseEditV143=window.editProduct;
+  window.editProduct=editProduct=function(id){
+    const p=(products||[]).find(x=>x.id===id);baseEditV143(id);if(!p)return;
+    const fallback=Math.max(1,Math.floor(num(p.cavity)||1));
+    setBundleComponentsV143(parseBundleComponentsV143(p.koreaBundleGroup||'',fallback));
+  };
+  const baseClearV143=window.clearProductForm;
+  window.clearProductForm=clearProductForm=function(){baseClearV143();bundleComponentsStateV143=[];renderBundleComponentsV143()};
+
+  function keyV143(x){const pn=typeof normalizePoProductNumber==='function'?normalizePoProductNumber(x?.productNumber):norm(x?.productNumber);if(pn)return 'PN:'+pn;const bc=norm(x?.barcode).replace(/\s+/g,'').toUpperCase();return bc?'BC:'+bc:''}
+  function productForV143(x){const k=keyV143(x);return (products||[]).find(p=>keyV143(p)===k)||null}
+  function bundleMetaForGroupV143(group,parent){
+    group=cleanGroupV143(group);
+    const all=(window.koreaOrderMaster||koreaOrderMaster||[]);
+    let ref=all.find(m=>!m.isBundle&&cleanGroupV143(m.sameGroup)===group);
+    if(!ref)ref=all.find(m=>keyV143(m)!==keyV143(parent)&&cleanGroupV143(m.sameGroup)===group);
+    return ref||parent;
+  }
+
+  // Rebuild product -> Korea master sync while preserving multiple bundle components.
+  window.syncKoreaMasterFromProductsV140=function(){
+    try{
+      if(!Array.isArray(products)||!Array.isArray(koreaOrderMaster))return;
+      const map=new Map(koreaOrderMaster.map(x=>[keyV143(x),x]));
+      for(const p of products){
+        if(!p.koreaConfigured)continue;const k=keyV143(p);if(!k)continue;if(!p.isKoreaOrder){map.delete(k);continue}
+        const old=map.get(k)||{},bundle=!!p.isKoreaBundle;
+        const comps=bundle?parseBundleComponentsV143(p.koreaBundleGroup||'',Math.max(1,Math.floor(num(p.cavity)||1))):[];
+        const primary=comps[0]?.group||cleanGroupV143(p.koreaBundleGroup||'');
+        map.set(k,{...old,productNumber:normalizePoProductNumber(p.productNumber||old.productNumber),barcode:norm(p.barcode||old.barcode).replace(/\s+/g,'').toUpperCase(),productName:norm(p.productName||old.productName),cavity:Math.max(1,Math.floor(num(p.cavity)||1)),unitPrice:Math.max(0,num(bundle?p.koreaBundleUnitPrice:p.koreaUnitPrice)),sameGroup:bundle?primary:norm(p.koreaGroup||'').toUpperCase(),minPack:Math.max(1,Math.floor(num(bundle?p.koreaBundleMinPack:p.koreaMinPack)||1)),altName:norm(bundle?p.koreaBundleAltName:p.koreaAltName||''),koreaAltImageUrl:norm(bundle?p.koreaBundleAltImageUrl:p.koreaAltImageUrl||''),isBundle:bundle,bundleGroupRaw:bundle?norm(p.koreaBundleGroup||''):'',bundleComponents:comps,category:typeof koreaCategory==='function'?koreaCategory(p.productName||old.productName):(old.category||'기타')});
+      }
+      koreaOrderMaster=[...map.values()].map((x,i)=>({...x,sourceIndex:i}));window.koreaOrderMaster=koreaOrderMaster;
+      if(typeof renderKoreaMaster==='function')renderKoreaMaster();if(typeof rebuildKoreaOrder==='function')rebuildKoreaOrder();ensureDatalistV143();
+    }catch(e){console.warn('번들 구성품 동기화 실패',e)}
+  };
+
+  // Expand a bundle PO line into one Korea-order row per bundle component.
+  window.buildKoreaRows=buildKoreaRows=function(){
+    if(!koreaOrderMaster.length||!koreaMergedOrders.length)return [];
+    const poPN=new Map(),poBC=new Map();for(const x of koreaMergedOrders){if(x.productNumber)poPN.set(normalizePoProductNumber(x.productNumber),x);if(x.barcode)poBC.set(norm(x.barcode).replace(/\s+/g,'').toUpperCase(),x)}
+    const rows=[];
+    for(const k of koreaOrderMaster){
+      const p=(k.productNumber&&poPN.get(normalizePoProductNumber(k.productNumber)))||(k.barcode&&poBC.get(norm(k.barcode).replace(/\s+/g,'').toUpperCase()));if(!p||num(p.qty)<=0)continue;
+      const parentProduct=productForV143(k),parentPhoto=parentProduct||null;
+      if(k.isBundle){
+        let comps=(Array.isArray(k.bundleComponents)&&k.bundleComponents.length)?k.bundleComponents:parseBundleComponentsV143(k.bundleGroupRaw||parentProduct?.koreaBundleGroup||k.sameGroup,Math.max(1,Math.floor(num(k.cavity)||1)));
+        if(!comps.length)comps=[{group:cleanGroupV143(k.sameGroup),qty:Math.max(1,Math.floor(num(k.cavity)||1))}].filter(x=>x.group);
+        if(comps.length){
+          comps.forEach((comp,ci)=>{
+            const ref=bundleMetaForGroupV143(comp.group,k),refProduct=productForV143(ref),qtyPer=Math.max(1,Math.floor(num(comp.qty)||1));
+            rows.push({...k,productName:p.productName||k.productName,barcode:p.barcode||k.barcode,cavity:qtyPer,qty:num(p.qty),pieces:num(p.qty)*qtyPer,sameGroup:cleanGroupV143(comp.group),unitPrice:Math.max(0,num(ref?.unitPrice!=null?ref.unitPrice:k.unitPrice)),minPack:Math.max(1,Math.floor(num(ref?.minPack||k.minPack)||1)),altName:norm(ref?.altName||k.altName||''),koreaAltImageUrl:norm(ref?.koreaAltImageUrl||k.koreaAltImageUrl||''),category:koreaCategory(k.productName||p.productName),photoProduct:refProduct||parentPhoto,imageUrl:norm(refProduct?.imageUrl||ref?.koreaAltImageUrl||parentPhoto?.imageUrl||''),bundleComponent:true,bundleComponentIndex:ci,bundleComponentQty:qtyPer});
+          });continue;
+        }
+      }
+      rows.push({...k,productName:p.productName||k.productName,barcode:p.barcode||k.barcode,qty:num(p.qty),pieces:num(p.qty)*Math.max(1,num(k.cavity)||1),category:koreaCategory(k.productName||p.productName),photoProduct:parentPhoto,imageUrl:parentPhoto?.imageUrl||''});
+    }
+    rows.sort((a,b)=>koreaSortRank(a)-koreaSortRank(b)||(a.sourceIndex??0)-(b.sourceIndex??0)||(a.bundleComponentIndex??0)-(b.bundleComponentIndex??0));return rows;
+  };
+
+  // Existing master product data may already be loaded when this patch is installed.
+  setTimeout(()=>{try{syncKoreaMasterFromProductsV140();renderBundleComponentsV143()}catch(e){console.warn(e)}},50);
 })();
 </script>
 
