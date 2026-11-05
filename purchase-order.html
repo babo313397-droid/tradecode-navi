@@ -108,9 +108,9 @@
                 <label>번들 대체 사진</label><div class="image-pick"><div id="editKoreaBundleImagePreview" class="image-preview">사진 없음</div><div><button class="btn" type="button" onclick="$('productKoreaBundleAltImage').click()">번들 대체 사진 선택</button><input id="productKoreaBundleAltImage" class="file-input" type="file" accept="image/png,image/jpeg"><button id="removeKoreaBundleAltImageBtn" class="btn red" type="button" style="margin-left:4px;display:none" onclick="removeKoreaBundleAltImageV142()">번들 사진 삭제</button><div style="font-size:9px;color:#71818c;margin-top:5px">번들 상품일 때만 이 사진과 명칭/단가/팩킹/상품군을 사용합니다.</div></div></div>
               </div>
               <div class="bundle-components-v143">
-                <div class="bundle-components-v143-head"><b>번들 구성 동일상품</b><span>번들 1개에 들어가는 동일상품군과 수량을 각각 지정합니다.</span><button id="addBundleComponentV143" class="btn" type="button">+ 구성품 추가</button></div>
+                <div class="bundle-components-v143-head"><b>번들 추가 구성 동일상품</b><span>위의 일반 한국 발주 정보가 1번째 구성품이며, 여기에는 2번째 이후 구성품의 동일상품군과 수량을 지정합니다.</span><button id="addBundleComponentV143" class="btn" type="button">+ 구성품 추가</button></div>
                 <div id="bundleComponentsV143"></div>
-                <div class="bundle-components-v143-note">예: <b>Z × 1</b> + <b>ZD × 1</b> → PO 발주수량 3개면 Z 3개와 ZD 3개가 각각 동일상품 묶음 계산에 들어갑니다.</div>
+                <div class="bundle-components-v143-note">예: 위 일반 정보가 <b>ZC × 1</b>, 아래 추가 구성이 <b>ZD × 1</b>이면 PO 1개당 ZC 1개 + ZD 1개가 각각의 대체명칭·대체사진으로 묶음 계산에 들어갑니다.</div>
               </div>
             </div>
           </div>
@@ -1465,6 +1465,154 @@ loadProducts();renderOrderPreview();
 
   // Existing master product data may already be loaded when this patch is installed.
   setTimeout(()=>{try{syncKoreaMasterFromProductsV140();renderBundleComponentsV143()}catch(e){console.warn(e)}},50);
+})();
+</script>
+
+
+<style id="korea-bundle-correct-v144-style">
+.korea-bundle-components-inline-v144{display:flex;gap:4px;flex-wrap:wrap;justify-content:center}.korea-bundle-chip-v144{display:inline-flex;padding:2px 6px;border-radius:999px;background:#fff0c9;color:#754d00;font-size:9px;font-weight:900}.korea-bundle-detail-v144{font-size:9px;color:#765500;line-height:1.35;margin-top:3px}.korea-v144-photo-wrap{display:flex;gap:4px;align-items:center;justify-content:center;flex-wrap:wrap}.korea-v144-photo-wrap img{width:54px;height:54px;object-fit:contain;border:1px solid #d8e0db;border-radius:6px;background:#fff}.korea-v144-bundle-note{font-size:9px;color:#7a5a16;font-weight:800}
+</style>
+<script id="korea-bundle-correct-v144">
+// ===== v144: bundle = normal Korea component + additional bundle components =====
+// 상단 제품 목록은 부모 SKU/바코드/원상품 사진을 유지하고,
+// 하단 동일상품 묶음 계산에서만 각 구성품을 독립적으로 풀어 계산한다.
+(function(){
+  function pnV144(v){try{return typeof normalizePoProductNumber==='function'?normalizePoProductNumber(v):norm(v).replace(/\.0$/,'')}catch(_){return norm(v)}}
+  function keyV144(x){const pn=pnV144(x?.productNumber);if(pn)return 'PN:'+pn;const bc=norm(x?.barcode).replace(/\s+/g,'').toUpperCase();return bc?'BC:'+bc:''}
+  function productV144(x){const k=keyV144(x);return (products||[]).find(p=>keyV144(p)===k)||null}
+  function cleanGroupV144(v){return norm(v).toUpperCase().replace(/[|@]+/g,'').trim()}
+  function standaloneV144(v){try{return koreaStandaloneGroup(v)}catch(_){const s=norm(v).toUpperCase();return !s||['단독','단독제품','개별'].includes(s)}}
+  function parseExtraV144(p){
+    if(!p?.isKoreaBundle)return [];
+    if(typeof parseBundleComponentsV143==='function')return parseBundleComponentsV143(p.koreaBundleGroup||'',1);
+    const raw=norm(p.koreaBundleGroup||'');if(!raw)return [];
+    return raw.split('|').map(t=>{const m=t.match(/^(.+?)(?:@|\*)(\d+)$/);return {group:cleanGroupV144(m?m[1]:t),qty:Math.max(1,Math.floor(num(m?m[2]:1)||1))}}).filter(x=>x.group);
+  }
+  function resolvedComponentsV144(master,p){
+    const comps=[];
+    // 1번째 구성품 = 일반 한국 발주 정보. 사용자가 CAVITY를 1로 두면 1개 구성품이다.
+    const baseGroup=cleanGroupV144(p?.koreaGroup||'');
+    const baseQty=Math.max(1,Math.floor(num(p?.cavity||master?.cavity)||1));
+    if(p?.isKoreaOrder!==false){
+      comps.push({
+        type:'base',group:baseGroup,qtyPer:baseQty,
+        unitPrice:Math.max(0,num(p?.koreaUnitPrice!=null?p.koreaUnitPrice:master?.unitPrice)),
+        minPack:Math.max(1,Math.floor(num(p?.koreaMinPack||master?.minPack)||1)),
+        altName:norm(p?.koreaAltName||''),
+        altImageUrl:norm(p?.koreaAltImageUrl||''),
+        label:'기본 구성'
+      });
+    }
+    // 2번째 이후 구성품 = 번들 구성 영역. 번들 전용 대체명/사진/단가/팩킹을 사용한다.
+    for(const x of parseExtraV144(p)){
+      comps.push({
+        type:'bundle',group:cleanGroupV144(x.group),qtyPer:Math.max(1,Math.floor(num(x.qty)||1)),
+        unitPrice:Math.max(0,num(p?.koreaBundleUnitPrice)),
+        minPack:Math.max(1,Math.floor(num(p?.koreaBundleMinPack)||1)),
+        altName:norm(p?.koreaBundleAltName||''),
+        altImageUrl:norm(p?.koreaBundleAltImageUrl||''),
+        label:'번들 추가 구성'
+      });
+    }
+    // 동일 그룹이 기본/추가에 중복 입력돼도 각각의 수량은 합산하되, 사진/명칭은 해당 설정 우선.
+    const merged=[];
+    for(const c of comps){
+      const key=(c.group||'__SINGLE__')+'|'+c.type;
+      const old=merged.find(z=>z._key===key);
+      if(old)old.qtyPer+=c.qtyPer;else merged.push({...c,_key:key});
+    }
+    return merged;
+  }
+
+  window.buildKoreaRows=buildKoreaRows=function(){
+    if(!koreaOrderMaster.length||!koreaMergedOrders.length)return [];
+    const poPN=new Map(),poBC=new Map();
+    for(const x of koreaMergedOrders){if(x.productNumber)poPN.set(pnV144(x.productNumber),x);if(x.barcode)poBC.set(norm(x.barcode).replace(/\s+/g,'').toUpperCase(),x)}
+    const rows=[];
+    for(const m of koreaOrderMaster){
+      const po=(m.productNumber&&poPN.get(pnV144(m.productNumber)))||(m.barcode&&poBC.get(norm(m.barcode).replace(/\s+/g,'').toUpperCase()));
+      if(!po||num(po.qty)<=0)continue;
+      const prod=productV144(m),bundle=!!prod?.isKoreaBundle;
+      if(prod?.koreaConfigured&&!prod.isKoreaOrder)continue;
+      const parentImage=norm(prod?.imageUrl||'');
+      if(bundle){
+        const comps=resolvedComponentsV144(m,prod);
+        const totalPer=comps.reduce((a,c)=>a+num(c.qtyPer),0)||Math.max(1,num(m.cavity)||1);
+        const neededAmount=num(po.qty)*comps.reduce((a,c)=>a+num(c.qtyPer)*num(c.unitPrice),0);
+        rows.push({...m,
+          productNumber:pnV144(po.productNumber||m.productNumber),barcode:norm(po.barcode||m.barcode),productName:norm(po.productName||m.productName),
+          qty:num(po.qty),pieces:num(po.qty)*totalPer,cavity:Math.max(1,Math.floor(num(prod.cavity)||1)),
+          sameGroup:comps.map(c=>c.group).filter(Boolean).join(' + '),unitPrice:0,minPack:1,
+          category:koreaCategory(m.productName||po.productName),photoProduct:prod,imageUrl:parentImage,
+          isBundle:true,bundleResolvedComponents:comps,bundleNeededAmount:neededAmount
+        });
+      }else{
+        rows.push({...m,productName:po.productName||m.productName,barcode:po.barcode||m.barcode,qty:num(po.qty),pieces:num(po.qty)*Math.max(1,num(m.cavity)||1),category:koreaCategory(m.productName||po.productName),photoProduct:prod,imageUrl:parentImage});
+      }
+    }
+    rows.sort((a,b)=>koreaSortRank(a)-koreaSortRank(b)||(a.sourceIndex??0)-(b.sourceIndex??0));
+    return rows;
+  };
+
+  window.buildKoreaGroups=buildKoreaGroups=function(rows){
+    const expanded=[];
+    for(const row of rows||[]){
+      if(row.isBundle&&Array.isArray(row.bundleResolvedComponents)&&row.bundleResolvedComponents.length){
+        for(const c of row.bundleResolvedComponents){
+          expanded.push({...row,
+            sameGroup:c.group,pieces:num(row.qty)*num(c.qtyPer),unitPrice:num(c.unitPrice),minPack:Math.max(1,num(c.minPack)||1),
+            componentQtyPer:num(c.qtyPer),componentType:c.type,componentAltName:c.altName,componentAltImageUrl:c.altImageUrl,
+            altName:c.altName,koreaAltImageUrl:c.altImageUrl
+          });
+        }
+      }else expanded.push(row);
+    }
+    const map=new Map();
+    for(const x of expanded){
+      const raw=cleanGroupV144(x.sameGroup),g=(!raw||standaloneV144(raw))?'':raw,key=g||`SKU:${x.productNumber||x.barcode}`,label=g||'단독제품';let o=map.get(key);
+      if(!o){o={key,label,group:g,items:[],pieces:0,minPack:Math.max(1,num(x.minPack)||1),unitPrice:Math.max(0,num(x.unitPrice)||0),altName:norm(x.componentAltName||x.altName||''),altImageUrl:norm(x.componentAltImageUrl||x.koreaAltImageUrl||'')};map.set(key,o)}
+      o.items.push(x);o.pieces+=num(x.pieces);o.minPack=Math.max(o.minPack,Math.max(1,num(x.minPack)||1));
+      if(!o.unitPrice&&num(x.unitPrice)>0)o.unitPrice=num(x.unitPrice);
+      if(!o.altName)o.altName=norm(x.componentAltName||x.altName||'');
+      if(!o.altImageUrl)o.altImageUrl=norm(x.componentAltImageUrl||x.koreaAltImageUrl||'');
+    }
+    return [...map.values()].map(g=>({...g,sets:g.pieces>0?Math.ceil(g.pieces/g.minPack):0,finalQty:g.pieces>0?Math.ceil(g.pieces/g.minPack)*g.minPack:0,amount:(g.pieces>0?Math.ceil(g.pieces/g.minPack)*g.minPack:0)*g.unitPrice})).sort((a,b)=>{if(a.group&&b.group)return a.group.localeCompare(b.group,'en');if(a.group)return-1;if(b.group)return 1;return (a.items?.[0]?.sourceIndex??0)-(b.items?.[0]?.sourceIndex??0)});
+  };
+
+  function renderDetailV144(){
+    const body=$('koreaDetailBody');if(!body)return;
+    body.innerHTML=koreaOrderRows.length?koreaOrderRows.map((x,i)=>{
+      const bundle=!!x.isBundle, comps=x.bundleResolvedComponents||[];
+      const groupHtml=bundle?`<div class="korea-bundle-components-inline-v144">${comps.map(c=>`<span class="korea-bundle-chip-v144">${esc(c.group||'단독')} × ${num(c.qtyPer)}</span>`).join('')}</div>`:`<input class="korea-inline-edit korea-inline-group" data-kdetail-field="sameGroup" type="text" maxlength="12" value="${esc(x.sameGroup||'')}">`;
+      const priceHtml=bundle?'<span class="korea-v144-bundle-note">구성별</span>':`<input class="korea-inline-edit" data-kdetail-field="unitPrice" type="number" min="0" step="1" value="${num(x.unitPrice)||0}">`;
+      const packHtml=bundle?'<span class="korea-v144-bundle-note">구성별</span>':`<input class="korea-inline-edit" data-kdetail-field="minPack" type="number" min="1" step="1" value="${num(x.minPack)||1}">`;
+      const amount=bundle?num(x.bundleNeededAmount):num(x.pieces)*num(x.unitPrice);
+      return `<tr data-kresult="${i}"><td class="center">${i+1}</td><td class="korea-cat">${esc(x.category)}</td><td class="center">${esc(x.productNumber)}</td><td class="k-barcode">${esc(x.barcode)}</td><td class="k-name">${esc(x.productName)}</td><td class="korea-photo-cell">${x.imageUrl?`<img class="korea-photo-img" loading="lazy" src="${esc(x.imageUrl)}">`:'-'}</td><td>${bundle?`<span>${num(x.cavity)||1}</span>`:`<input class="korea-inline-edit" data-kdetail-field="cavity" type="number" min="1" step="1" value="${num(x.cavity)||1}">`}</td><td class="num">${num(x.qty).toLocaleString()}</td><td class="num">${num(x.pieces).toLocaleString()}</td><td>${groupHtml}</td><td class="center">${priceHtml}</td><td class="center">${packHtml}</td><td class="num">${Math.round(amount).toLocaleString()}원</td></tr>`;
+    }).join(''):'<tr><td colspan="13" class="empty">이 PO에 한국 발주 기준표와 일치하는 SKU가 없습니다.</td></tr>';
+  }
+  function renderGroupV144(){
+    const body=$('koreaGroupBody');if(!body)return;
+    const head=body.closest('table')?.querySelector('thead tr');if(head)head.innerHTML='<th>동일품목</th><th>대체명칭</th><th>포함 SKU</th><th>제품 사진</th><th>필요 낱개수량</th><th>최소 팩킹</th><th>발주 세트수</th><th>최종 발주 낱개수량</th><th>낱개 단가</th><th>예상 발주금액</th>';
+    body.innerHTML=(koreaOrderGroups||[]).length?koreaOrderGroups.map(g=>{
+      const sku=[...new Set((g.items||[]).map(x=>x.productNumber||x.barcode).filter(Boolean))].join(', ');
+      const photo=norm(g.altImageUrl||g.items?.find(x=>norm(x.componentAltImageUrl||x.koreaAltImageUrl))?.componentAltImageUrl||g.items?.find(x=>norm(x.koreaAltImageUrl))?.koreaAltImageUrl||'');
+      const alt=norm(g.altName||g.items?.find(x=>norm(x.componentAltName||x.altName))?.componentAltName||g.items?.find(x=>norm(x.altName))?.altName||'');
+      return `<tr><td class="group-key center">${esc(g.label)}</td><td class="k-v7-alt">${esc(alt||'-')}</td><td class="k-v7-skus">${esc(sku)}</td><td class="k-v7-photo">${photo?`<div class="korea-v144-photo-wrap"><img src="${esc(photo)}" loading="lazy"></div>`:'-'}</td><td class="num">${num(g.pieces).toLocaleString()}</td><td class="num">${num(g.minPack).toLocaleString()}</td><td class="num">${num(g.sets).toLocaleString()}</td><td class="num"><b>${num(g.finalQty).toLocaleString()}</b></td><td class="num">${num(g.unitPrice).toLocaleString()}</td><td class="num"><b>${Math.round(num(g.amount)).toLocaleString()}원</b></td></tr>`;
+    }).join(''):'<tr><td colspan="10" class="empty">동일상품 묶음 결과가 없습니다.</td></tr>';
+  }
+
+  // 기존 rebuild가 통계/버튼 상태를 모두 처리하도록 실행한 뒤, 번들 표시만 정확하게 다시 그린다.
+  const prevRebuildV144=window.rebuildKoreaOrder||rebuildKoreaOrder;
+  window.rebuildKoreaOrder=rebuildKoreaOrder=function(){
+    const r=prevRebuildV144.apply(this,arguments);
+    // prev rebuild 내부에서 새 buildKoreaRows/buildKoreaGroups를 사용한다.
+    renderDetailV144();renderGroupV144();
+    return r;
+  };
+
+  // 제품 수정 폼의 설명을 실제 계산 규칙과 맞춘다.
+  const note=document.querySelector('.bundle-components-v143-note');if(note)note.innerHTML='위 <b>일반 한국 발주 정보</b>가 1번째 구성품입니다. 예: 일반 ZC × CAVITY 1 + 추가 ZD × 1 → 번들 PO 1개가 들어오면 ZC 1개와 ZD 1개가 각각 자신의 대체명칭·대체사진·단가로 계산됩니다.';
+  setTimeout(()=>{try{rebuildKoreaOrder()}catch(e){console.warn('v144 bundle rebuild',e)}},120);
 })();
 </script>
 
