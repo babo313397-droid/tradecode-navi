@@ -154,7 +154,7 @@
         <div id="koreaResultWrap" class="korea-result-wrap" style="display:none"><div class="korea-subhead"><span>한국 발주 결과</span><button id="downloadKoreaBtn" class="btn gold" type="button" onclick="window.downloadKoreaOrderWorkbook()">한국 발주서 엑셀 다운로드</button></div><div class="korea-kpis"><div class="korea-kpi"><b id="koreaKItems">0</b><span>한국 발주 SKU</span></div><div class="korea-kpi"><b id="koreaKPoQty">0</b><span>쿠팡 발주수량 합계</span></div><div class="korea-kpi"><b id="koreaKPieces">0</b><span>필요 낱개수량</span></div><div class="korea-kpi"><b id="koreaKAmount">0원</b><span>재고 차감 전 예상 발주금액</span></div></div>
           <div class="korea-subhead" style="border-top:1px solid #d5e3da"><span>① 제품별 발주 목록 · 요청 순서대로 정렬</span><span style="font-weight:700;color:#688074">때밀이 때타올 → 송월타올 타월 → 대림바스 → 대림 도비도스</span></div><div class="korea-scroll"><table class="korea-table"><thead><tr><th>순번</th><th>구분</th><th>SKU ID</th><th>바코드</th><th>상품명</th><th>CAVITY</th><th>발주수량</th><th>필요 낱개</th><th>동일품목</th><th>낱개 단가</th><th>최소 팩킹</th></tr></thead><tbody id="koreaDetailBody"></tbody></table></div>
           <div class="korea-subhead" style="border-top:1px solid #d5e3da"><span>② 동일 상품 묶음 발주 계산</span><span style="font-weight:700;color:#688074">동일 알파벳별 (발주수량 × CAVITY) 합산 → 최소 팩킹 수량으로 세트 계산</span></div><div class="korea-scroll"><table class="korea-table korea-group-table"><thead><tr><th>동일품목</th><th>대체명칭</th><th>포함 SKU</th><th>제품 사진</th><th>필요 낱개수량</th><th>최소 팩킹</th><th>발주 세트수</th><th>최종 발주 낱개수량</th><th>낱개 단가</th><th>예상 발주금액</th></tr></thead><tbody id="koreaGroupBody"></tbody></table></div>
-          <div class="korea-note"><b>다운로드 엑셀:</b> 동일상품 요약의 보유재고에 재고를 적으면 재고 차감 필요수량 → 발주 세트수 → 최종 발주수량 → 발주금액이 자동 조정됩니다. 동일품목과 단가는 위 기준표에서 언제든 수정할 수 있습니다.</div></div>
+          <div class="korea-note"><b>다운로드 엑셀:</b> 동일상품 요약의 <b>보유재고</b> 입력칸에 재고를 적으면 재고 차감 필요수량 → 발주 세트수 → 최종 발주수량 → 발주금액이 자동 조정됩니다. 동일품목과 단가는 위 기준표에서 언제든 수정할 수 있습니다.</div></div>
       </div>
 
       <div class="order-controls">
@@ -544,13 +544,6 @@ function excelCellValue(v){
 }
 function normalizePoProductNumber(v){return norm(excelCellValue(v)).replace(/\.0+$/,'')}
 function poQty(v){return num(excelCellValue(v))}
-function poTextValue(v){const x=excelCellValue(v);if(x instanceof Date&&!Number.isNaN(x.getTime()))return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;return norm(x)}
-function poDateValue(v){
-  const x=excelCellValue(v);
-  if(x instanceof Date&&!Number.isNaN(x.getTime()))return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
-  if(typeof x==='number'&&Number.isFinite(x)&&x>20000&&x<80000){const d=new Date(Math.round((x-25569)*86400*1000));if(!Number.isNaN(d.getTime()))return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`}
-  const t=norm(x);if(!t)return'';const m=t.match(/(20\d{2})[.\/-]\s*(\d{1,2})[.\/-]\s*(\d{1,2})/);if(m)return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;return t;
-}
 function cleanPoRowsFromWorksheet(ws){
   const out=[];
   // 1) 헤더가 있는 쿠팡 PO는 "확정수량"을 가장 먼저 찾습니다.
@@ -563,9 +556,6 @@ function cleanPoRowsFromWorksheet(ws){
     const name=findAliasCol(vals,['상품이름','상품명','제품명']);
     const confirmedQty=findAliasCol(vals,['확정수량']);
     const legacyQty=findAliasCol(vals,['발주수량','주문수량','납품수량','수량']);
-    const orderNoCol=findAliasCol(vals,['발주번호','주문번호','PO번호','PO No','PO NO']);
-    const centerCol=findAliasCol(vals,['센터','센터명','물류센터','입고센터','납품센터','배송센터']);
-    const inboundDateCol=findAliasCol(vals,['입고일자','입고예정일','입고 날짜','입고날짜','납품예정일','납품일자']);
     const qty=confirmedQty>0?confirmedQty:legacyQty;
     const qtyHeader=confirmedQty>0?'확정수량':(qty>0?norm(vals[qty]):'');
     if(pn>0&&bc>0&&name>0&&qty>0){
@@ -575,10 +565,7 @@ function cleanPoRowsFromWorksheet(ws){
         const b=norm(excelCellValue(row.getCell(bc).value)).replace(/\s+/g,'').toUpperCase();
         const n=norm(excelCellValue(row.getCell(name).value));
         const q=poQty(row.getCell(qty).value);
-        const orderNo=orderNoCol>0?poTextValue(row.getCell(orderNoCol).value):'';
-        const center=centerCol>0?poTextValue(row.getCell(centerCol).value):'';
-        const inboundDate=inboundDateCol>0?poDateValue(row.getCell(inboundDateCol).value):'';
-        if((p||b)&&q>0)out.push({productNumber:p,barcode:b,productName:n,qty:q,orderNo,center,inboundDate,sourceRow:r});
+        if((p||b)&&q>0)out.push({productNumber:p,barcode:b,productName:n,qty:q,sourceRow:r});
       }
       if(out.length)return {rows:out,qtyHeader,total:out.reduce((s,x)=>s+x.qty,0),sheetName:ws.name};
     }
@@ -1043,7 +1030,7 @@ loadProducts();renderOrderPreview();
         ws.getCell(r,6).value=0;ws.getCell(r,7).value={formula:`MAX(0,E${r}-F${r})`};ws.getCell(r,9).value={formula:`IF(G${r}=0,0,ROUNDUP(G${r}/H${r},0))`};ws.getCell(r,10).value={formula:`I${r}*H${r}`};ws.getCell(r,12).value={formula:`J${r}*K${r}`};
         const pics=summaryPicsV6(g,items,imageData);if(pics.length){ws.getRow(r).height=72;const slots=pics.length===1?[0.28]:pics.length===2?[0.08,0.52]:[0.02,0.34,0.66],size=pics.length===1?58:pics.length===2?42:29;pics.forEach((im,pi)=>{const imageId=wb.addImage({base64:im.base64,extension:im.extension});ws.addImage(imageId,{tl:{col:3+slots[pi],row:r-1+0.08},ext:{width:size,height:size},editAs:'oneCell'})})}
       }
-      const sumEnd=sr-1;excelStyleRange(ws,sh,sumEnd,1,12,'FFDDEFE2');for(let r=sh+1;r<=sumEnd;r++){ws.getCell(r,6).fill={type:'pattern',pattern:'none'};ws.getCell(r,9).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'}};for(const c of [5,6,7,8,9,10,11,12])ws.getCell(r,c).numFmt='#,##0'}
+      const sumEnd=sr-1;excelStyleRange(ws,sh,sumEnd,1,12,'FFDDEFE2');for(let r=sh+1;r<=sumEnd;r++){ws.getCell(r,6).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'}};for(const c of [5,6,7,8,9,10,11,12])ws.getCell(r,c).numFmt='#,##0'}
       const totalRow=sumEnd+1;ws.getCell(totalRow,9).value='총 발주 낱개수량';ws.getCell(totalRow,10).value={formula:`SUM(J${sh+1}:J${sumEnd})`};ws.getCell(totalRow,11).value='총 발주금액';ws.getCell(totalRow,12).value={formula:`SUM(L${sh+1}:L${sumEnd})`};for(const c of [9,10,11,12]){ws.getCell(totalRow,c).font={name:'맑은 고딕',size:c===10||c===12?12:11,bold:true,color:c===12?{argb:'FFC00000'}:undefined};ws.getCell(totalRow,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFE699'}};ws.getCell(totalRow,c).border=thinBorder()}ws.getCell(totalRow,10).numFmt='#,##0';ws.getCell(totalRow,12).numFmt='#,##0"원"';ws.views=[{state:'frozen',ySplit:4}];ws.autoFilter={from:{row:4,column:1},to:{row:detailEnd,column:13}};
       const buf=await wb.xlsx.writeBuffer(),blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=koreaExcelSafeName(orderTitle()+' 한국 발주건')+'.xlsx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000);setStatus('koreaStatus','한국 발주서 엑셀 다운로드 완료 · 묶음상품은 기준표 H열 명칭/I열 사진을 사용합니다.','ok');
     }catch(e){console.error(e);setStatus('koreaStatus','한국 발주서 생성 실패: '+e.message,'bad');alert('한국 발주서 생성 실패\n'+e.message)}
@@ -1153,36 +1140,10 @@ loadProducts();renderOrderPreview();
         const pics=await v7WorkbookPhotoRefs(grouped,items,detailImageData);
         if(pics.length){ws.getRow(r).height=72;const slots=pics.length===1?[0.28]:pics.length===2?[0.08,0.52]:[0.02,0.34,0.66],size=pics.length===1?58:pics.length===2?42:29;pics.forEach((im,pi)=>{const imageId=wb.addImage({base64:im.base64,extension:im.extension});ws.addImage(imageId,{tl:{col:3+slots[pi],row:r-1+0.08},ext:{width:size,height:size},editAs:'oneCell'})})}
       }
-      const sumEnd=sr-1;excelStyleRange(ws,sh,sumEnd,1,12,'FFDDEFE2');for(let r=sh+1;r<=sumEnd;r++){ws.getCell(r,6).fill={type:'pattern',pattern:'none'};ws.getCell(r,9).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'}};for(const c of [5,6,7,8,9,10,11,12])ws.getCell(r,c).numFmt='#,##0'}
+      const sumEnd=sr-1;excelStyleRange(ws,sh,sumEnd,1,12,'FFDDEFE2');for(let r=sh+1;r<=sumEnd;r++){ws.getCell(r,6).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'}};for(const c of [5,6,7,8,9,10,11,12])ws.getCell(r,c).numFmt='#,##0'}
       const totalRow=sumEnd+1;ws.getCell(totalRow,9).value='총 발주 낱개수량';ws.getCell(totalRow,10).value={formula:`SUM(J${sh+1}:J${sumEnd})`};ws.getCell(totalRow,11).value='총 발주금액';ws.getCell(totalRow,12).value={formula:`SUM(L${sh+1}:L${sumEnd})`};for(const c of [9,10,11,12]){ws.getCell(totalRow,c).font={name:'맑은 고딕',size:c===10||c===12?12:11,bold:true,color:c===12?{argb:'FFC00000'}:undefined};ws.getCell(totalRow,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFE699'}};ws.getCell(totalRow,c).border=thinBorder()}ws.getCell(totalRow,10).numFmt='#,##0';ws.getCell(totalRow,12).numFmt='#,##0"원"';
       ws.views=[{state:'frozen',ySplit:4}];ws.autoFilter={from:{row:4,column:1},to:{row:detailEnd,column:13}};
-
-      // 발주현황: 업로드한 PO 원본 행 순서를 그대로 유지하고 같은 SKU도 합치지 않는다.
-      const statusByPn=new Map(),statusByBc=new Map();
-      for(const x of koreaOrderRows){const pn=normalizePoProductNumber(x.productNumber),bc=norm(x.barcode).replace(/\s+/g,'').toUpperCase();if(pn&&!statusByPn.has(pn))statusByPn.set(pn,x);if(bc&&!statusByBc.has(bc))statusByBc.set(bc,x)}
-      const statusRows=[];
-      for(const raw of koreaRawPoRows){
-        const pn=normalizePoProductNumber(raw.productNumber),bc=norm(raw.barcode).replace(/\s+/g,'').toUpperCase();
-        const matched=(pn&&statusByPn.get(pn))||(bc&&statusByBc.get(bc));if(!matched)continue;
-        const perSet=matched.isBundle&&Array.isArray(matched.bundleResolvedComponents)&&matched.bundleResolvedComponents.length?matched.bundleResolvedComponents.reduce((a,c)=>a+Math.max(1,num(c.qtyPer)||1),0):Math.max(1,num(matched.cavity)||1);
-        statusRows.push({raw,matched,setQty:num(raw.qty),perSet,pieces:num(raw.qty)*perSet});
-      }
-      const statusImageCache=new Map();
-      const statusImageData=await mapLimit(statusRows,8,async row=>{const k=normalizePoProductNumber(row.matched.productNumber)||norm(row.matched.barcode);if(statusImageCache.has(k))return statusImageCache.get(k);const pr=fetchImageData(row.matched.photoProduct);statusImageCache.set(k,pr);return pr});
-      const st=wb.addWorksheet('발주현황',{properties:{defaultRowHeight:20},pageSetup:{orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0,paperSize:9,margins:{left:0.2,right:0.2,top:0.3,bottom:0.3,header:0.1,footer:0.1}}});
-      const stWidths=[7,15,42,10,12,12,16,12,16,23];stWidths.forEach((w,i)=>st.getColumn(i+1).width=w);
-      const firstDate=statusRows.find(x=>norm(x.raw.inboundDate))?.raw.inboundDate||$('inboundDate')?.value||'';
-      let titleDate='발주현황';if(firstDate){const md=String(firstDate).match(/(?:20\d{2}[-/.])?(\d{1,2})[-/.](\d{1,2})/);if(md)titleDate=`${+md[1]}월 ${+md[2]}일`;else titleDate=String(firstDate)}
-      st.mergeCells('A1:J1');st.getCell('A1').value=titleDate;st.getCell('A1').font={name:'맑은 고딕',size:17,bold:true};st.getCell('A1').alignment={vertical:'middle',horizontal:'left'};st.getRow(1).height=30;st.getRow(2).height=8;
-      const stHeaders=['순번','이미지','제품명','세트','1세트','낱개수량','발주번호','센터','입고일자','바코드 넘버'];stHeaders.forEach((v,i)=>st.getCell(3,i+1).value=v);
-      for(let i=0;i<statusRows.length;i++){
-        const x=statusRows[i],r=4+i;st.getRow(r).height=76;st.getCell(r,1).value=i+1;st.getCell(r,3).value=x.raw.productName||x.matched.productName;st.getCell(r,4).value=x.setQty;st.getCell(r,5).value=x.perSet;st.getCell(r,6).value={formula:`D${r}*E${r}`,result:x.pieces};st.getCell(r,7).value=x.raw.orderNo||'';st.getCell(r,8).value=x.raw.center||'';st.getCell(r,9).value=x.raw.inboundDate||$('inboundDate')?.value||'';st.getCell(r,10).value=x.raw.barcode||x.matched.barcode||'';
-        const im=statusImageData[i];if(im){const imageId=wb.addImage({base64:im.base64,extension:im.extension});st.addImage(imageId,{tl:{col:1.12,row:r-1+0.08},ext:{width:64,height:64},editAs:'oneCell'})}
-      }
-      const stEnd=Math.max(3,3+statusRows.length);excelStyleRange(st,3,stEnd,1,10,'FFE7E6E6');for(let r=4;r<=stEnd;r++){for(const c of [1,4,5,6,7,8,9])st.getCell(r,c).alignment={vertical:'middle',horizontal:'center',wrapText:true};st.getCell(r,3).alignment={vertical:'middle',horizontal:'left',wrapText:true};st.getCell(r,10).alignment={vertical:'middle',horizontal:'center',wrapText:true};for(const c of [4,5,6])st.getCell(r,c).numFmt='#,##0'}
-      st.views=[{state:'frozen',ySplit:3}];if(statusRows.length)st.autoFilter={from:{row:3,column:1},to:{row:stEnd,column:10}};st.pageSetup.printArea=`A1:J${stEnd}`;
-
-      const buf=await wb.xlsx.writeBuffer(),blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=koreaExcelSafeName(orderTitle()+' 한국 발주건')+'.xlsx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000);setStatus('koreaStatus','한국 발주서 엑셀 다운로드 완료 · 묶음요약은 발주 세트수 칸을 노란색으로 표시하고, 원본 PO 순서의 발주현황 시트를 함께 생성했습니다.','ok');
+      const buf=await wb.xlsx.writeBuffer(),blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=koreaExcelSafeName(orderTitle()+' 한국 발주건')+'.xlsx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000);setStatus('koreaStatus','한국 발주서 엑셀 다운로드 완료 · H열 대체명칭을 단독제품까지 표시하고, 묶음제품은 I열 대체사진을 사용합니다.','ok');
     }catch(e){console.error(e);setStatus('koreaStatus','한국 발주서 생성 실패: '+e.message,'bad');alert('한국 발주서 생성 실패\n'+e.message)}
   };
   // 현재 화면도 정확한 열 순서로 즉시 다시 그린다.
