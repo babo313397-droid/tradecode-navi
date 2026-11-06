@@ -52,7 +52,7 @@
   <a class="nav-btn active" href="/purchase-order.html">📝 발주서 작성</a>
 </nav>
 <main class="main">
-  <div class="page-head"><h1>📝 발주서 작성</h1><div class="sub">제품 마스터를 기준으로 여러 PO의 동일 제품을 한 줄로 합산해 발주서를 만듭니다.</div></div>
+  <div class="page-head"><h1>📝 발주서 작성</h1><div class="sub">제품 마스터를 기준으로 여러 PO의 동일 제품을 한 줄로 합산해 발주서를 만듭니다.</div><a id="koreaStockAdminBtn" class="btn green" href="/korea-stock.html" style="display:none;margin-left:auto;text-decoration:none">🔎 한국 재고 찾기</a></div>
 
   <section class="panel">
     <div class="panel-title"><b>1</b>제품 목록 관리</div>
@@ -2057,6 +2057,20 @@ loadProducts();renderOrderPreview();
   };
 })();
 
+</script>
+
+<script>
+(function(){
+  async function showKoreaStockAdminBtn(user){
+    try{
+      let u=user||window.TRADECODE_USER||null;
+      if(!u){const r=await fetch('/api/auth/me',{cache:'no-store'});const j=await r.json();u=j&&j.authenticated?j.user:null;}
+      const b=document.getElementById('koreaStockAdminBtn');if(b)b.style.display=(u&&u.role==='admin')?'inline-flex':'none';
+    }catch(_){const b=document.getElementById('koreaStockAdminBtn');if(b)b.style.display='none';}
+  }
+  window.addEventListener('tradecode-auth-ready',e=>showKoreaStockAdminBtn(e.detail));
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>showKoreaStockAdminBtn(),{once:true});else showKoreaStockAdminBtn();
+})();
 </script>
 </body>
 </html>
