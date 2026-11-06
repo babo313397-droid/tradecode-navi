@@ -1714,11 +1714,11 @@ loadProducts();renderOrderPreview();
       <div class="kbarcode-v145-table-wrap"><table class="kbarcode-v145-table"><thead><tr><th>출력</th><th>SKU</th><th>바코드</th><th>상품명</th><th>발주수량</th><th>출력수량</th><th>미리보기</th></tr></thead><tbody id="kbarcodeBodyV147"></tbody></table></div>
       <div class="kbarcode-v145-preview-title">라벨 미리보기 · 실제 50×30 비율</div>
       <div id="kbarcodePreviewAreaV147" class="kbarcode-v145-preview"></div>
-      <div class="kbarcode-v145-note">각 아이템의 <b>한국 PO 발주수량</b>이 기본 출력수량으로 자동 들어갑니다. 필요하면 개별 출력수량을 수정하거나 체크를 해제할 수 있습니다. Xprinter 직접 출력은 QZ Tray가 실행 중이어야 합니다.</div>`;
+      <div class="kbarcode-v145-note">기본 출력수량은 <b>일반상품 = 발주수량 × CAVITY</b>, <b>번들상품 = 완성 번들 발주수량</b>으로 자동 계산합니다. 새 PO를 넣으면 이전 수동 출력수량은 초기화됩니다. 필요하면 개별 출력수량을 수정하거나 체크를 해제할 수 있습니다. Xprinter 직접 출력은 QZ Tray가 실행 중이어야 합니다.</div>`;
     if(result) result.insertAdjacentElement('afterend',panel); else box.appendChild(panel);
     byId('kbarcodeConnectV147').onclick=connectPrinter;
     byId('kbarcodePrinterV147').onchange=()=>{const p=byId('kbarcodePrinterV147').value;if(p)localStorage.setItem(PRINTER_KEY,p);setStatus(p?`선택됨: ${p}`:'프린터를 선택해 주세요.',p?'ok':'')};
-    byId('kbarcodeResetQtyV147').onclick=()=>{for(const r of rows){r.printQty=intval(r.orderQty);r.checked=!!r.barcode&&r.printQty>0}renderRows()};
+    byId('kbarcodeResetQtyV147').onclick=()=>{for(const r of rows){r.printQty=intval(r.basePrintQty);r.checked=!!r.barcode&&r.printQty>0}renderRows()};
     byId('kbarcodePreviewV147').onclick=()=>renderRows();
     byId('kbarcodePrintV147').onclick=printSelected;
     byId('kbarcodeBrowserPrintV147').onclick=browserPrint;
@@ -1733,23 +1733,32 @@ loadProducts();renderOrderPreview();
     try{return Array.isArray(koreaOrderRows)?koreaOrderRows:[]}catch(_){return []}
   }
 
+  function labelQtyOf(x){
+    // 일반상품: 실제 낱개 작업수량(발주수량 × CAVITY)만큼 라벨 출력
+    // 번들상품: 완성된 번들 1세트에 라벨 1장 -> 부모 발주수량만큼 출력
+    return intval(x?.isBundle ? x?.qty : (x?.pieces ?? x?.qty));
+  }
+
   function sourceSignature(src){
-    return src.map(x=>[str(x.productNumber),str(x.barcode),str(x.productName),intval(x.qty)].join('|')).join(';;');
+    return src.map(x=>[str(x.productNumber),str(x.barcode),str(x.productName),intval(x.qty),intval(x.pieces),x?.isBundle?'B':'N',labelQtyOf(x)].join('|')).join(';;');
   }
 
   function syncRows(force=false){
     ensureUi();
     const src=sourceRows();
     const sig=sourceSignature(src);
-    if(!force && sig===lastSignature)return;
+    const sameSource=(sig===lastSignature);
+    if(!force && sameSource)return;
+    // 같은 PO에서 화면만 다시 그릴 때는 사용자가 수정한 출력수량을 유지하지만,
+    // 새 PO/수량 변경이 들어오면 이전 SKU의 수동 출력수량을 절대 이어받지 않는다.
+    const old=sameSource?new Map(rows.map(r=>[r.key,r])):new Map();
     lastSignature=sig;
-    const old=new Map(rows.map(r=>[r.key,r]));
     rows=src.map((x,i)=>{
-      const key=keyOf(x),prev=old.get(key),qty=intval(x.qty);
-      return {id:i+1,key,productNumber:str(x.productNumber),barcode:str(x.barcode),productName:str(x.productName),orderQty:qty,printQty:prev?intval(prev.printQty):qty,checked:prev?!!prev.checked:(!!str(x.barcode)&&qty>0)};
+      const key=keyOf(x),prev=old.get(key),qty=intval(x.qty),basePrintQty=labelQtyOf(x);
+      return {id:i+1,key,productNumber:str(x.productNumber),barcode:str(x.barcode),productName:str(x.productName),orderQty:qty,basePrintQty,printQty:prev?intval(prev.printQty):basePrintQty,checked:prev?!!prev.checked:(!!str(x.barcode)&&basePrintQty>0)};
     });
     renderRows();
-    if(rows.length)setStatus(`한국 발주 ${rows.length.toLocaleString()}품목 · 발주수량 기준 총 ${rows.reduce((s,r)=>s+intval(r.orderQty),0).toLocaleString()}장 준비됨`,'ok');
+    if(rows.length)setStatus(`한국 발주 ${rows.length.toLocaleString()}품목 · 바코드 출력 기준 총 ${rows.reduce((s,r)=>s+intval(r.basePrintQty),0).toLocaleString()}장 준비됨`,'ok');
     else setStatus('한국 발주 PO를 올리면 바코드 출력 목록이 자동 생성됩니다.');
   }
 
