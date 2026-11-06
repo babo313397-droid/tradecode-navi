@@ -1775,50 +1775,65 @@ loadProducts();renderOrderPreview();
     byId('kbarcodeMissingV147').textContent=rows.filter(r=>!r.barcode).length.toLocaleString();
   }
 
-  function fitText(ctx,text,maxWidth,start,min=12){let size=start;while(size>min){ctx.font=`700 ${size}px "Malgun Gothic",Arial,sans-serif`;if(ctx.measureText(text).width<=maxWidth)return size;size--}return min}
-  function labelTitleLines(ctx,text,maxWidth,maxLines=2){
-    const words=String(text||'').replace(/\s+/g,' ').trim().split(' ').filter(Boolean);
-    if(!words.length)return [''];
-    const lines=[];let cur='';
+  function splitTitleToLines(ctx,text,maxWidth,maxLines=3){
+    const source=String(text||'').replace(/\s+/g,' ').trim();
+    if(!source)return [''];
+    const words=source.split(' ').filter(Boolean),lines=[];let cur='';
     for(const word of words){
       const next=cur?cur+' '+word:word;
-      if(ctx.measureText(next).width<=maxWidth||!cur){cur=next;continue}
+      if(!cur||ctx.measureText(next).width<=maxWidth){cur=next;continue}
       lines.push(cur);cur=word;
-      if(lines.length===maxLines-1)break;
+      if(lines.length>=maxLines-1)break;
     }
-    if(lines.length<maxLines&&cur)lines.push(cur);
-    const consumed=lines.join(' ').length;
-    const original=words.join(' ');
-    if(original.length>consumed&&lines.length){
-      let last=lines[lines.length-1];
-      while(last.length>1&&ctx.measureText(last+'…').width>maxWidth)last=last.slice(0,-1);
-      lines[lines.length-1]=last+'…';
+    if(cur&&lines.length<maxLines)lines.push(cur);
+    // 아직 남은 단어가 있으면 마지막 줄에 계속 붙여 보되, 맞지 않으면 글자 단위로 재분배한다.
+    const joined=lines.join(' ');
+    if(joined.length<source.length){
+      const chars=source; const rebuilt=[]; let line='';
+      for(const ch of chars){
+        const test=line+ch;
+        if(line&&ctx.measureText(test).width>maxWidth){rebuilt.push(line.trim());line=ch;if(rebuilt.length>=maxLines-1)break}else line=test;
+      }
+      if(line&&rebuilt.length<maxLines)rebuilt.push(line.trim());
+      return rebuilt.slice(0,maxLines);
     }
     return lines.slice(0,maxLines);
   }
+  function titleLayout(ctx,text){
+    const maxWidth=368;
+    // 3줄까지 전부 보이게 하고, 필요하면 글자 크기만 줄인다. 말줄임은 사용하지 않는다.
+    for(let size=23;size>=13;size--){
+      ctx.font=`700 ${size}px "Malgun Gothic",Arial,sans-serif`;
+      const lines=splitTitleToLines(ctx,text,maxWidth,3);
+      const consumed=lines.join('').replace(/\s/g,'').length;
+      const original=String(text||'').replace(/\s/g,'').length;
+      if(lines.length<=3 && consumed>=original)return {size,lines};
+    }
+    ctx.font='700 13px "Malgun Gothic",Arial,sans-serif';
+    return {size:13,lines:splitTitleToLines(ctx,text,maxWidth,3)};
+  }
   async function labelCanvas(r){
     const c=document.createElement('canvas');c.width=400;c.height=240;
-    const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,400,240);ctx.fillStyle='#111';ctx.textAlign='center';ctx.textBaseline='middle';
+    const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,400,240);ctx.fillStyle='#090909';ctx.textAlign='center';ctx.textBaseline='middle';
     const name=(r.productName||'').replace(/\s+/g,' ').trim();
-    // 제목 전용 영역: y=5~62. 최대 2줄만 사용하여 바코드 영역을 절대 침범하지 않음.
-    let titleSize=23;
-    ctx.font=`700 ${titleSize}px "Malgun Gothic",Arial,sans-serif`;
-    let lines=labelTitleLines(ctx,name,368,2);
-    while(titleSize>14&&lines.some(line=>ctx.measureText(line).width>368)){
-      titleSize--;ctx.font=`700 ${titleSize}px "Malgun Gothic",Arial,sans-serif`;lines=labelTitleLines(ctx,name,368,2);
-    }
-    const titleYs=lines.length>1?[19,45]:[31];
-    lines.forEach((line,i)=>{ctx.font=`700 ${titleSize}px "Malgun Gothic",Arial,sans-serif`;ctx.fillText(line,200,titleYs[i])});
+    const layout=titleLayout(ctx,name),lines=layout.lines,titleSize=layout.size;
+    // 제목은 최대 3줄. 줄 수에 따라 위쪽에서 시작하고 바코드는 항상 제목 아래로 충분히 내려간다.
+    const lineGap=titleSize*1.08;
+    const titleTop=8;
+    lines.forEach((line,i)=>{ctx.font=`700 ${titleSize}px "Malgun Gothic",Arial,sans-serif`;ctx.fillText(line,200,titleTop+titleSize/2+i*lineGap)});
+    const titleBottom=titleTop + lines.length*lineGap;
+    const barcodeY=Math.max(82,Math.ceil(titleBottom+9));
+    const barcodeH=Math.max(78,Math.min(88,198-barcodeY));
     let drawn=false;
     try{
       const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-      JsBarcode(svg,String(r.barcode),{format:'CODE128',displayValue:false,margin:0,width:2,height:94,background:'#fff',lineColor:'#000'});
+      JsBarcode(svg,String(r.barcode),{format:'CODE128',displayValue:false,margin:0,width:2,height:100,background:'#fff',lineColor:'#000'});
       const xml=new XMLSerializer().serializeToString(svg);const url='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(xml)));const img=new Image();
-      await new Promise(resolve=>{img.onload=()=>{ctx.drawImage(img,18,70,364,94);drawn=true;resolve()};img.onerror=resolve;img.src=url});
+      await new Promise(resolve=>{img.onload=()=>{ctx.drawImage(img,18,barcodeY,364,barcodeH);drawn=true;resolve()};img.onerror=resolve;img.src=url});
     }catch(_){ }
-    if(!drawn){ctx.font='700 18px Arial';ctx.fillText('BARCODE',200,117)}
-    ctx.fillStyle='#000';ctx.font='400 17px Arial';ctx.fillText(r.barcode,200,187);
-    // 하단 SKU / 출력 장수 문구는 표시하지 않음.
+    if(!drawn){ctx.font='700 18px Arial';ctx.fillText('BARCODE',200,barcodeY+barcodeH/2)}
+    // 두 번째 캡처처럼 바코드 번호를 더 크게, 굵게 표시한다.
+    ctx.fillStyle='#000';ctx.font='700 22px Arial,sans-serif';ctx.fillText(r.barcode,200,222);
     return c;
   }
 
@@ -1828,7 +1843,7 @@ loadProducts();renderOrderPreview();
     area.innerHTML='';
     if(!list.length){area.innerHTML='<div class="empty">미리보기할 바코드가 없습니다.</div>';return}
     for(const r of list){
-      const card=document.createElement('div');card.className='kbarcode-v145-preview-card';card.innerHTML=`<div class="lab">${esc(r.productName)}</div>`;
+      const card=document.createElement('div');card.className='kbarcode-v145-preview-card';card.innerHTML='';
       const c=await labelCanvas(r);c.className='kbarcode-v145-label-canvas';card.appendChild(c);area.appendChild(card);
     }
   }
