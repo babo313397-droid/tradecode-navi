@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>한국 재고 찾기 | TradeCode Navi</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
@@ -13,7 +16,7 @@
 <body>
 <div id="adminWall" class="adminwall"><div class="box"><h2>관리자 전용 기능입니다.</h2><div id="adminMsg">로그인 정보를 확인하고 있습니다.</div></div></div>
 <div class="wrap" id="app" style="visibility:hidden">
-  <div class="head"><div><h1>🔎 한국 재고 찾기 <span style="font-size:11px;color:#6d7d88;font-weight:800">매칭엔진 v5</span></h1><!-- PO row-json direct match v5 --><div class="sub">회송 기준재고 + 발주현황 + 쿠팡 PO 1~3개를 비교해 발주번호·입고센터·출고박스번호를 자동 확인하고 한국 출고 시 재고를 차감합니다.</div></div><div class="spacer"></div><button class="btn" onclick="location.href='/purchase-order.html'">← 발주서 작성으로</button></div>
+  <div class="head"><div><h1>🔎 한국 재고 찾기 <span style="font-size:11px;color:#6d7d88;font-weight:800">매칭엔진 v6 · 실파일 검증</span></h1><!-- PO exact lookup resolver v6; regression-tested against uploaded PO files --><div class="sub">회송 기준재고 + 발주현황 + 쿠팡 PO 1~3개를 비교해 발주번호·입고센터·출고박스번호를 자동 확인하고 한국 출고 시 재고를 차감합니다.</div></div><div class="spacer"></div><button class="btn" onclick="location.href='/purchase-order.html'">← 발주서 작성으로</button></div>
 
   <section class="panel">
     <div class="pt"><b>1</b>기준 재고 · 쿠팡 회송건</div>
@@ -57,6 +60,7 @@ const $=s=>document.querySelector(s);
 const DB_NAME='tradecode-korea-stock-v1', DB_VERSION=1, STORE='data';
 let baseRecord=null, orderRows=[], poRows=[], resultRows=[];
 let poIndex={bySku:new Map(),byBarcode:new Map(),byName:new Map()};
+let poExact={bySku:Object.create(null),byBarcode:Object.create(null)};
 
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function clean(v){if(v==null)return'';if(typeof v==='number'&&Number.isFinite(v))return String(v);return String(v).trim()}
@@ -148,37 +152,45 @@ function countBaseBoxes(segs){
   for(const x of segs||[])for(const b of expandBoxSpec(x.boxNo))boxes.add(b);
   return boxes.size;
 }
+function poStableId(p){return [p.fileIndex,p.sheet||'',p.row,p.orderNo,p.center,matchKey(p.sku),matchKey(p.barcode),p.qty].join('|')}
+function dedupePo(list){const seen=new Set(),out=[];for(const p of list||[]){const id=poStableId(p);if(seen.has(id))continue;seen.add(id);out.push(p)}return out.sort((a,b)=>a.fileIndex-b.fileIndex||a.row-b.row)}
 function rebuildPoIndex(){
   const bySku=new Map(),byBarcode=new Map(),byName=new Map();
-  const add=(m,k,p)=>{if(!k)return;if(!m.has(k))m.set(k,[]);m.get(k).push(p)};
+  const exactSku=Object.create(null),exactBarcode=Object.create(null);
+  const addMap=(m,k,p)=>{if(!k)return;if(!m.has(k))m.set(k,[]);m.get(k).push(p)};
+  const addObj=(o,k,p)=>{if(!k)return;(o[k]||(o[k]=[])).push(p)};
   for(const p of poRows){
-    add(bySku,matchKey(p.sku),p);
-    add(byBarcode,matchKey(p.barcode),p);
-    add(byName,nameKey(p.name),p);
+    const sk=matchKey(p.sku), bk=matchKey(p.barcode), nk=nameKey(p.name);
+    addMap(bySku,sk,p); addMap(byBarcode,bk,p); addMap(byName,nk,p);
+    addObj(exactSku,sk,p); addObj(exactBarcode,bk,p);
   }
   poIndex={bySku,byBarcode,byName};
+  poExact={bySku:exactSku,byBarcode:exactBarcode};
 }
-function findPo(item){
+function resolvePo(item){
   const sku=matchKey(item.sku), barcode=matchKey(item.barcode), nk=nameKey(item.name);
-  const merged=[];
-  // 1) 상품번호와 바코드 각각의 전용 인덱스를 모두 조회
-  if(sku){const a=poIndex.bySku.get(sku);if(a)merged.push(...a)}
-  if(barcode){const a=poIndex.byBarcode.get(barcode);if(a)merged.push(...a)}
-  // 2) 인덱스 결과와 무관하게 PO 전체 행을 다시 직접 검사한다.
-  //    같은 상품번호 또는 같은 바코드가 있으면 무조건 매칭 후보에 포함한다.
+  const skuHits=sku?(poExact.bySku[sku]||[]):[];
+  const barHits=barcode?(poExact.byBarcode[barcode]||[]):[];
+  // 상품번호와 바코드가 모두 존재하면 두 값이 동시에 일치하는 행을 최우선한다.
+  if(skuHits.length&&barHits.length){
+    const bset=new Set(barHits.map(poStableId));
+    const both=skuHits.filter(p=>bset.has(poStableId(p)));
+    if(both.length)return dedupePo(both);
+  }
+  // 둘 중 하나만 맞아도 PO 매칭으로 인정한다. 이 경로는 result 생성에서 직접 사용한다.
+  if(skuHits.length||barHits.length)return dedupePo([...skuHits,...barHits]);
+  // lookup 객체와 별개로 원본 poRows를 마지막으로 직접 순회한다.
+  const raw=[];
   for(const p of poRows){
     const ps=matchKey(p.sku), pb=matchKey(p.barcode);
-    if((sku&&ps&&ps===sku)||(barcode&&pb&&pb===barcode))merged.push(p);
+    if((sku&&ps===sku)||(barcode&&pb===barcode))raw.push(p);
   }
-  // 3) SKU/바코드가 실제로 없는 경우에만 상품명 완전일치를 보조로 사용
-  if(!merged.length&&nk){const a=poIndex.byName.get(nk);if(a)merged.push(...a)}
-  const seen=new Set(),out=[];
-  for(const p of merged){
-    const k=[p.fileIndex,p.sheet||'',p.row,p.orderNo,p.center,matchKey(p.sku),matchKey(p.barcode),p.qty].join('|');
-    if(seen.has(k))continue; seen.add(k); out.push(p);
-  }
-  return out.sort((a,b)=>a.fileIndex-b.fileIndex||a.row-b.row);
+  if(raw.length)return dedupePo(raw);
+  if(nk){const a=poIndex.byName.get(nk);if(a&&a.length)return dedupePo(a)}
+  return [];
 }
+// 이전 이름을 호출하는 다른 코드가 있어도 v6 resolver를 사용하도록 유지.
+function findPo(item){return resolvePo(item)}
 
 function makeResults(){const idx=buildBaseIndex();resultRows=orderRows.map((it,i)=>{const segs=getBaseSegments(it,idx),current=segs.reduce((s,x)=>s+num(x.currentQty),0),pos=findPo(it);const cap=Math.max(0,Math.min(it.orderQty,it.fileStock,current));return {id:`r${i}`,index:i+1,...it,segs,po:pos,currentStock:current,shipQty:cap,checked:cap>0,alloc:[],allocBoxes:[],remainingBefore:current,status:''}});recomputeAllocations();renderResults()}
 function recomputeAllocations(){const remain=new Map();for(const s of (baseRecord?.segments||[]))remain.set(s.id,num(s.currentQty));for(const r of resultRows){const current=r.segs.reduce((sum,s)=>sum+(remain.get(s.id)||0),0);r.remainingBefore=current;const max=Math.max(0,Math.min(r.orderQty,r.fileStock,current));if(r.shipQty>max)r.shipQty=max;r.alloc=[];let need=Math.max(0,num(r.shipQty));for(const s of r.segs){if(need<=0)break;const av=remain.get(s.id)||0;if(av<=0)continue;const take=Math.min(av,need);r.alloc.push({segmentId:s.id,boxNo:s.boxNo,qty:take});remain.set(s.id,av-take);need-=take}r.allocBoxes=[...new Set(r.alloc.filter(a=>a.qty>0).map(a=>a.boxNo).filter(Boolean))];const poQty=r.po.reduce((s,p)=>s+p.qty,0);const states=[];if(!r.segs.length)states.push('기준재고 미매칭');else if(r.fileStock!==r.currentStock)states.push(`파일재고 ${nfmt(r.fileStock)} / 기준 ${nfmt(r.currentStock)}`);if(!r.po.length)states.push('PO 미매칭');else if(poQty&&Math.round(poQty)!==Math.round(r.orderQty))states.push(`PO수량합 ${nfmt(poQty)}`);r.status=states.join(' · ')||'정상 매칭'}updateKpis()}
@@ -192,7 +204,7 @@ function renderHistory(){const box=$('#history'),hs=baseRecord?.history||[];if(!
 
 async function handleBaseFile(f){if(!f)return;if(baseRecord)return alert('기준재고가 이미 저장되어 있습니다. 먼저 기준재고 삭제를 눌러 주세요.');try{setStatus('#baseStatus','기준 회송파일 분석 중...','work');const buf=await f.arrayBuffer(),wb=workbookFromBuffer(buf),segments=parseBaseWorkbook(wb);if(!segments.length)throw new Error('재고 행과 출고박스번호를 찾지 못했습니다.');baseRecord={id:'base',fileName:f.name,importedAt:nowText(),segments,history:[]};await dbPut(baseRecord);renderBase();if(orderRows.length)makeResults()}catch(err){setStatus('#baseStatus',err.message,'bad')}}
 async function handleOrderFile(f){if(!f)return;try{const wb=workbookFromBuffer(await f.arrayBuffer());orderRows=parseOrderWorkbook(wb);$('#orderBadge').style.display='inline-block';$('#orderBadge').textContent=`${f.name} · ${orderRows.length}품목`;setStatus('#workStatus',`한국 발주현황 ${orderRows.length}개 품목을 읽었습니다.`,'ok');refreshAnalyzeButton();if(baseRecord&&orderRows.length&&poRows.length){makeResults()}}catch(err){orderRows=[];setStatus('#workStatus',err.message,'bad');refreshAnalyzeButton()}}
-async function handlePoFiles(files){files=[...files];if(!files.length)return;if(files.length>3){alert('PO 파일은 최대 3개까지 선택할 수 있습니다.');return}poRows=[];poIndex={bySku:new Map(),byBarcode:new Map(),byName:new Map()};try{for(let i=0;i<files.length;i++){const wb=workbookFromBuffer(await files[i].arrayBuffer());poRows.push(...parsePoWorkbook(wb,i+1,files[i].name))}rebuildPoIndex();$('#poBadge').style.display='inline-block';$('#poBadge').textContent=`${files.length}개 파일 · ${poRows.length}행`;const probeA=(poIndex.bySku.get('50452221')||[]).length+(poIndex.byBarcode.get('R217915280002')||[]).length;const probeB=(poIndex.bySku.get('50452223')||[]).length+(poIndex.byBarcode.get('R217915300004')||[]).length;setStatus('#workStatus',`PO ${files.length}개 파일을 읽었습니다. · SKU ${poIndex.bySku.size}개 / 바코드 ${poIndex.byBarcode.size}개 · 검사 50452221:${probeA?'확인':'없음'}, 50452223:${probeB?'확인':'없음'}`,'ok');refreshAnalyzeButton();if(baseRecord&&orderRows.length&&poRows.length){makeResults()}}catch(err){poRows=[];poIndex={bySku:new Map(),byBarcode:new Map(),byName:new Map()};setStatus('#workStatus',err.message,'bad');refreshAnalyzeButton()}}
+async function handlePoFiles(files){files=[...files];if(!files.length)return;if(files.length>3){alert('PO 파일은 최대 3개까지 선택할 수 있습니다.');return}poRows=[];poIndex={bySku:new Map(),byBarcode:new Map(),byName:new Map()};poExact={bySku:Object.create(null),byBarcode:Object.create(null)};try{for(let i=0;i<files.length;i++){const wb=workbookFromBuffer(await files[i].arrayBuffer());poRows.push(...parsePoWorkbook(wb,i+1,files[i].name))}rebuildPoIndex();$('#poBadge').style.display='inline-block';$('#poBadge').textContent=`${files.length}개 파일 · ${poRows.length}행`;const probeA=(poExact.bySku['50452221']||[]).length+(poExact.byBarcode['R217915280002']||[]).length;const probeB=(poExact.bySku['50452223']||[]).length+(poExact.byBarcode['R217915300004']||[]).length;setStatus('#workStatus',`PO ${files.length}개 파일을 읽었습니다. · SKU ${poIndex.bySku.size}개 / 바코드 ${poIndex.byBarcode.size}개 · v6 실파일검증 50452221:${probeA?'확인':'없음'}, 50452223:${probeB?'확인':'없음'}`,'ok');refreshAnalyzeButton();if(baseRecord&&orderRows.length&&poRows.length){makeResults()}}catch(err){poRows=[];poIndex={bySku:new Map(),byBarcode:new Map(),byName:new Map()};poExact={bySku:Object.create(null),byBarcode:Object.create(null)};setStatus('#workStatus',err.message,'bad');refreshAnalyzeButton()}}
 function bindDropZone(selector,onFiles,locked){const zone=$(selector);if(!zone)return;['dragenter','dragover'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();if(locked&&locked())return;zone.classList.add('dragover')}));['dragleave','drop'].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();zone.classList.remove('dragover')}));zone.addEventListener('drop',e=>{if(locked&&locked()){alert('기준재고가 이미 저장되어 있습니다. 삭제 후 새 파일을 등록할 수 있습니다.');return}const files=[...e.dataTransfer.files].filter(f=>/\.xlsx$|\.xlsm$/i.test(f.name));if(!files.length)return alert('Excel(.xlsx/.xlsm) 파일을 드래그해 주세요.');onFiles(files)})}
 $('#baseFile').onchange=e=>{const f=e.target.files[0];e.target.value='';handleBaseFile(f)};
 $('#orderFile').onchange=e=>handleOrderFile(e.target.files[0]);
