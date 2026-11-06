@@ -1775,24 +1775,50 @@ loadProducts();renderOrderPreview();
     byId('kbarcodeMissingV147').textContent=rows.filter(r=>!r.barcode).length.toLocaleString();
   }
 
-  function fitText(ctx,text,maxWidth,start,min=11){let size=start;while(size>min){ctx.font=`700 ${size}px "Malgun Gothic",Arial,sans-serif`;if(ctx.measureText(text).width<=maxWidth)return size;size--}return min}
+  function fitText(ctx,text,maxWidth,start,min=12){let size=start;while(size>min){ctx.font=`700 ${size}px "Malgun Gothic",Arial,sans-serif`;if(ctx.measureText(text).width<=maxWidth)return size;size--}return min}
+  function labelTitleLines(ctx,text,maxWidth,maxLines=2){
+    const words=String(text||'').replace(/\s+/g,' ').trim().split(' ').filter(Boolean);
+    if(!words.length)return [''];
+    const lines=[];let cur='';
+    for(const word of words){
+      const next=cur?cur+' '+word:word;
+      if(ctx.measureText(next).width<=maxWidth||!cur){cur=next;continue}
+      lines.push(cur);cur=word;
+      if(lines.length===maxLines-1)break;
+    }
+    if(lines.length<maxLines&&cur)lines.push(cur);
+    const consumed=lines.join(' ').length;
+    const original=words.join(' ');
+    if(original.length>consumed&&lines.length){
+      let last=lines[lines.length-1];
+      while(last.length>1&&ctx.measureText(last+'…').width>maxWidth)last=last.slice(0,-1);
+      lines[lines.length-1]=last+'…';
+    }
+    return lines.slice(0,maxLines);
+  }
   async function labelCanvas(r){
     const c=document.createElement('canvas');c.width=400;c.height=240;
     const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,400,240);ctx.fillStyle='#111';ctx.textAlign='center';ctx.textBaseline='middle';
     const name=(r.productName||'').replace(/\s+/g,' ').trim();
-    const maxChars=31,lines=name.length>maxChars?[name.slice(0,maxChars),name.slice(maxChars,maxChars*2)]:[name];
-    lines.filter(Boolean).forEach((line,i)=>{const size=fitText(ctx,line,372,17,11);ctx.font=`700 ${size}px "Malgun Gothic",Arial,sans-serif`;ctx.fillText(line,200,20+i*21)});
+    // 제목 전용 영역: y=5~62. 최대 2줄만 사용하여 바코드 영역을 절대 침범하지 않음.
+    let titleSize=23;
+    ctx.font=`700 ${titleSize}px "Malgun Gothic",Arial,sans-serif`;
+    let lines=labelTitleLines(ctx,name,368,2);
+    while(titleSize>14&&lines.some(line=>ctx.measureText(line).width>368)){
+      titleSize--;ctx.font=`700 ${titleSize}px "Malgun Gothic",Arial,sans-serif`;lines=labelTitleLines(ctx,name,368,2);
+    }
+    const titleYs=lines.length>1?[19,45]:[31];
+    lines.forEach((line,i)=>{ctx.font=`700 ${titleSize}px "Malgun Gothic",Arial,sans-serif`;ctx.fillText(line,200,titleYs[i])});
     let drawn=false;
     try{
       const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
       JsBarcode(svg,String(r.barcode),{format:'CODE128',displayValue:false,margin:0,width:2,height:94,background:'#fff',lineColor:'#000'});
       const xml=new XMLSerializer().serializeToString(svg);const url='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(xml)));const img=new Image();
-      await new Promise(resolve=>{img.onload=()=>{ctx.drawImage(img,18,68,364,94);drawn=true;resolve()};img.onerror=resolve;img.src=url});
+      await new Promise(resolve=>{img.onload=()=>{ctx.drawImage(img,18,70,364,94);drawn=true;resolve()};img.onerror=resolve;img.src=url});
     }catch(_){ }
-    if(!drawn){ctx.font='700 18px Arial';ctx.fillText('BARCODE',200,115)}
-    ctx.fillStyle='#000';ctx.font='400 17px Arial';ctx.fillText(r.barcode,200,183);
-    ctx.font='700 13px "Malgun Gothic",Arial';ctx.textAlign='left';ctx.fillText(`SKU ${r.productNumber||'-'}`,14,216);
-    ctx.textAlign='right';ctx.fillText(`출력 ${intval(r.printQty)}장`,386,216);
+    if(!drawn){ctx.font='700 18px Arial';ctx.fillText('BARCODE',200,117)}
+    ctx.fillStyle='#000';ctx.font='400 17px Arial';ctx.fillText(r.barcode,200,187);
+    // 하단 SKU / 출력 장수 문구는 표시하지 않음.
     return c;
   }
 
@@ -1802,7 +1828,7 @@ loadProducts();renderOrderPreview();
     area.innerHTML='';
     if(!list.length){area.innerHTML='<div class="empty">미리보기할 바코드가 없습니다.</div>';return}
     for(const r of list){
-      const card=document.createElement('div');card.className='kbarcode-v145-preview-card';card.innerHTML=`<div class="lab">${esc(r.productName)} · 출력 ${intval(r.printQty).toLocaleString()}장</div>`;
+      const card=document.createElement('div');card.className='kbarcode-v145-preview-card';card.innerHTML=`<div class="lab">${esc(r.productName)}</div>`;
       const c=await labelCanvas(r);c.className='kbarcode-v145-label-canvas';card.appendChild(c);area.appendChild(card);
     }
   }
