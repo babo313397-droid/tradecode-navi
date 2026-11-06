@@ -1672,225 +1672,213 @@ loadProducts();renderOrderPreview();
 })();
 </script>
 
-<script id="korea-barcode-v145">
+<script id="korea-barcode-v147">
+// ===== v147: Korean PO -> immediate 50x30 barcode preview + Xprinter direct print =====
 (function(){
   const PRINTER_KEY='tradecodeThermalPrinterV1';
+  const DPMM=8;
   let rows=[];
-  const $v=id=>document.getElementById(id);
-  const n=v=>Math.max(0,Math.floor(Number(v)||0));
-  const txt=v=>String(v==null?'':v).trim();
-  const escV=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  function keyOf(x){return (txt(x.barcode)||txt(x.productNumber)||txt(x.productName)).toUpperCase()}
+  let lastSignature='';
+  const byId=id=>document.getElementById(id);
+  const intval=v=>Math.max(0,Math.floor(Number(v)||0));
+  const str=v=>String(v==null?'':v).trim();
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const keyOf=x=>(str(x.barcode)||str(x.productNumber)||str(x.productName)).toUpperCase();
 
   function ensureUi(){
-    if($v('kbarcodePanelV145'))return;
-    const wrap=$v('koreaResultWrap'); if(!wrap)return;
-    const panel=document.createElement('div');panel.id='kbarcodePanelV145';panel.className='kbarcode-v145';
+    if(byId('kbarcodePanelV147'))return;
+    const result=byId('koreaResultWrap');
+    const box=byId('koreaOrderBox')||result?.parentElement;
+    if(!box)return;
+    const panel=document.createElement('div');
+    panel.id='kbarcodePanelV147';
+    panel.className='kbarcode-v145';
     panel.innerHTML=`
       <div class="kbarcode-v145-head"><span>③ 한국 발주 바코드 출력 · 발주수량 자동 반영</span><span>50×30mm · CODE128</span></div>
       <div class="kbarcode-v145-controls">
-        <button class="btn" type="button" id="kbarcodeConnectV145">🔌 Xprinter 연결</button>
-        <select id="kbarcodePrinterV145"><option value="">프린터를 연결해 주세요</option></select>
-        <label style="font-size:11px;font-weight:800">라벨 간격 <input id="kbarcodeGapV145" type="number" value="2" min="0" max="10" step="0.5" style="width:60px"> mm</label>
-        <button class="btn" type="button" id="kbarcodeResetQtyV145">발주수량 다시 적용</button>
-        <button class="btn" type="button" id="kbarcodePreviewV145">미리보기 새로고침</button>
-        <button class="btn green" type="button" id="kbarcodePrintV145">🖨 선택 라벨 Xprinter 출력</button>
-        <button class="btn" type="button" id="kbarcodeBrowserPrintV145">브라우저 인쇄</button>
-        <span id="kbarcodeStatusV145" class="kbarcode-v145-status">한국 PO를 올리면 바코드 출력 목록이 자동 생성됩니다.</span>
+        <button class="btn" type="button" id="kbarcodeConnectV147">🔌 Xprinter 연결</button>
+        <select id="kbarcodePrinterV147"><option value="">프린터를 연결해 주세요</option></select>
+        <label style="font-size:11px;font-weight:800">라벨 간격 <input id="kbarcodeGapV147" type="number" value="2" min="0" max="10" step="0.5" style="width:60px"> mm</label>
+        <button class="btn" type="button" id="kbarcodeResetQtyV147">발주수량 다시 적용</button>
+        <button class="btn" type="button" id="kbarcodePreviewV147">미리보기 새로고침</button>
+        <button class="btn green" type="button" id="kbarcodePrintV147">🖨 선택 라벨 Xprinter 출력</button>
+        <button class="btn" type="button" id="kbarcodeBrowserPrintV147">브라우저 인쇄</button>
+        <span id="kbarcodeStatusV147" class="kbarcode-v145-status">한국 발주 PO를 올리면 바코드 출력 목록이 자동 생성됩니다.</span>
       </div>
       <div class="kbarcode-v145-summary">
-        <div class="kbarcode-v145-kpi"><b id="kbarcodeItemsV145">0</b><span>출력 대상 상품</span></div>
-        <div class="kbarcode-v145-kpi"><b id="kbarcodeLabelsV145">0</b><span>총 출력 라벨</span></div>
-        <div class="kbarcode-v145-kpi"><b id="kbarcodeMissingV145">0</b><span>바코드 없음</span></div>
+        <div class="kbarcode-v145-kpi"><b id="kbarcodeItemsV147">0</b><span>출력 대상 상품</span></div>
+        <div class="kbarcode-v145-kpi"><b id="kbarcodeLabelsV147">0</b><span>총 출력 라벨</span></div>
+        <div class="kbarcode-v145-kpi"><b id="kbarcodeMissingV147">0</b><span>바코드 없음</span></div>
         <div class="kbarcode-v145-kpi"><b>50×30</b><span>라벨 규격(mm)</span></div>
       </div>
-      <div class="kbarcode-v145-table-wrap"><table class="kbarcode-v145-table"><thead><tr><th>출력</th><th>SKU</th><th>바코드</th><th>상품명</th><th>발주수량</th><th>출력수량</th><th>미리보기</th></tr></thead><tbody id="kbarcodeBodyV145"></tbody></table></div>
-      <div class="kbarcode-v145-preview-title">라벨 미리보기</div><div id="kbarcodePreviewAreaV145" class="kbarcode-v145-preview"></div>
-      <div class="kbarcode-v145-note">발주수량을 기본 출력수량으로 사용합니다. 출력수량은 상품별로 수정할 수 있습니다. Xprinter 직접 출력은 기존 TradeCode와 동일하게 QZ Tray가 실행되어 있어야 하며 Windows 프린터 목록에서 Xprinter를 선택합니다.</div>`;
-    wrap.appendChild(panel);
-    $v('kbarcodeConnectV145').onclick=connectPrinter;
-    $v('kbarcodePrinterV145').onchange=()=>{const p=$v('kbarcodePrinterV145').value;if(p)localStorage.setItem(PRINTER_KEY,p);setStatus(p?`선택됨: ${p}`:'프린터를 선택해 주세요.',p?'ok':'')};
-    $v('kbarcodeResetQtyV145').onclick=()=>{for(const r of rows){r.printQty=n(r.orderQty);r.checked=!!r.barcode&&r.printQty>0}renderRows()};
-    $v('kbarcodePreviewV145').onclick=renderRows;
-    $v('kbarcodePrintV145').onclick=printSelected;
-    $v('kbarcodeBrowserPrintV145').onclick=browserPrint;
+      <div class="kbarcode-v145-table-wrap"><table class="kbarcode-v145-table"><thead><tr><th>출력</th><th>SKU</th><th>바코드</th><th>상품명</th><th>발주수량</th><th>출력수량</th><th>미리보기</th></tr></thead><tbody id="kbarcodeBodyV147"></tbody></table></div>
+      <div class="kbarcode-v145-preview-title">라벨 미리보기 · 실제 50×30 비율</div>
+      <div id="kbarcodePreviewAreaV147" class="kbarcode-v145-preview"></div>
+      <div class="kbarcode-v145-note">각 아이템의 <b>한국 PO 발주수량</b>이 기본 출력수량으로 자동 들어갑니다. 필요하면 개별 출력수량을 수정하거나 체크를 해제할 수 있습니다. Xprinter 직접 출력은 QZ Tray가 실행 중이어야 합니다.</div>`;
+    if(result) result.insertAdjacentElement('afterend',panel); else box.appendChild(panel);
+    byId('kbarcodeConnectV147').onclick=connectPrinter;
+    byId('kbarcodePrinterV147').onchange=()=>{const p=byId('kbarcodePrinterV147').value;if(p)localStorage.setItem(PRINTER_KEY,p);setStatus(p?`선택됨: ${p}`:'프린터를 선택해 주세요.',p?'ok':'')};
+    byId('kbarcodeResetQtyV147').onclick=()=>{for(const r of rows){r.printQty=intval(r.orderQty);r.checked=!!r.barcode&&r.printQty>0}renderRows()};
+    byId('kbarcodePreviewV147').onclick=()=>renderRows();
+    byId('kbarcodePrintV147').onclick=printSelected;
+    byId('kbarcodeBrowserPrintV147').onclick=browserPrint;
   }
-  function setStatus(m,t=''){const el=$v('kbarcodeStatusV145');if(!el)return;el.textContent=m;el.className='kbarcode-v145-status'+(t?' '+t:'')}
-  function sourceRows(){try{return Array.isArray(koreaOrderRows)?koreaOrderRows:[]}catch(_){return []}}
-  function syncRows(){
+
+  function setStatus(message,type=''){
+    const el=byId('kbarcodeStatusV147');if(!el)return;
+    el.textContent=message;el.className='kbarcode-v145-status'+(type?' '+type:'');
+  }
+
+  function sourceRows(){
+    try{return Array.isArray(koreaOrderRows)?koreaOrderRows:[]}catch(_){return []}
+  }
+
+  function sourceSignature(src){
+    return src.map(x=>[str(x.productNumber),str(x.barcode),str(x.productName),intval(x.qty)].join('|')).join(';;');
+  }
+
+  function syncRows(force=false){
     ensureUi();
-    const old=new Map(rows.map(r=>[keyOf(r),r]));
-    rows=sourceRows().map((x,i)=>{const k=keyOf(x),prev=old.get(k),qty=n(x.qty);return{id:i+1,key:k,productNumber:txt(x.productNumber),barcode:txt(x.barcode),productName:txt(x.productName),orderQty:qty,printQty:prev?prev.printQty:qty,checked:prev?prev.checked:(!!txt(x.barcode)&&qty>0)}});
+    const src=sourceRows();
+    const sig=sourceSignature(src);
+    if(!force && sig===lastSignature)return;
+    lastSignature=sig;
+    const old=new Map(rows.map(r=>[r.key,r]));
+    rows=src.map((x,i)=>{
+      const key=keyOf(x),prev=old.get(key),qty=intval(x.qty);
+      return {id:i+1,key,productNumber:str(x.productNumber),barcode:str(x.barcode),productName:str(x.productName),orderQty:qty,printQty:prev?intval(prev.printQty):qty,checked:prev?!!prev.checked:(!!str(x.barcode)&&qty>0)};
+    });
     renderRows();
+    if(rows.length)setStatus(`한국 발주 ${rows.length.toLocaleString()}품목 · 발주수량 기준 총 ${rows.reduce((s,r)=>s+intval(r.orderQty),0).toLocaleString()}장 준비됨`,'ok');
+    else setStatus('한국 발주 PO를 올리면 바코드 출력 목록이 자동 생성됩니다.');
   }
+
   function renderRows(){
-    ensureUi();const body=$v('kbarcodeBodyV145'),prev=$v('kbarcodePreviewAreaV145');if(!body||!prev)return;
-    body.innerHTML=rows.length?rows.map((r,i)=>`<tr><td class="center"><input type="checkbox" data-kb-check="${i}" ${r.checked?'checked':''} ${r.barcode?'':'disabled'}></td><td>${escV(r.productNumber)}</td><td>${escV(r.barcode||'-')}</td><td>${escV(r.productName)}</td><td class="num">${r.orderQty.toLocaleString()}</td><td class="center"><input type="number" min="0" step="1" data-kb-qty="${i}" value="${r.printQty}" ${r.barcode?'':'disabled'}></td><td class="center"><button type="button" class="btn" data-kb-one="${i}" ${r.barcode?'':'disabled'}>보기</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">한국 PO를 올리면 발주수량 기준 바코드 목록이 생성됩니다.</td></tr>';
+    ensureUi();
+    const body=byId('kbarcodeBodyV147');if(!body)return;
+    body.innerHTML=rows.length?rows.map((r,i)=>`<tr>
+      <td class="center"><input type="checkbox" data-kb-check="${i}" ${r.checked?'checked':''} ${r.barcode?'':'disabled'}></td>
+      <td>${esc(r.productNumber)}</td><td>${esc(r.barcode||'-')}</td><td>${esc(r.productName)}</td>
+      <td class="num">${r.orderQty.toLocaleString()}</td>
+      <td class="center"><input type="number" min="0" step="1" data-kb-qty="${i}" value="${r.printQty}" ${r.barcode?'':'disabled'}></td>
+      <td class="center"><button type="button" class="btn" data-kb-one="${i}" ${r.barcode?'':'disabled'}>보기</button></td></tr>`).join(''):'<tr><td colspan="7" class="empty">한국 발주 PO를 올리면 발주수량 기준 바코드 목록이 생성됩니다.</td></tr>';
     body.querySelectorAll('[data-kb-check]').forEach(el=>el.onchange=()=>{rows[+el.dataset.kbCheck].checked=el.checked;updateKpis()});
-    body.querySelectorAll('[data-kb-qty]').forEach(el=>el.oninput=()=>{const r=rows[+el.dataset.kbQty];r.printQty=n(el.value);r.checked=!!r.barcode&&r.printQty>0;renderPreview();updateKpis()});
+    body.querySelectorAll('[data-kb-qty]').forEach(el=>el.oninput=()=>{const r=rows[+el.dataset.kbQty];r.printQty=intval(el.value);r.checked=!!r.barcode&&r.printQty>0;updateKpis();renderPreview()});
     body.querySelectorAll('[data-kb-one]').forEach(el=>el.onclick=()=>renderPreview(rows[+el.dataset.kbOne].key));
-    renderPreview();updateKpis();
+    updateKpis();renderPreview();
   }
-  function updateKpis(){const selected=rows.filter(r=>r.checked&&r.barcode&&r.printQty>0);$v('kbarcodeItemsV145').textContent=selected.length.toLocaleString();$v('kbarcodeLabelsV145').textContent=selected.reduce((s,r)=>s+n(r.printQty),0).toLocaleString();$v('kbarcodeMissingV145').textContent=rows.filter(r=>!r.barcode).length.toLocaleString()}
 
-  function fitText(ctx,text,maxW,start,min=13){let size=start;do{ctx.font=`700 ${size}px "Malgun Gothic",Arial,sans-serif`;if(ctx.measureText(text).width<=maxW)return size;size--}while(size>min);return min}
+  function updateKpis(){
+    const selected=rows.filter(r=>r.checked&&r.barcode&&r.printQty>0);
+    byId('kbarcodeItemsV147').textContent=selected.length.toLocaleString();
+    byId('kbarcodeLabelsV147').textContent=selected.reduce((s,r)=>s+intval(r.printQty),0).toLocaleString();
+    byId('kbarcodeMissingV147').textContent=rows.filter(r=>!r.barcode).length.toLocaleString();
+  }
+
+  function fitText(ctx,text,maxWidth,start,min=11){let size=start;while(size>min){ctx.font=`700 ${size}px "Malgun Gothic",Arial,sans-serif`;if(ctx.measureText(text).width<=maxWidth)return size;size--}return min}
   async function labelCanvas(r){
-    const c=document.createElement('canvas');c.width=400;c.height=240;const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,400,240);ctx.fillStyle='#111';ctx.textAlign='center';ctx.textBaseline='middle';
-    const name=(r.productName||'').replace(/\s+/g,' ').trim();const maxChars=34;const lines=name.length>maxChars?[name.slice(0,maxChars),name.slice(maxChars,maxChars*2)]:[name];
-    lines.filter(Boolean).forEach((t,i)=>{const fs=fitText(ctx,t,370,18,12);ctx.font=`700 ${fs}px "Malgun Gothic",Arial,sans-serif`;ctx.fillText(t,200,22+i*22)});
-    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');let barcodeDrawn=false;
+    const c=document.createElement('canvas');c.width=400;c.height=240;
+    const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,400,240);ctx.fillStyle='#111';ctx.textAlign='center';ctx.textBaseline='middle';
+    const name=(r.productName||'').replace(/\s+/g,' ').trim();
+    const maxChars=31,lines=name.length>maxChars?[name.slice(0,maxChars),name.slice(maxChars,maxChars*2)]:[name];
+    lines.filter(Boolean).forEach((line,i)=>{const size=fitText(ctx,line,372,17,11);ctx.font=`700 ${size}px "Malgun Gothic",Arial,sans-serif`;ctx.fillText(line,200,20+i*21)});
+    let drawn=false;
     try{
-      JsBarcode(svg,String(r.barcode),{format:'CODE128',displayValue:false,margin:0,width:2,height:92,background:'#fff',lineColor:'#000'});
+      const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+      JsBarcode(svg,String(r.barcode),{format:'CODE128',displayValue:false,margin:0,width:2,height:94,background:'#fff',lineColor:'#000'});
       const xml=new XMLSerializer().serializeToString(svg);const url='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(xml)));const img=new Image();
-      await new Promise(resolve=>{img.onload=()=>{ctx.drawImage(img,20,68,360,92);barcodeDrawn=true;resolve()};img.onerror=resolve;img.src=url});
+      await new Promise(resolve=>{img.onload=()=>{ctx.drawImage(img,18,68,364,94);drawn=true;resolve()};img.onerror=resolve;img.src=url});
     }catch(_){ }
-    if(!barcodeDrawn){ctx.fillStyle='#000';ctx.font='700 18px Arial';ctx.fillText('BARCODE',200,112)}
-    ctx.fillStyle='#000';ctx.font='400 18px Arial';ctx.fillText(r.barcode,200,180);ctx.font='700 14px "Malgun Gothic",Arial';ctx.textAlign='left';ctx.fillText(`SKU ${r.productNumber||'-'}`,16,216);ctx.textAlign='right';ctx.fillText(`× ${n(r.printQty)}`,384,216);return c;
+    if(!drawn){ctx.font='700 18px Arial';ctx.fillText('BARCODE',200,115)}
+    ctx.fillStyle='#000';ctx.font='400 17px Arial';ctx.fillText(r.barcode,200,183);
+    ctx.font='700 13px "Malgun Gothic",Arial';ctx.textAlign='left';ctx.fillText(`SKU ${r.productNumber||'-'}`,14,216);
+    ctx.textAlign='right';ctx.fillText(`출력 ${intval(r.printQty)}장`,386,216);
+    return c;
   }
+
   async function renderPreview(oneKey=''){
-    const area=$v('kbarcodePreviewAreaV145');if(!area)return;const list=rows.filter(r=>r.barcode&&(!oneKey||r.key===oneKey)).slice(0,12);area.innerHTML='';if(!list.length){area.innerHTML='<div class="empty">미리보기할 바코드가 없습니다.</div>';return}for(const r of list){const card=document.createElement('div');card.className='kbarcode-v145-preview-card';card.innerHTML=`<div class="lab">${escV(r.productName)} · 출력 ${n(r.printQty).toLocaleString()}장</div>`;const c=await labelCanvas(r);c.className='kbarcode-v145-label-canvas';card.appendChild(c);area.appendChild(card)}
+    const area=byId('kbarcodePreviewAreaV147');if(!area)return;
+    const list=rows.filter(r=>r.barcode&&(!oneKey||r.key===oneKey)).slice(0,12);
+    area.innerHTML='';
+    if(!list.length){area.innerHTML='<div class="empty">미리보기할 바코드가 없습니다.</div>';return}
+    for(const r of list){
+      const card=document.createElement('div');card.className='kbarcode-v145-preview-card';card.innerHTML=`<div class="lab">${esc(r.productName)} · 출력 ${intval(r.printQty).toLocaleString()}장</div>`;
+      const c=await labelCanvas(r);c.className='kbarcode-v145-label-canvas';card.appendChild(c);area.appendChild(card);
+    }
   }
 
-  async function ensureQz(){if(typeof qz==='undefined')throw new Error('QZ Tray 스크립트를 불러오지 못했습니다.');if(!qz.websocket.isActive())await qz.websocket.connect({retries:2,delay:1})}
-  async function connectPrinter(){try{setStatus('Windows 프린터를 찾는 중...');await ensureQz();const printers=await qz.printers.find();const sel=$v('kbarcodePrinterV145');sel.innerHTML='';const preferred=printers.filter(p=>/XP[-_ ]?420B|XP[-_ ]?370B|Xprinter/i.test(String(p)));const list=[...preferred,...printers.filter(p=>!preferred.includes(p))];if(!list.length)throw new Error('Windows에 설치된 프린터가 없습니다.');for(const p of list){const o=document.createElement('option');o.value=p;o.textContent=p;sel.appendChild(o)}const saved=localStorage.getItem(PRINTER_KEY)||'';sel.value=(saved&&list.includes(saved))?saved:(preferred[0]||list[0]);localStorage.setItem(PRINTER_KEY,sel.value);setStatus(`연결됨: ${sel.value}`,'ok')}catch(e){console.error(e);setStatus('QZ Tray 또는 Xprinter 연결 실패','bad');alert('Xprinter 직접 연결에 실패했습니다.\n\nQZ Tray를 설치하고 실행한 뒤 다시 연결해 주세요.')}}
-  function u8cat(parts){const total=parts.reduce((s,p)=>s+p.length,0),out=new Uint8Array(total);let pos=0;for(const p of parts){out.set(p,pos);pos+=p.length}return out}
-  const bytes=s=>new TextEncoder().encode(String(s));
-  function canvasTspl(c,copies){const wDots=400,hDots=240,bpr=Math.ceil(wDots/8),tmp=document.createElement('canvas');tmp.width=wDots;tmp.height=hDots;const ctx=tmp.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,wDots,hDots);ctx.drawImage(c,0,0,wDots,hDots);const im=ctx.getImageData(0,0,wDots,hDots).data,bitmap=new Uint8Array(bpr*hDots);bitmap.fill(0xFF);for(let y=0;y<hDots;y++)for(let x=0;x<wDots;x++){const i=(y*wDots+x)*4,gray=(im[i]*299+im[i+1]*587+im[i+2]*114)/1000;if(gray<210)bitmap[y*bpr+(x>>3)]&=~(0x80>>(x&7))}const gap=Math.max(0,Math.min(10,Number($v('kbarcodeGapV145').value)||0));const pre=`SIZE 50 mm,30 mm\r\nGAP ${gap} mm,0 mm\r\nDIRECTION 1\r\nSPEED 3\r\nDENSITY 10\r\nCLS\r\nBITMAP 0,0,${bpr},${hDots},0,`;const post=`\r\nPRINT 1,${Math.max(1,n(copies))}\r\n`;return u8cat([bytes(pre),bitmap,bytes(post)])}
-  async function printSelected(){const list=rows.filter(r=>r.checked&&r.barcode&&r.printQty>0);if(!list.length)return alert('출력할 상품을 선택해 주세요.');const total=list.reduce((s,r)=>s+n(r.printQty),0);if(!confirm(`Xprinter로 총 ${total.toLocaleString()}장의 바코드 라벨을 출력할까요?`))return;try{setStatus(`라벨 ${total.toLocaleString()}장 준비 중...`);await ensureQz();let printer=$v('kbarcodePrinterV145').value||localStorage.getItem(PRINTER_KEY)||'';if(!printer){await connectPrinter();printer=$v('kbarcodePrinterV145').value||''}if(!printer)throw new Error('Xprinter를 선택해 주세요.');const config=qz.configs.create(printer,{jobName:'한국 발주 바코드'});for(let i=0;i<list.length;i++){setStatus(`Xprinter 출력 ${i+1}/${list.length} · ${list[i].productName}`);const c=await labelCanvas(list[i]),raw=canvasTspl(c,list[i].printQty);await qz.print(config,[{type:'raw',format:'command',flavor:'hex',data:raw}])}setStatus(`출력 완료 · ${list.length}품목 / ${total.toLocaleString()}장`,'ok')}catch(e){console.error(e);setStatus('Xprinter 출력 실패: '+e.message,'bad');alert('Xprinter 출력 실패\n'+e.message)}}
-  async function browserPrint(){const list=rows.filter(r=>r.checked&&r.barcode&&r.printQty>0);if(!list.length)return alert('출력할 상품을 선택해 주세요.');const win=window.open('','_blank');if(!win)return alert('팝업을 허용해 주세요.');win.document.write('<p>라벨 준비 중...</p>');let html='';for(const r of list){const c=await labelCanvas(r),src=c.toDataURL('image/png');for(let i=0;i<r.printQty;i++)html+=`<img src="${src}">`}win.document.open();win.document.write(`<!doctype html><html><head><title>한국 발주 바코드</title><style>@page{size:50mm 30mm;margin:0}html,body{margin:0;padding:0}img{display:block;width:50mm;height:30mm;break-after:page}img:last-child{break-after:auto}</style></head><body>${html}
-<script id="korea-excel-bundle-sync-v146">
-// ===== v146: Excel export uses the same expanded bundle groups as the screen =====
-(function(){
-  async function fetchImageUrlV146(url){
-    url=norm(url||'');if(!url)return null;
+  async function ensureQz(){
+    if(typeof qz==='undefined')throw new Error('QZ Tray 연결 스크립트를 불러오지 못했습니다.');
+    if(!qz.websocket.isActive())await qz.websocket.connect({retries:2,delay:1});
+  }
+
+  async function connectPrinter(){
     try{
-      const r=await fetch(url,{credentials:'same-origin'});if(!r.ok)return null;
-      const ab=await r.arrayBuffer(),ct=String(r.headers.get('content-type')||'').toLowerCase();
-      let extension='jpeg';
-      if(ct.includes('png')||/^data:image\/png/i.test(url)||/\.png(?:$|\?)/i.test(url))extension='png';
-      const mime=extension==='png'?'png':'jpeg';
-      return {base64:`data:image/${mime};base64,${bytesToBase64(new Uint8Array(ab))}`,extension};
-    }catch(_){return null}
+      setStatus('Windows 프린터를 찾는 중...');await ensureQz();
+      const printers=await qz.printers.find(),sel=byId('kbarcodePrinterV147'),saved=localStorage.getItem(PRINTER_KEY)||'';
+      sel.innerHTML='';
+      const preferred=printers.filter(p=>/XP[-_ ]?420B|XP[-_ ]?370B|Xprinter/i.test(String(p)));
+      const list=[...preferred,...printers.filter(p=>!preferred.includes(p))];
+      if(!list.length)throw new Error('Windows에 설치된 프린터가 없습니다.');
+      for(const p of list){const o=document.createElement('option');o.value=p;o.textContent=p;sel.appendChild(o)}
+      sel.value=(saved&&list.includes(saved))?saved:(preferred[0]||list[0]);localStorage.setItem(PRINTER_KEY,sel.value);setStatus(`연결됨: ${sel.value}`,'ok');
+    }catch(err){console.error(err);setStatus('QZ Tray 또는 Xprinter 연결 실패','bad');alert('Xprinter 연결에 실패했습니다.\n\n1. QZ Tray를 설치하고 실행하세요.\n2. Xprinter가 Windows 프린터에 설치되어 있는지 확인하세요.\n3. 다시 [Xprinter 연결]을 누르세요.');}
   }
-  function groupAltV146(g){
-    return norm(g?.altName||g?.items?.find(x=>norm(x.componentAltName||x.altName))?.componentAltName||g?.items?.find(x=>norm(x.altName))?.altName||'');
-  }
-  function groupPhotoV146(g){
-    return norm(g?.altImageUrl||g?.items?.find(x=>norm(x.componentAltImageUrl||x.koreaAltImageUrl))?.componentAltImageUrl||g?.items?.find(x=>norm(x.koreaAltImageUrl))?.koreaAltImageUrl||'');
-  }
-  function uniqSkuV146(g){return [...new Set((g?.items||[]).map(x=>x.productNumber||x.barcode).filter(Boolean))].join(', ')}
 
-  window.downloadKoreaOrderWorkbook=async function(){
-    if(!koreaOrderRows.length)return alert('한국 발주 대상과 일치하는 PO 상품이 없습니다.');
+  function concat(parts){const total=parts.reduce((s,p)=>s+p.length,0),out=new Uint8Array(total);let pos=0;for(const p of parts){out.set(p,pos);pos+=p.length}return out}
+  const textBytes=s=>new TextEncoder().encode(String(s));
+  function canvasToTsplBytes(sourceCanvas,copies){
+    const wDots=50*DPMM,hDots=30*DPMM,bytesPerRow=Math.ceil(wDots/8);
+    const c=document.createElement('canvas');c.width=wDots;c.height=hDots;const ctx=c.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,wDots,hDots);ctx.imageSmoothingEnabled=true;ctx.drawImage(sourceCanvas,0,0,wDots,hDots);
+    const img=ctx.getImageData(0,0,wDots,hDots).data,bitmap=new Uint8Array(bytesPerRow*hDots);bitmap.fill(0xFF);
+    for(let y=0;y<hDots;y++)for(let x=0;x<wDots;x++){const i=(y*wDots+x)*4,gray=(img[i]*299+img[i+1]*587+img[i+2]*114)/1000;if(gray<210)bitmap[y*bytesPerRow+(x>>3)]&=~(0x80>>(x&7))}
+    const gap=Math.max(0,Math.min(10,Number(byId('kbarcodeGapV147')?.value)||0));
+    const prefix=`SIZE 50 mm,30 mm\r\nGAP ${gap} mm,0 mm\r\nDIRECTION 1\r\nSPEED 3\r\nDENSITY 10\r\nCLS\r\nBITMAP 0,0,${bytesPerRow},${hDots},0,`;
+    const suffix=`\r\nPRINT 1,${Math.max(1,intval(copies))}\r\n`;
+    return concat([textBytes(prefix),bitmap,textBytes(suffix)]);
+  }
+
+  async function printSelected(){
+    const list=rows.filter(r=>r.checked&&r.barcode&&r.printQty>0);if(!list.length)return alert('출력할 상품을 선택해 주세요.');
+    const total=list.reduce((s,r)=>s+intval(r.printQty),0);if(!confirm(`Xprinter로 총 ${total.toLocaleString()}장의 바코드 라벨을 출력할까요?`))return;
     try{
-      // v144 screen state and Excel state must be identical at download time.
-      koreaOrderRows=buildKoreaRows();
-      koreaOrderGroups=buildKoreaGroups(koreaOrderRows);
-      setStatus('koreaStatus','한국 발주서용 제품 사진을 준비하는 중입니다…','work');
-      const detailImageData=await mapLimit(koreaOrderRows,8,async x=>fetchImageData(x.photoProduct));
-      const groupImageData=await mapLimit(koreaOrderGroups,8,async g=>fetchImageUrlV146(groupPhotoV146(g)));
-      setStatus('koreaStatus','한국 발주서 엑셀을 만드는 중입니다…','work');
-
-      const wb=new ExcelJS.Workbook();wb.creator='TradeCode Navi';wb.created=new Date();
-      const ws=wb.addWorksheet('한국발주서',{properties:{defaultRowHeight:19}});
-      const widths=[8,24,14,20,52,18,11,12,14,18,13,15,15];widths.forEach((w,i)=>ws.getColumn(i+1).width=w);
-      ws.mergeCells('A1:M1');ws.getCell('A1').value=`${orderTitle()} - 한국 발주건`;ws.getCell('A1').font={name:'맑은 고딕',size:17,bold:true};ws.getCell('A1').alignment={vertical:'middle',horizontal:'left'};ws.getRow(1).height=30;
-      ws.mergeCells('A2:M2');ws.getCell('A2').value='※ 업로드한 한국 PO에 포함된 한국 발주 대상 SKU만 표시합니다. 아래 묶음요약의 보유재고를 입력하면 최종 발주량과 금액이 자동 조정됩니다.';ws.getCell('A2').alignment={wrapText:true,vertical:'middle'};ws.getCell('A2').font={name:'맑은 고딕',size:9,color:{argb:'FF6B5700'}};ws.getCell('A2').fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF6D9'}};ws.getRow(2).height=33;
-
-      const headers=['순번','구분','SKU ID','바코드','상품명','제품 사진','CAVITY','쿠팡 발주수량','필요 낱개수량','동일품목','낱개 단가','최소 팩킹 수량','필요금액'];headers.forEach((v,i)=>ws.getCell(4,i+1).value=v);const detailStart=5;
-      for(let i=0;i<koreaOrderRows.length;i++){
-        const x=koreaOrderRows[i],r=detailStart+i,bundle=!!x.isBundle;
-        ws.getCell(r,1).value=i+1;ws.getCell(r,2).value=x.category;ws.getCell(r,3).value=x.productNumber;ws.getCell(r,4).value=x.barcode;ws.getCell(r,5).value=x.productName;
-        ws.getCell(r,7).value=x.cavity;ws.getCell(r,8).value=x.qty;
-        // Bundle parent CAVITY can remain 1, but needed pieces must be sum of all components.
-        ws.getCell(r,9).value=bundle?num(x.pieces):{formula:`G${r}*H${r}`,result:x.pieces};
-        ws.getCell(r,10).value=x.sameGroup||'';
-        ws.getCell(r,11).value=bundle?'구성별':x.unitPrice;
-        ws.getCell(r,12).value=bundle?'구성별':x.minPack;
-        ws.getCell(r,13).value=bundle?num(x.bundleNeededAmount):{formula:`I${r}*K${r}`,result:num(x.pieces)*num(x.unitPrice)};
-        ws.getRow(r).height=72;
-        const im=detailImageData[i];if(im){const imageId=wb.addImage({base64:im.base64,extension:im.extension});ws.addImage(imageId,{tl:{col:5.1,row:r-1+0.08},ext:{width:76,height:76},editAs:'oneCell'})}
+      setStatus(`라벨 ${total.toLocaleString()}장 준비 중...`);await ensureQz();
+      let printer=byId('kbarcodePrinterV147').value||localStorage.getItem(PRINTER_KEY)||'';
+      if(!printer){await connectPrinter();printer=byId('kbarcodePrinterV147').value||''}if(!printer)throw new Error('Xprinter를 선택해 주세요.');
+      const config=qz.configs.create(printer,{jobName:'한국 발주 바코드'});
+      for(let i=0;i<list.length;i++){
+        const r=list[i];setStatus(`Xprinter 출력 ${i+1}/${list.length} · ${r.productName}`);
+        const c=await labelCanvas(r),raw=canvasToTsplBytes(c,r.printQty);
+        await qz.print(config,[{type:'raw',format:'command',flavor:'hex',data:raw}]);
       }
-      const detailEnd=detailStart+koreaOrderRows.length-1;excelStyleRange(ws,4,detailEnd,1,13,'FFE8F2EA');
-      for(let r=detailStart;r<=detailEnd;r++){
-        for(const c of [7,10,11,12])ws.getCell(r,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFFCC'}};
-        for(const c of [7,8,9,13])ws.getCell(r,c).numFmt='#,##0';
-        if(typeof ws.getCell(r,11).value==='number')ws.getCell(r,11).numFmt='#,##0';
-        if(typeof ws.getCell(r,12).value==='number')ws.getCell(r,12).numFmt='#,##0';
-      }
+      setStatus(`출력 완료 · ${list.length}품목 / ${total.toLocaleString()}장`,'ok');
+    }catch(err){console.error(err);setStatus('Xprinter 출력 실패: '+err.message,'bad');alert('Xprinter 출력 실패\n'+err.message);}
+  }
 
-      // Summary must use the exact same expanded groups currently shown on screen (Z, ZC, ZD, ZE ...).
-      const sumTitle=detailEnd+3;ws.mergeCells(`A${sumTitle}:L${sumTitle}`);ws.getCell(sumTitle,1).value='동일상품 묶음 발주 요약 · F열 보유재고 입력 시 자동 조정';ws.getCell(sumTitle,1).font={name:'맑은 고딕',size:12,bold:true,color:{argb:'FFFFFFFF'}};ws.getCell(sumTitle,1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF217346'}};ws.getCell(sumTitle,1).alignment={vertical:'middle',horizontal:'left'};
-      const sh=sumTitle+1,summaryHeaders=['동일품목','대체명칭','포함 SKU','제품 사진','총 필요 낱개수량','보유재고 (입력)','재고 차감 필요수량','최소 팩킹수량','발주 세트수','최종 발주 낱개수량','낱개 단가','발주금액'];summaryHeaders.forEach((v,i)=>ws.getCell(sh,i+1).value=v);
-      ws.getColumn(2).width=Math.max(ws.getColumn(2).width||0,34);ws.getColumn(3).width=Math.max(ws.getColumn(3).width||0,24);ws.getColumn(4).width=Math.max(ws.getColumn(4).width||0,18);
-      let sr=sh+1;
-      for(let gi=0;gi<koreaOrderGroups.length;gi++){
-        const g=koreaOrderGroups[gi],r=sr++;
-        ws.getCell(r,1).value=g.label||g.group||'단독제품';
-        ws.getCell(r,2).value=groupAltV146(g);
-        ws.getCell(r,3).value=uniqSkuV146(g);
-        ws.getCell(r,5).value=num(g.pieces);
-        ws.getCell(r,6).value=0;
-        ws.getCell(r,7).value={formula:`MAX(0,E${r}-F${r})`,result:num(g.pieces)};
-        ws.getCell(r,8).value=Math.max(1,num(g.minPack)||1);
-        ws.getCell(r,9).value={formula:`IF(G${r}=0,0,ROUNDUP(G${r}/H${r},0))`,result:num(g.sets)};
-        ws.getCell(r,10).value={formula:`I${r}*H${r}`,result:num(g.finalQty)};
-        ws.getCell(r,11).value=num(g.unitPrice);
-        ws.getCell(r,12).value={formula:`J${r}*K${r}`,result:num(g.amount)};
-        const im=groupImageData[gi];if(im){ws.getRow(r).height=72;const imageId=wb.addImage({base64:im.base64,extension:im.extension});ws.addImage(imageId,{tl:{col:3.25,row:r-1+0.08},ext:{width:58,height:58},editAs:'oneCell'})}
-      }
-      const sumEnd=sr-1;excelStyleRange(ws,sh,sumEnd,1,12,'FFDDEFE2');
-      for(let r=sh+1;r<=sumEnd;r++){
-        ws.getCell(r,6).fill={type:'pattern',pattern:'none'};
-        ws.getCell(r,9).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'}};
-        for(const c of [5,6,7,8,9,10,11,12])ws.getCell(r,c).numFmt='#,##0';
-      }
-      const totalRow=sumEnd+1;ws.getCell(totalRow,9).value='총 발주 낱개수량';ws.getCell(totalRow,10).value={formula:`SUM(J${sh+1}:J${sumEnd})`};ws.getCell(totalRow,11).value='총 발주금액';ws.getCell(totalRow,12).value={formula:`SUM(L${sh+1}:L${sumEnd})`};
-      for(const c of [9,10,11,12]){ws.getCell(totalRow,c).font={name:'맑은 고딕',size:c===10||c===12?12:11,bold:true,color:c===12?{argb:'FFC00000'}:undefined};ws.getCell(totalRow,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFE699'}};ws.getCell(totalRow,c).border=thinBorder()}
-      ws.getCell(totalRow,10).numFmt='#,##0';ws.getCell(totalRow,12).numFmt='#,##0"원"';
-      ws.views=[{state:'frozen',ySplit:4}];ws.autoFilter={from:{row:4,column:1},to:{row:detailEnd,column:13}};
+  async function browserPrint(){
+    const list=rows.filter(r=>r.checked&&r.barcode&&r.printQty>0);if(!list.length)return alert('출력할 상품을 선택해 주세요.');
+    const win=window.open('','_blank');if(!win)return alert('팝업을 허용해 주세요.');
+    win.document.write('<p>라벨 준비 중...</p>');let html='';
+    for(const r of list){const c=await labelCanvas(r),src=c.toDataURL('image/png');for(let i=0;i<r.printQty;i++)html+=`<img src="${src}">`}
+    win.document.open();win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>한국 발주 바코드</title><style>@page{size:50mm 30mm;margin:0}html,body{margin:0;padding:0}img{display:block;width:50mm;height:30mm;break-after:page}img:last-child{break-after:auto}</style></head><body>${html}<script>window.onload=()=>{window.print()}<\/script></body></html>`);win.document.close();
+  }
 
-      // 발주현황: original PO order, never merge same SKU.
-      const statusByPn=new Map(),statusByBc=new Map();
-      for(const x of koreaOrderRows){const pn=normalizePoProductNumber(x.productNumber),bc=norm(x.barcode).replace(/\s+/g,'').toUpperCase();if(pn&&!statusByPn.has(pn))statusByPn.set(pn,x);if(bc&&!statusByBc.has(bc))statusByBc.set(bc,x)}
-      const statusRows=[];
-      for(const raw of koreaRawPoRows){
-        const pn=normalizePoProductNumber(raw.productNumber),bc=norm(raw.barcode).replace(/\s+/g,'').toUpperCase();
-        const matched=(pn&&statusByPn.get(pn))||(bc&&statusByBc.get(bc));if(!matched)continue;
-        const perSet=matched.isBundle&&Array.isArray(matched.bundleResolvedComponents)&&matched.bundleResolvedComponents.length?matched.bundleResolvedComponents.reduce((a,c)=>a+Math.max(1,num(c.qtyPer)||1),0):Math.max(1,num(matched.cavity)||1);
-        statusRows.push({raw,matched,orderQty:num(raw.qty),perSet,pieces:num(raw.qty)*perSet});
-      }
-      const statusImageCache=new Map();
-      const statusImageData=await mapLimit(statusRows,8,async row=>{const k=normalizePoProductNumber(row.matched.productNumber)||norm(row.matched.barcode);if(statusImageCache.has(k))return statusImageCache.get(k);const pr=fetchImageData(row.matched.photoProduct);statusImageCache.set(k,pr);return pr});
-      const st=wb.addWorksheet('발주현황',{properties:{defaultRowHeight:20},pageSetup:{orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0,paperSize:9,margins:{left:0.2,right:0.2,top:0.3,bottom:0.3,header:0.1,footer:0.1}}});
-      const stWidths=[7,15,42,10,12,12,16,12,16,23];stWidths.forEach((w,i)=>st.getColumn(i+1).width=w);
-      const firstDate=statusRows.find(x=>norm(x.raw.inboundDate))?.raw.inboundDate||$('inboundDate')?.value||'';
-      let titleDate='발주현황';if(firstDate){const md=String(firstDate).match(/(?:20\d{2}[-/.])?(\d{1,2})[-/.](\d{1,2})/);if(md)titleDate=`${+md[1]}월 ${+md[2]}일`;else titleDate=String(firstDate)}
-      st.mergeCells('A1:J1');st.getCell('A1').value=titleDate;st.getCell('A1').font={name:'맑은 고딕',size:17,bold:true};st.getCell('A1').alignment={vertical:'middle',horizontal:'left'};st.getRow(1).height=30;st.getRow(2).height=8;
-      const stHeaders=['순번','이미지','제품명','발주수','1세트','낱개수량','발주번호','센터','입고일자','바코드 넘버'];stHeaders.forEach((v,i)=>st.getCell(3,i+1).value=v);
-      for(let i=0;i<statusRows.length;i++){
-        const x=statusRows[i],r=4+i;st.getRow(r).height=76;st.getCell(r,1).value=i+1;st.getCell(r,3).value=x.raw.productName||x.matched.productName;st.getCell(r,4).value=x.orderQty;st.getCell(r,5).value=x.perSet;st.getCell(r,6).value={formula:`D${r}*E${r}`,result:x.pieces};st.getCell(r,7).value=x.raw.orderNo||'';st.getCell(r,8).value=x.raw.center||'';st.getCell(r,9).value=x.raw.inboundDate||$('inboundDate')?.value||'';st.getCell(r,10).value=x.raw.barcode||x.matched.barcode||'';
-        const im=statusImageData[i];if(im){const imageId=wb.addImage({base64:im.base64,extension:im.extension});st.addImage(imageId,{tl:{col:1.12,row:r-1+0.08},ext:{width:64,height:64},editAs:'oneCell'})}
-      }
-      const stEnd=Math.max(3,3+statusRows.length);excelStyleRange(st,3,stEnd,1,10,'FFE7E6E6');
-      for(let r=4;r<=stEnd;r++){for(const c of [1,4,5,6,7,8,9])st.getCell(r,c).alignment={vertical:'middle',horizontal:'center',wrapText:true};st.getCell(r,3).alignment={vertical:'middle',horizontal:'left',wrapText:true};st.getCell(r,10).alignment={vertical:'middle',horizontal:'center',wrapText:true};for(const c of [4,5,6])st.getCell(r,c).numFmt='#,##0'}
-      st.views=[{state:'frozen',ySplit:3}];if(statusRows.length)st.autoFilter={from:{row:3,column:1},to:{row:stEnd,column:10}};st.pageSetup.printArea=`A1:J${stEnd}`;
+  // Always keep the barcode panel in sync with the current Korean PO result.
+  function installRebuildHook(){
+    try{
+      const previous=window.rebuildKoreaOrder||rebuildKoreaOrder;
+      if(previous&&previous.__barcodeV147Hook)return;
+      const wrapped=function(){const result=previous.apply(this,arguments);setTimeout(()=>syncRows(true),0);return result};
+      wrapped.__barcodeV147Hook=true;
+      window.rebuildKoreaOrder=rebuildKoreaOrder=wrapped;
+    }catch(err){console.warn('barcode rebuild hook',err)}
+  }
 
-      const buf=await wb.xlsx.writeBuffer(),blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=koreaExcelSafeName(orderTitle()+' 한국 발주건')+'.xlsx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),15000);
-      setStatus('koreaStatus','한국 발주서 엑셀 다운로드 완료 · 번들 구성품을 동일상품 묶음에서 각각 분리하고 발주현황의 세트를 발주수로 변경했습니다.','ok');
-    }catch(e){console.error(e);setStatus('koreaStatus','한국 발주서 생성 실패: '+e.message,'bad');alert('한국 발주서 생성 실패\n'+e.message)}
-  };
-})();
-
-</script>
-</body></html>`);win.document.close();await Promise.all([...win.document.images].map(im=>im.decode().catch(()=>{})));win.focus();win.print()}
-
-  const prev=window.rebuildKoreaOrder||rebuildKoreaOrder;
-  window.rebuildKoreaOrder=rebuildKoreaOrder=function(){const out=prev.apply(this,arguments);setTimeout(syncRows,0);return out};
-  document.addEventListener('DOMContentLoaded',()=>{ensureUi();setTimeout(syncRows,150)});
-  if(document.readyState!=='loading'){ensureUi();setTimeout(syncRows,150)}
+  function init(){ensureUi();installRebuildHook();syncRows(true);setInterval(()=>syncRows(false),1000)}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
 </script>
+
 <script src="/auth-client.js"></script>
 
 <!-- Korea purchase FINAL V8: user final master 2026-09-29 / standalone alt names + zero prices -->
