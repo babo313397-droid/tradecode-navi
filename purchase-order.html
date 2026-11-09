@@ -1714,7 +1714,7 @@ loadProducts();renderOrderPreview();
       <div class="kbarcode-v145-table-wrap"><table class="kbarcode-v145-table"><thead><tr><th>출력</th><th>SKU</th><th>바코드</th><th>상품명</th><th>발주수량</th><th>출력수량</th><th>미리보기</th></tr></thead><tbody id="kbarcodeBodyV147"></tbody></table></div>
       <div class="kbarcode-v145-preview-title">라벨 미리보기 · 실제 50×30 비율</div>
       <div id="kbarcodePreviewAreaV147" class="kbarcode-v145-preview"></div>
-      <div class="kbarcode-v145-note">기본 출력수량은 <b>일반상품 = 발주수량 × CAVITY</b>, <b>번들상품 = 완성 번들 발주수량</b>으로 자동 계산합니다. 새 PO를 넣으면 이전 수동 출력수량은 초기화됩니다. 필요하면 개별 출력수량을 수정하거나 체크를 해제할 수 있습니다. Xprinter 직접 출력은 QZ Tray가 실행 중이어야 합니다.</div>`;
+      <div class="kbarcode-v145-note">기본 출력수량은 상품 종류·CAVITY·번들 구성과 관계없이 <b>PO의 발주수량 그대로</b> 자동 적용합니다. 새 PO를 넣으면 이전 수동 출력수량은 초기화됩니다. 필요하면 개별 출력수량을 수정하거나 체크를 해제할 수 있습니다. Xprinter 직접 출력은 QZ Tray가 실행 중이어야 합니다.</div>`;
     if(result) result.insertAdjacentElement('afterend',panel); else box.appendChild(panel);
     byId('kbarcodeConnectV147').onclick=connectPrinter;
     byId('kbarcodePrinterV147').onchange=()=>{const p=byId('kbarcodePrinterV147').value;if(p)localStorage.setItem(PRINTER_KEY,p);setStatus(p?`선택됨: ${p}`:'프린터를 선택해 주세요.',p?'ok':'')};
@@ -1734,9 +1734,8 @@ loadProducts();renderOrderPreview();
   }
 
   function labelQtyOf(x){
-    // 일반상품: 실제 낱개 작업수량(발주수량 × CAVITY)만큼 라벨 출력
-    // 번들상품: 완성된 번들 1세트에 라벨 1장 -> 부모 발주수량만큼 출력
-    return intval(x?.isBundle ? x?.qty : (x?.pieces ?? x?.qty));
+    // v151: 바코드는 상품 종류/CAVITY/번들 구성과 관계없이 PO 발주수량만큼만 출력한다.
+    return intval(x?.qty);
   }
 
   function sourceSignature(src){
