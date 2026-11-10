@@ -59,7 +59,7 @@
       <div class="map-list" id="mapList"></div>
       <div id="warnBox" class="warnbox"></div>
       <div class="actions"><button id="downloadBtn" class="btn green" disabled>변환 Excel 다운로드</button><button id="resetBtn" class="btn">다른 파일 작업</button></div>
-      <div class="note"><b>보존 기준</b> · 다사바·김부장님 시트와 기존 수식/서식은 유지합니다. 예비 시트는 예비택배1~5 다섯 개만 남기고, 탭 순서는 코리아원 팔레트 → 코리아원 밀크런 → 봄날애 팔레트 → 봄날애 밀크런 → 차통 팔레트 → 차통 밀크런 → 코리아원 택배 → 봄날애 택배 → 차통 택배 → 다사바 → 김부장님 팔레트 → 김부장님 택배 → 예비택배 순으로 정렬합니다.</div>
+      <div class="note"><b>보존 기준</b> · 선적파일의 업체·센터·작업방식·입고일자별로 작업 시트를 자동 생성합니다. 같은 센터라도 입고일자가 다르면 별도 시트로 분리합니다. 다사바·김부장님 시트와 기존 수식/서식은 유지합니다. 예비 시트는 예비택배1~5 다섯 개만 남기고, 탭 순서는 코리아원 팔레트 → 코리아원 밀크런 → 봄날애 팔레트 → 봄날애 밀크런 → 차통 팔레트 → 차통 밀크런 → 코리아원 택배 → 봄날애 택배 → 차통 택배 → 다사바 → 김부장님 팔레트 → 김부장님 택배 → 예비택배 순으로 정렬합니다.</div>
     </div>
   </section>
 </main>
@@ -192,15 +192,169 @@ function writeOrderData(doc,shared,sections){const sd=xels(doc,'sheetData')[0],t
 // 핵심 집계 수식은 참조범위를 넉넉히 잡고 강제 재계산시킵니다.
 const rm=rowMap(sd);setFormulaXml(doc,rm.get(4),'E',4,'SUM($E$8:$E$5000)');setFormulaXml(doc,rm.get(4),'F',4,'IF(E4=G4,"맞음","틀림")');setFormulaXml(doc,rm.get(4),'AT',4,'SUM(AT$8:AT$5000)');for(let c=10;c<=40;c++){const col=numCol(c),r2=rm.get(2),name=cellValue(cellByCol(r2,col),shared);if(!name)continue;const sn=name.replace(/'/g,"''"),pallet=/팔레트|밀크런/.test(name);setFormulaXml(doc,rm.get(6),col,6,pallet?`SUMPRODUCT('${sn}'!$F$4:$F$5000,'${sn}'!$G$4:$G$5000)`:`SUM('${sn}'!$F$4:$F$5000)`);setFormulaXml(doc,rm.get(7),col,7,`IFERROR(IF(${col}6=0,"작업전",${col}6/${col}4),"작업전")`)}updateDimension(doc,Math.max(...xels(sd,'row').map(r=>Number(r.getAttribute('r')))),'AT')}
 function patchCenterSheet(doc,items){const sd=xels(doc,'sheetData')[0],rm=rowMap(sd),tpl=rm.get(4)||xels(sd,'row').find(r=>Number(r.getAttribute('r'))>=4);if(!tpl)throw new Error('센터 시트의 기준 행을 찾지 못했습니다.');const oldLast=lastContentRow(sd,4,1,22),clearTo=Math.max(oldLast,3+items.length);let map=rowMap(sd);for(let rn=4;rn<=clearTo;rn++){let row=map.get(rn);if(!row){row=cloneRow(tpl,rn,true);insertRowSorted(sd,row);map.set(rn,row)}for(const c of xels(row,'c')){const n=colNum(xcol(c.getAttribute('r')));if(n>=1&&n<=22)clearCellXml(c)}}for(let i=0;i<items.length;i++){const rn=4+i,it=items[i],row=map.get(rn);if(it.rowHeight)row.setAttribute('ht',String(it.rowHeight));setCellXml(doc,row,'A',rn,itemScalar(it.productNumber),false,cellByCol(tpl,'A'));setCellXml(doc,row,'B',rn,it.productName,true,cellByCol(tpl,'B'));setCellXml(doc,row,'C',rn,itemScalar(it.barcode),true,cellByCol(tpl,'C'));setCellXml(doc,row,'D',rn,it.center,true,cellByCol(tpl,'D'));setCellXml(doc,row,'E',rn,it.qty,false,cellByCol(tpl,'E'))}const max=Math.max(...xels(sd,'row').map(r=>Number(r.getAttribute('r'))));const dim=xels(doc,'dimension')[0],last=(dim?.getAttribute('ref')||'A1:S1').split(':').pop().match(/^[A-Z]+/i)?.[0]||'S';updateDimension(doc,max,last)}
+
+// ===== vDynamicDate: 신규 센터 자동 생성 + 입고일자/작업방식 분리 =====
+function dynamicInboundDate(text){
+  const s=String(text||'');
+  let m=s.match(/(\d{1,2})\s*[-./]\s*(\d{1,2})\s*(?:일)?\s*(?:쿠팡\s*)?입고/i);
+  if(!m)m=s.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일[^()\n]{0,24}?(?:쿠팡\s*)?입고/i);
+  if(!m)return null;
+  const month=Number(m[1]),day=Number(m[2]);
+  if(!(month>=1&&month<=12&&day>=1&&day<=31))return null;
+  return {month,day,key:String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0'),label:`${month}-${day}입고`};
+}
+function dynamicSafeSheetName(name){
+  let s=String(name||'').replace(/[\\\/?*\[\]:]/g,' ').replace(/\s+/g,' ').trim();
+  if(!s)s='추가 작업';
+  return s.slice(0,31);
+}
+function dynamicCenterSpec(company,center,sectionTitle){
+  const raw=String(center||'').trim(),ck=companyKey(company);
+  const date=dynamicInboundDate(raw)||dynamicInboundDate(sectionTitle);
+  const kind=workKind(raw)||'parcel';
+  let base=raw
+    .replace(/\(?\s*\d{1,2}\s*월\s*\d{1,2}\s*일[^()\n]{0,24}?(?:쿠팡\s*)?입고(?:건)?\s*\)?/gi,' ')
+    .replace(/\d{1,2}\s*[-./]\s*\d{1,2}\s*(?:일)?\s*(?:쿠팡\s*)?입고(?:건)?/gi,' ')
+    .replace(/(?:팔레트|밀크런|택배)/gi,' ')
+    .replace(/^\s*(?:코리아원|봄날애|차통익스프레스|차통)\s*/,' ')
+    .replace(/\s+/g,' ').trim();
+  if(!base)base=centerToken(raw)||'센터';
+  const kindLabel=kind==='milkrun'?'밀크런':kind==='pallet'?'팔레트':'';
+  const dateLabel=date?.label||'';
+  const prefix=ck==='bom'?'봄날애 ':ck==='chatong'?'차통 ':ck==='kim'?'김부장님 ':ck==='dasaba'?'다사바 ':'';
+  const display=[base,kindLabel,dateLabel].filter(Boolean).join('\n');
+  const sheetName=dynamicSafeSheetName(prefix+[base,kindLabel,dateLabel].filter(Boolean).join(' '));
+  const key=[ck,base.replace(/\s+/g,'').toLowerCase(),kind,date?.key||''].join('|');
+  return {key,companyKey:ck,base,kind,date,dateLabel,display,sheetName};
+}
+function dynamicSpecialKeep(name){
+  const n=norm(name);
+  return n==='발주서'||/^다사바/.test(n)||/^김부장/.test(n);
+}
+function dynamicSheetPoolKind(name){const k=workKind(name);return k==='pallet'||k==='milkrun'?'pallet':'parcel'}
+function dynamicSheetRelPath(sheetPath){
+  const base=String(sheetPath||'').split('/').pop();
+  return base?`xl/worksheets/_rels/${base}.rels`:'';
+}
+async function prepareWorkbookStructureDynamic(zip,index,groups){
+  const wb=xdoc(index.wbText),rels=xdoc(index.relsText),sheetsEl=xels(wb,'sheets')[0];
+  const relRoot=rels.documentElement,ssNs='http://schemas.openxmlformats.org/spreadsheetml/2006/main',relNs='http://schemas.openxmlformats.org/officeDocument/2006/relationships',pkgRelNs='http://schemas.openxmlformats.org/package/2006/relationships';
+  const ctFile=zip.file('[Content_Types].xml'),ct=ctFile?xdoc(await ctFile.async('text')):null,ctRoot=ct?.documentElement;
+  const relMap=new Map(xels(rels,'Relationship').map(r=>[r.getAttribute('Id'),r]));
+  const oldNodes=xels(sheetsEl,'sheet'),oldNames=oldNodes.map(x=>x.getAttribute('name'));
+  let records=oldNodes.map((node,i)=>{
+    const rid=node.getAttribute('r:id')||node.getAttributeNS(relNs,'id'),rel=relMap.get(rid),target=rel?.getAttribute('Target')||'';
+    return {node,i,originalIndex:i,rid,rel,oldName:node.getAttribute('name'),name:node.getAttribute('name'),path:normalizeTarget(target),cloned:false};
+  });
+  let maxSheetNo=0,maxSheetId=0,maxRidNo=0;
+  for(const r of records){
+    const m=String(r.path).match(/sheet(\d+)\.xml$/i);if(m)maxSheetNo=Math.max(maxSheetNo,Number(m[1])||0);
+    maxSheetId=Math.max(maxSheetId,Number(r.node.getAttribute('sheetId'))||0);
+  }
+  for(const rel of xels(rels,'Relationship')){const m=String(rel.getAttribute('Id')||'').match(/^rId(\d+)$/i);if(m)maxRidNo=Math.max(maxRidNo,Number(m[1])||0)}
+  const reserves=records.filter(x=>/^예비/.test(norm(x.name)));
+  const ordinary=records.filter(x=>!dynamicSpecialKeep(x.name)&&!/^예비/.test(norm(x.name)));
+  const palletPool=ordinary.filter(x=>dynamicSheetPoolKind(x.name)==='pallet');
+  const parcelPool=ordinary.filter(x=>dynamicSheetPoolKind(x.name)==='parcel');
+  const reservePool=[...reserves];
+  const palletTemplate=palletPool[0]||ordinary.find(x=>dynamicSheetPoolKind(x.name)==='pallet');
+  const parcelTemplate=parcelPool[0]||reservePool[0]||ordinary.find(x=>dynamicSheetPoolKind(x.name)==='parcel');
+  if(!palletTemplate||!parcelTemplate)throw new Error('팔레트/택배 기준 시트 템플릿을 찾지 못했습니다.');
+  const renameMap=new Map(),assigned=new Set(),dynamicOrder=new Map(),usedNames=new Set(records.filter(x=>dynamicSpecialKeep(x.name)).map(x=>x.name));
+  let cloneSeq=0;
+  async function cloneRecord(template){
+    const newNo=++maxSheetNo,newPath=`xl/worksheets/sheet${newNo}.xml`,newRid=`rId${++maxRidNo}`,newSheetId=++maxSheetId;
+    const bytes=await zip.file(template.path).async('uint8array');zip.file(newPath,bytes);
+    const oldRelPath=dynamicSheetRelPath(template.path),newRelPath=dynamicSheetRelPath(newPath);
+    if(oldRelPath&&zip.file(oldRelPath)){const rb=await zip.file(oldRelPath).async('uint8array');zip.file(newRelPath,rb)}
+    const rel=rels.createElementNS(pkgRelNs,'Relationship');rel.setAttribute('Id',newRid);rel.setAttribute('Type','http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet');rel.setAttribute('Target',`worksheets/sheet${newNo}.xml`);relRoot.appendChild(rel);
+    const node=wb.createElementNS(ssNs,'sheet');node.setAttribute('name',`__DYNAMIC_${cloneSeq++}`);node.setAttribute('sheetId',String(newSheetId));node.setAttributeNS(relNs,'r:id',newRid);sheetsEl.appendChild(node);
+    if(ctRoot&&!xels(ct,'Override').some(x=>String(x.getAttribute('PartName')||'').replace(/^\//,'')===newPath)){const ov=ct.createElementNS('http://schemas.openxmlformats.org/package/2006/content-types','Override');ov.setAttribute('PartName','/'+newPath);ov.setAttribute('ContentType','application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml');ctRoot.appendChild(ov)}
+    const rec={node,i:10000+cloneSeq,originalIndex:10000+cloneSeq,rid:newRid,rel,oldName:'',name:node.getAttribute('name'),path:newPath,cloned:true};records.push(rec);return rec;
+  }
+  function uniqueDesired(name){
+    const base=dynamicSafeSheetName(name);let out=base,i=2;
+    while(usedNames.has(out)||/^예비택배\d+$/i.test(out)){const suffix=` ${i++}`;out=dynamicSafeSheetName(base.slice(0,Math.max(1,31-suffix.length))+suffix)}
+    usedNames.add(out);return out;
+  }
+  async function takeRecord(group){
+    const structural=group.kind==='parcel'?'parcel':'pallet';
+    let rec=null;
+    if(structural==='pallet')rec=palletPool.find(x=>!assigned.has(x))||null;
+    else rec=parcelPool.find(x=>!assigned.has(x))||reservePool.slice().reverse().find(x=>!assigned.has(x))||null;
+    if(!rec)rec=await cloneRecord(structural==='pallet'?palletTemplate:parcelTemplate);
+    assigned.add(rec);
+    const target=uniqueDesired(group.sheetName),old=rec.name;
+    if(old&&old!==target)renameMap.set(old,target);
+    rec.node.setAttribute('name',target);rec.name=target;group.target=target;
+    dynamicOrder.set(target,group.sourceOrder);
+    return rec;
+  }
+  for(const g of groups)await takeRecord(g);
+
+  const remainingRes=reserves.filter(x=>!assigned.has(x)),keepRes=remainingRes.slice(0,5);
+  keepRes.forEach((x,i)=>{const nn=`예비택배${i+1}`,old=x.name;if(old!==nn)renameMap.set(old,nn);x.node.setAttribute('name',nn);x.name=nn;usedNames.add(nn)});
+  const keepSet=new Set([...assigned,...records.filter(x=>dynamicSpecialKeep(x.name)),...keepRes]);
+  const dropRecords=records.filter(x=>!keepSet.has(x));
+
+  for(const x of dropRecords){
+    if(x.node.parentNode===sheetsEl)sheetsEl.removeChild(x.node);
+    if(x.rel?.parentNode)rels.documentElement.removeChild(x.rel);
+    if(x.path){
+      zip.remove(x.path);const rp=dynamicSheetRelPath(x.path);if(rp)zip.remove(rp);
+      if(ct)for(const ov of [...xels(ct,'Override')]){const pn=String(ov.getAttribute('PartName')||'').replace(/^\//,'');if(pn===x.path)ov.parentNode.removeChild(ov)}
+    }
+  }
+
+  const kept=[...xels(sheetsEl,'sheet')].map((node,i)=>({node,originalIndex:i,name:node.getAttribute('name')}));
+  const ordered=kept.sort((a,b)=>{
+    const ca=sheetSortCategory(a.name),cb=sheetSortCategory(b.name);if(ca!==cb)return ca-cb;
+    const da=dynamicOrder.has(a.name)?dynamicOrder.get(a.name):999999,db=dynamicOrder.has(b.name)?dynamicOrder.get(b.name):999999;
+    return da-db||a.originalIndex-b.originalIndex;
+  });
+  while(sheetsEl.firstChild)sheetsEl.removeChild(sheetsEl.firstChild);ordered.forEach(x=>sheetsEl.appendChild(x.node));
+  const finalNames=ordered.map(x=>x.name),finalIndex=new Map(finalNames.map((n,i)=>[n,i]));
+  const droppedOldNames=new Set(dropRecords.map(x=>x.oldName||x.name).filter(Boolean));
+  const dn=xels(wb,'definedNames')[0];
+  if(dn){for(const d of [...xels(dn,'definedName')]){
+    let t=d.textContent||'';
+    for(const [oldn,newn] of renameMap){const oq=oldn.replace(/'/g,"''"),nq=newn.replace(/'/g,"''");t=t.split(`'${oq}'!`).join(`'${nq}'!`).split(`${oq}!`).join(`${nq}!`)}
+    d.textContent=t;
+    const lid=d.getAttribute('localSheetId');
+    if(lid!=null){
+      const oldName=oldNames[Number(lid)];
+      if(droppedOldNames.has(oldName)){d.parentNode.removeChild(d);continue}
+      const current=renameMap.get(oldName)||oldName;if(finalIndex.has(current))d.setAttribute('localSheetId',String(finalIndex.get(current)));else{d.parentNode.removeChild(d);continue}
+    }
+  }}
+  const views=xels(wb,'workbookView');for(const v of views){v.setAttribute('activeTab','0');v.setAttribute('firstSheet','0')}
+  zip.file('xl/workbook.xml',serializeXml(wb));zip.file('xl/_rels/workbook.xml.rels',serializeXml(rels));if(ct)zip.file('[Content_Types].xml',serializeXml(ct));
+  return {finalNames,renameMap};
+}
+// ===== /vDynamicDate =====
+
 async function buildOutput(sections){
-  const zip=await JSZip.loadAsync(embeddedTemplateBuffer()),idx=await templateIndex(zip),baseNames=idx.sheets.map(x=>x.name),basePathByName=new Map(idx.sheets.map(x=>[x.name,x.path]));
-  const grouped=new Map(),unmatched=[];
-  for(const sec of sections){for(const it of sec.items){const target=matchSheetNames(baseNames,sec.company,it.center);if(!target){unmatched.push(`${sec.company} / ${it.center}`);continue}if(!grouped.has(target))grouped.set(target,{target,company:sec.company,center:it.center,items:[]});grouped.get(target).items.push(it)}}
-  if(unmatched.length)throw new Error('기준 Excel에서 매칭할 센터 시트를 찾지 못했습니다: '+[...new Set(unmatched)].join(', '));
-  const structure=await prepareWorkbookStructure(zip,idx),finalIndex=await templateIndex(zip),pathByName=new Map(finalIndex.sheets.map(x=>[x.name,x.path]));
+  const zip=await JSZip.loadAsync(embeddedTemplateBuffer()),idx=await templateIndex(zip);
+  const groupMap=new Map();let sourceOrder=0;
+  for(const sec of sections){
+    for(const it of sec.items){
+      const rawCenter=it.center,spec=dynamicCenterSpec(sec.company,rawCenter,sec.title);
+      it._rawCenter=rawCenter;it._centerSpec=spec;it.center=spec.display;
+      let g=groupMap.get(spec.key);
+      if(!g){g={key:spec.key,company:sec.company,kind:spec.kind,date:spec.date,displayCenter:spec.display,sheetName:spec.sheetName,items:[],sourceOrder:sourceOrder++};groupMap.set(spec.key,g)}
+      g.items.push(it);
+    }
+  }
+  const groups=[...groupMap.values()];
+  const structure=await prepareWorkbookStructureDynamic(zip,idx,groups),finalIndex=await templateIndex(zip),pathByName=new Map(finalIndex.sheets.map(x=>[x.name,x.path]));
   const orderPath=pathByName.get('발주서');if(!orderPath)throw new Error('내장 기준 Excel에서 발주서 시트를 찾지 못했습니다.');
   const orderDoc=xdoc(await zip.file(orderPath).async('text'));writeOrderData(orderDoc,idx.shared,sections);rewriteOrderSummary(orderDoc,structure.finalNames.filter(n=>n!=='발주서'));zip.file(orderPath,serializeXml(orderDoc));
-  const mapping=[];for(const g of grouped.values()){const currentTarget=structure.renameMap.get(g.target)||g.target,path=pathByName.get(currentTarget)||basePathByName.get(g.target);if(!path)throw new Error(`작업 시트 '${currentTarget}'을 찾지 못했습니다.`);const doc=xdoc(await zip.file(path).async('text'));patchCenterSheet(doc,g.items);zip.file(path,serializeXml(doc));mapping.push({company:g.company,center:g.center,target:currentTarget,lines:g.items.length,qty:g.items.reduce((s,x)=>s+x.qty,0)})}
+  const mapping=[];
+  for(const g of groups){
+    const path=pathByName.get(g.target);if(!path)throw new Error(`자동 생성한 작업 시트 '${g.target}'을 찾지 못했습니다.`);
+    const doc=xdoc(await zip.file(path).async('text'));patchCenterSheet(doc,g.items);zip.file(path,serializeXml(doc));
+    mapping.push({company:g.company,center:g.displayCenter.replace(/\n/g,' / '),target:g.target,lines:g.items.length,qty:g.items.reduce((s,x)=>s+x.qty,0),date:g.date?.label||'',kind:g.kind});
+  }
   await patchCalcPackage(zip);const out=await zip.generateAsync({type:'arraybuffer',compression:'DEFLATE',compressionOptions:{level:6}});return {buffer:out,mapping}
 }
 
